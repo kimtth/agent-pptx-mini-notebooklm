@@ -3,6 +3,7 @@
  */
 
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { DataFile, ScrapeResult } from '../domain/ports/ipc';
 
 export interface UrlEntry {
@@ -18,9 +19,15 @@ interface DataSourcesStore {
   setUrls(urls: UrlEntry[]): void;
 }
 
-export const useDataSourcesStore = create<DataSourcesStore>((set) => ({
+export const useDataSourcesStore = create<DataSourcesStore>()(persist(
+  (set) => ({
   files: [],
   urls: [],
   setFiles: (files) => set({ files }),
   setUrls: (urls) => set({ urls }),
-}));
+}),
+  {
+    name: 'pptx-data-sources',
+    storage: createJSONStorage(() => sessionStorage),
+  },
+));

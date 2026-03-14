@@ -8,12 +8,14 @@ import { WorkspaceAreaButton } from './components/workspace/WorkspaceAreaButton.
 import { SettingsModal } from './components/settings/SettingsModal.tsx'
 import { useChatStore } from './stores/chat-store.ts'
 import { useSlidesStore } from './stores/slides-store.ts'
+import { useProjectStore } from './stores/project-store.ts'
 import { createAssistantMessage, extractPptxCodeBlock } from './application/chat-use-case.ts'
 import type { FrameworkType } from './domain/entities/slide-work'
 
 export default function App() {
   const messages = useChatStore((s) => s.messages)
   const work = useSlidesStore((s) => s.work)
+  const workspaceDir = useProjectStore((s) => s.workspaceDir)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
@@ -81,8 +83,17 @@ export default function App() {
           WebkitAppRegion: 'drag',
         } as React.CSSProperties}
       >
-        <span className="text-xs font-semibold tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+        <span className="flex items-center gap-2 text-xs font-semibold tracking-wide" style={{ color: 'var(--text-secondary)' }}>
           PPTX Slide Agent
+          {workspaceDir && (
+            <span
+              className="font-normal truncate max-w-70w"
+              style={{ opacity: 0.45 }}
+              title={workspaceDir}
+            >
+              {workspaceDir.replace(/\\/g, '/')}
+            </span>
+          )}
         </span>
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <WorkspaceAreaButton />

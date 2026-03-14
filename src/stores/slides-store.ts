@@ -3,6 +3,7 @@
  */
 
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   DesignStyle,
   SlideItem,
@@ -95,7 +96,8 @@ const initial: SlideWork = {
   isStreaming: false,
 };
 
-export const useSlidesStore = create<SlidesStore>((set) => ({
+export const useSlidesStore = create<SlidesStore>()(persist(
+  (set) => ({
   work: initial,
 
   applyScenario(payload) {
@@ -166,15 +168,7 @@ export const useSlidesStore = create<SlidesStore>((set) => ({
           const resolved = images.filter((item) => item.number === slide.number)
           if (resolved.length === 0) return slide
 
-          const existing = slide.selectedImages ?? []
-          const appended = [...existing]
-          for (const image of resolved) {
-            if (!appended.some((item) => item.id === image.id)) {
-              appended.push(toSelectedImage(image))
-            }
-          }
-
-          return syncPrimaryImage(slide, appended)
+          return syncPrimaryImage(slide, resolved.map((image) => toSelectedImage(image)))
         }),
       },
     }));
@@ -287,7 +281,15 @@ export const useSlidesStore = create<SlidesStore>((set) => ({
       return { work: { ...state.work, slides: renumbered } };
     });
   },
-}));
+}),
+  {
+    name: 'pptx-slides-work',
+    storage: createJSONStorage(() => sessionStorage),
+    partialize: (state) => ({
+      work: { ...state.work, isStreaming: false, thinking: null },
+    }),
+  },
+));
 
 /** Tiny alias for easier import */
 function nanoid(): string {

@@ -12,4 +12,14 @@ dependencies = [
     "python-pptx>=1.0.2",
     "svglib>=1.6.0",
     "reportlab>=4.4.10",
+    "kiwisolver>=1.5.0",
+]
+
+[tool.ruff]
+target-version = "py313"
+exclude = ["temp", "ref"]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.6",
 ]

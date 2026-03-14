@@ -28,7 +28,7 @@ import type { DataFile, ScrapeResult } from '../../src/domain/ports/ipc';
 import { getAvailableIconChoices } from '../../src/domain/icons/iconify';
 import type { IconifyCollectionId } from '../../src/domain/icons/iconify';
 import { formatWorkflowForPrompt, getWorkflowConfig, type WorkflowConfig } from '../../src/domain/workflows/workflow-config';
-import { executeGeneratedPythonCodeToFile, formatExecutionFailure } from './pptx-handler.ts';
+import { executeGeneratedPythonCodeToFile, formatExecutionFailure, computeLayoutSpecs } from './pptx-handler.ts';
 import { readWorkspaceDir } from './workspace-utils.ts';
 
 const CHAT_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
@@ -297,13 +297,17 @@ async function buildPrompt(
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   workspace: WorkspaceContext,
+  mode: SessionMode,
 ): Promise<string> {
   const parts: string[] = [];
+  const historyForPrompt = mode === 'pptx'
+    ? history.filter((msg) => msg.role === 'user')
+    : history;
 
   // Chat history
-  if (history.length > 0) {
+  if (historyForPrompt.length > 0) {
     parts.push('## Conversation History\n');
-    for (const msg of history.slice(-10)) {
+    for (const msg of historyForPrompt.slice(-10)) {
       parts.push(`**${msg.role === 'user' ? 'User' : 'Assistant'}**: ${msg.content}`);
     }
     parts.push('');
@@ -323,10 +327,14 @@ async function buildPrompt(
       parts.push(`Slides: ${workspace.slides.length}`);
       for (const s of workspace.slides) {
         const imgParts: string[] = [];
-        if (s.imagePath) imgParts.push(`imagePath: ${s.imagePath}`);
-        if (s.selectedImages.length > 0) {
-          for (let idx = 0; idx < s.selectedImages.length; idx++) {
-            const img = s.selectedImages[idx];
+        const selectedImages = s.selectedImages ?? [];
+        const primaryImage = selectedImages[0] ?? null;
+        const primaryImagePath = primaryImage?.imagePath ?? s.imagePath ?? null;
+
+        if (primaryImagePath) imgParts.push(`imagePath: ${primaryImagePath}`);
+        if (selectedImages.length > 0) {
+          for (let idx = 0; idx < selectedImages.length; idx++) {
+            const img = selectedImages[idx];
             const imgRef = img.imagePath ?? img.imageUrl ?? img.id;
             imgParts.push(`image[${idx}]: ${imgRef}`);
           }
@@ -486,7 +494,34 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         return;
       }
 
-      const prompt = await buildPrompt(message, history, workspace);
+      const mode = resolveSessionMode(message, workspace);
+      const prompt = await buildPrompt(message, history, workspace, mode);
+
+      // Pre-compute content-adaptive layout specs for PPTX generation workflows.
+      // Uses PowerPoint COM AutoFit + kiwisolver constraint solver to produce
+      // pixel-perfect coordinates injected into the Python runner env.
+      let layoutSpecsJson: string | undefined;
+      const workflow = resolveWorkflow(message, workspace);
+      if (mode === 'pptx' && workspace.slides.length > 0) {
+        try {
+          const slidesInput = workspace.slides.map((s) => ({
+            layout_type: s.layout,
+            title_text: s.title,
+            key_message_text: s.keyMessage,
+            bullets: s.bullets,
+            notes: s.notes || '',
+            item_count: s.bullets.length,
+            has_icon: !!s.icon,
+            font_family: 'Calibri',
+          }));
+          const result = await computeLayoutSpecs(JSON.stringify(slidesInput));
+          if (result.success && result.specs) {
+            layoutSpecsJson = result.specs;
+          }
+        } catch (err) {
+          console.log('[chat] Layout spec pre-computation failed (non-blocking):', err);
+        }
+      }
 
       let session: Awaited<ReturnType<CopilotClient['createSession']>> | null = null;
       let requestSettled = false;
@@ -610,9 +645,9 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         };
         const basename = allowed[file];
         if (!basename) return null;
-        const candidate = path.join(app.getAppPath(), 'scripts', basename);
+        const candidate = path.join(app.getAppPath(), 'scripts', 'layout', basename);
         if (fsExistsSync(candidate)) return candidate;
-        return path.join(process.cwd(), 'scripts', basename);
+        return path.join(process.cwd(), 'scripts', 'layout', basename);
       };
 
       const patchLayoutInfrastructureTool = defineTool('patch_layout_infrastructure', {
@@ -711,6 +746,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
 
             await executeGeneratedPythonCodeToFile(code, theme, title, outputPath, {
               iconCollection: workspace.iconCollection,
+              layoutSpecsJson,
             });
 
             return { success: true, message: 'PPTX re-generated successfully. Layout validation passed.' };
@@ -778,6 +814,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           'Do not narrate status.',
           'Output only the final python code block.',
           'Use the runtime variables OUTPUT_PATH, PPTX_TITLE, and PPTX_THEME.',
+          'PRECOMPUTED_LAYOUT_SPECS is a list of LayoutSpec objects (one per slide) computed by the hybrid layout engine using PowerPoint COM AutoFit + constraint solver. When available (not None), use PRECOMPUTED_LAYOUT_SPECS[slide_index] instead of calling get_layout_spec() or flow_layout_spec(). This gives pixel-perfect coordinates based on actual text measurements.',
           `WORKSPACE_DIR and IMAGES_DIR are pre-set absolute paths at runtime. WORKSPACE_DIR = "${workspaceAbsPath.replace(/\\/g, '\\\\')}", IMAGES_DIR = "${path.join(workspaceAbsPath, 'images').replace(/\\/g, '\\\\')}". When referencing slide images, use os.path.join(IMAGES_DIR, filename). ICON_CACHE_DIR is also pre-set — use fetch_icon() to load icons, do NOT construct icon paths manually.`,
           'FONT RULE: For non-English text (Japanese, Korean, Chinese, Thai, Arabic, etc.), use resolve_font(text, base_font) to select the correct Noto Sans variant. Example: run.font.name = resolve_font(slide_title, "Calibri"). ',
           'Never hardcode Yu Mincho or other CJK-specific fonts — resolve_font() handles script detection automatically. Noto Sans fonts are auto-downloaded if not installed.',

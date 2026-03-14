@@ -1,9 +1,10 @@
 # 30 Modern PPTX Design Styles — Reference Guide
 
+> **Font policy:** Fonts are resolved at runtime — `Calibri` for Latin text, `resolve_font()` for CJK/non-Latin scripts (auto-selects the correct Noto Sans variant). Do NOT specify font families in generated code; the runtime handles font selection automatically.
+
 Each style is documented with:
 - **Background** — slide background color / gradient
 - **Colors** — primary, secondary, accent with HEX values
-- **Fonts** — title and body font recommendations with sizes
 - **Layout** — slide composition approach
 - **Signature Elements** — must-have design details for authenticity
 - **Avoid** — common mistakes that break the style
@@ -27,11 +28,6 @@ Each style is documented with:
 | Title text | White | `#FFFFFF` |
 | Body text | Soft white | `#E0E0F0` |
 | Accent | Cyan or violet | `#67E8F9` or `#A78BFA` |
-
-### Fonts
-- Title: **Segoe UI Light / Calibri Light**, 36–44pt, bold
-- Body: **Segoe UI**, 14–16pt, regular
-- KPI numbers: 52–64pt bold
 
 ### Layout
 - **Card-based**: use frosted-glass rectangles as content containers
@@ -69,11 +65,6 @@ Each style is documented with:
 | Accent | Red or blue | `#FF3B30` / `#0000FF` |
 | Text | Black | `#000000` |
 
-### Fonts
-- Title: **Arial Black / Impact / Bebas Neue**, 40–56pt
-- Body: **Courier New / Space Mono**, 13–16pt
-- Numbers: 72–96pt Arial Black
-
 ### Layout
 - **Thick black borders** on all elements (2–4pt solid black)
 - **Hard offset shadow** bottom-right of every card (5–8pt, no blur)
@@ -108,11 +99,6 @@ Each style is documented with:
 | Cell 3 (accent 2) | Coral red | `#FF6B6B` |
 | Cell 4 (accent 3) | Teal | `#4ECDC4` |
 | Cell 5 (warm) | Warm yellow | `#FFE66D` |
-
-### Fonts
-- Cell title: **SF Pro / Inter**, 18–24pt, semibold
-- Cell body: **Inter**, 12–14pt, regular
-- Large stat: 48–64pt bold in dark cell
 
 ### Layout
 - CSS Grid-style layout: cells of different sizes spanning columns/rows
@@ -150,19 +136,12 @@ Each style is documented with:
 | Border / ornament | Dark gold | `#3D2E10` |
 | Accent | Muted gold | `#8A7340` |
 
-### Fonts
-- Title: **Playfair Display Italic / Georgia Italic**, 36–48pt
-- Body: **EB Garamond / Georgia**, 13–16pt
-- Label: **Space Mono**, 9–11pt, wide letter-spacing
-
 ### Layout
-- **Inset border frame** — thin gold border 12–20pt from slide edge
 - Centered title with wide letter-spacing (6–10pt)
 - Body text in serif, generous leading (1.6–1.8)
 - Decorative horizontal rule line (thin, gold tint)
 
 ### Signature Elements
-- Double inset border (outer + inner, slightly different widths)
 - Italic serif title in gold
 - Monospace footnote or date in muted gold
 
@@ -190,11 +169,6 @@ Each style is documented with:
 | Mesh node 3 | Cyan | `#00D4FF` |
 | Mesh node 4 | Warm orange | `#FFB347` |
 | Text | Pure white | `#FFFFFF` |
-
-### Fonts
-- Title: **Bebas Neue / Barlow Condensed ExtraBold**, 48–72pt
-- Body: **Outfit / Poppins Light**, 14–16pt
-- All text white with subtle drop shadow for legibility
 
 ### Layout
 - Full-bleed gradient as background
@@ -230,11 +204,6 @@ Each style is documented with:
 | Clay element 2 | Blush pink | `#FED6E3` |
 | Clay element 3 | Warm yellow | `#FFEAA7` |
 | Shadow | Color-matched shadow | element color @ 50%, offset 8–12pt down |
-
-### Fonts
-- Title: **Nunito ExtraBold / Rounded Mplus**, 32–48pt
-- Body: **Nunito / DM Sans**, 14–16pt
-- Icon labels: 11–13pt medium
 
 ### Layout
 - **3D rounded shapes** as primary containers (radius 20–32pt equivalent)
@@ -272,11 +241,6 @@ Each style is documented with:
 | Secondary text | Dark grey | `#444444` |
 | Divider line | Light grey | `#DDDDDD` |
 
-### Fonts
-- Title: **Helvetica Neue Bold / Arial Bold**, 32–44pt, tight leading
-- Body: **Helvetica Neue / Arial**, 12–14pt
-- Labels/captions: **Space Mono**, 9–10pt, 3–4pt letter-spacing
-
 ### Layout
 - Strict **5-column or 12-column grid** — every element snaps to columns
 - **Vertical red rule** on left edge (4–8pt wide stripe)
@@ -312,11 +276,6 @@ Each style is documented with:
 | Glow 3 | Cyan | `#00B4FF` |
 | Title gradient | Green → cyan → violet | multi-stop |
 | Body text | Soft white | `#D0D0F0` |
-
-### Fonts
-- Title: **Bebas Neue / Barlow Condensed**, 44–60pt, wide letter-spacing 4–8pt
-- Body: **DM Mono / Space Mono**, 12–14pt
-- Gradient text clip on title
 
 ### Layout
 - Large blurred glow blobs (filter blur 30–50pt) in background corners
@@ -354,11 +313,6 @@ Each style is documented with:
 | Title glow | Cyan + magenta shadow | `#00FFFF` / `#FF00FF` |
 | Star accent | Yellow | `#FFFF00` |
 
-### Fonts
-- Title: **Bebas Neue / Impact**, 36–52pt
-- Body: **VT323 / Space Mono**, 12–14pt
-- Double text shadow: 2px cyan + 2px magenta offset
-
 ### Layout
 - **Rainbow stripe bars** top and bottom (6–8pt height)
 - Star/sparkle icons in corners (✦ ★)
@@ -394,11 +348,6 @@ Each style is documented with:
 | Secondary text | Taupe | `#8A7A6A` |
 | Accent dot | Deep brown | `#3D3530` |
 
-### Fonts
-- Title: **Canela / Freight Display / DM Serif Display**, 36–52pt, light weight
-- Body: **Inter Light / Lato Light**, 13–15pt
-- Caption: **Space Mono**, 9–10pt, 4–6pt letter-spacing
-
 ### Layout
 - **Generous whitespace** — at least 40% of slide is empty
 - One organic blob shape as background texture (low opacity, grey-beige)
@@ -433,11 +382,6 @@ Each style is documented with:
 | Primary type | Near-black | `#1A1A1A` |
 | Accent word | Signal red | `#E63030` |
 | Footnote | Light grey | `#AAAAAA` |
-
-### Fonts
-- Oversized display: **Bebas Neue / Anton**, 80–120pt, tight tracking (-2pt)
-- Accent word: different color, same font
-- Body (if any): **Space Mono**, 9pt, wide spacing
 
 ### Layout
 - **Type fills the slide** — no illustrations or photos
@@ -475,10 +419,6 @@ Each style is documented with:
 | Left text | White | `#FFFFFF` |
 | Right text | Matches left panel color | `#FF4500` |
 
-### Fonts
-- Panel text: **Bebas Neue**, 40–56pt, vertical writing-mode optional
-- Caption: **Space Mono**, 9pt
-
 ### Layout
 - Strict **50/50 vertical split** with white divider line (2–4pt)
 - Each panel shows one concept, one word, or one data point
@@ -514,11 +454,6 @@ Each style is documented with:
 | Thin rule/border | Light grey | `#E0E0E0` |
 | Medium element | Mid grey | `#888888` |
 | Footnote | Pale grey | `#CCCCCC` |
-
-### Fonts
-- Display: **Helvetica Neue Thin / Futura Light**, 24–36pt, extreme letter-spacing (8–12pt)
-- Body: **Helvetica Neue**, 11–13pt, 150% line height
-- Accent: **Space Mono**, 9pt
 
 ### Layout
 - Single thin circle outline centered (decorative, not functional)
@@ -556,11 +491,6 @@ Each style is documented with:
 | Corner marks | Neon cyan | `#00FFC8` @ 60% |
 | Subtext | Neon cyan | `#00FFC8` @ 50% |
 
-### Fonts
-- Title: **Bebas Neue**, 44–60pt, letter-spacing 6–8pt, **outline text** (no fill, colored stroke)
-- Body: **Space Mono**, 9–11pt
-- Data labels: **Space Mono**, 8pt, wider spacing
-
 ### Layout
 - Subtle dot-grid or line-grid background (6% opacity)
 - **Corner bracket markers** (L-shaped, 20pt, neon) in all 4 corners
@@ -595,11 +525,6 @@ Each style is documented with:
 | Title | Near-black | `#1A1A1A` |
 | Rule line | Signal red | `#E63030` |
 | Caption | Light grey | `#BBBBBB` |
-
-### Fonts
-- Title: **Playfair Display Italic**, 34–48pt
-- Subhead: **Space Mono**, 8–9pt, 2–3pt letter-spacing
-- Body: **Georgia**, 11–13pt
 
 ### Layout
 - **Asymmetric two-zone layout**: left 55% white with text, right 45% dark block
@@ -637,11 +562,6 @@ Each style is documented with:
 | Dot accent 1 | Blush pink | `#F9C6E8` |
 | Dot accent 2 | Sky blue | `#C6E8F9` |
 
-### Fonts
-- Title: **Nunito Bold / DM Sans Medium**, 28–36pt
-- Body: **Nunito / DM Sans**, 13–15pt
-- Labels: **Inter**, 11pt
-
 ### Layout
 - Floating frosted-white cards on gradient background
 - Large circle card (pill shape) as central element
@@ -675,11 +595,6 @@ Each style is documented with:
 | Sunset semicircle | Orange → hot pink | `#FF6B35 → #FF0080` |
 | Title gradient | Orange → pink → purple | `#FF6B35 → #FF0080 → #9B00FF` |
 | Grid lines | Hot pink transparent | `#FF0080` @ 15–40% |
-
-### Fonts
-- Title: **Bebas Neue**, 36–52pt, letter-spacing 6–8pt
-- Body: **Space Mono**, 11–13pt
-- All text white or gradient
 
 ### Layout
 - **Horizon semicircle** (sunset) in lower-center third
@@ -716,11 +631,6 @@ Each style is documented with:
 | Title text | Dark warm brown | `#6B4C2A` |
 | Leaf/flora accents | Natural greens | emoji or illustration |
 
-### Fonts
-- Title: **Playfair Display Italic / Cormorant Garamond Italic**, 22–34pt
-- Body: **EB Garamond**, 13–15pt
-- Caption: **Courier New**, 9pt
-
 ### Layout
 - **Nested circles**: outer dashed + inner solid, slightly off-center or rotated
 - Botanical emoji or line-art leaf accents in corners
@@ -755,10 +665,6 @@ Each style is documented with:
 | Left face | Dark violet | `#4A3FCC` |
 | Right face | Medium violet | `#6254E8` |
 | Top face 2 (highlight) | Light violet | `#A594FF` |
-
-### Fonts
-- Labels: **Space Mono**, 10–12pt, white
-- Title: **Bebas Neue / Barlow Condensed**, 28–40pt, white
 
 ### Layout
 - Isometric (30° angle) 3D block shapes — two or three stacked cubes
@@ -795,11 +701,6 @@ Each style is documented with:
 | Gradient text | Orange → pink → violet | same as sun |
 | Ghost title | White very low opacity | `#FFFFFF` @ 8% |
 
-### Fonts
-- Ghost title: **Bebas Neue**, 38–52pt, 6pt spacing, near-invisible
-- Gradient text: **Bebas Neue**, 24–34pt
-- Body: **Space Mono**, 10pt
-
 ### Layout
 - **Perspective grid** in lower 60% (horizontal + vertical lines converging)
 - Semicircle sun top-center, sliced by 2 horizontal bars (background color)
@@ -834,11 +735,6 @@ Each style is documented with:
 | Title text | Rich gold | `#D4AA2A` |
 | Subtitle | Muted gold | `#8A7020` |
 | Diamond accent | Bright gold | `#B8960C` |
-
-### Fonts
-- Title: **Cormorant Garamond / Trajan / Didot**, 26–36pt, wide letter-spacing 6–10pt
-- Caption: **Space Mono**, 9pt, 4–5pt letter-spacing
-- All text uppercase
 
 ### Layout
 - **Double inset gold border** frame (outer full, inner slightly inset)
@@ -876,12 +772,6 @@ Each style is documented with:
 | Masthead text | Off-white | `#F2EFE8` |
 | Body text | Dark warm brown | `#3A3020` |
 | Column divider | Deep warm black | `#1A1208` |
-
-### Fonts
-- Masthead: **Space Mono Bold**, 12–14pt, tight
-- Headline: **Georgia Bold / Playfair Display Bold**, 20–28pt
-- Body: **Georgia**, 9–11pt, 1.5 line height
-- Date/label: **Space Mono**, 7–9pt, 1pt letter-spacing
 
 ### Layout
 - **Dark masthead bar** full-width at top (newspaper nameplate)
@@ -921,10 +811,6 @@ Each style is documented with:
 | Cell 5 | Deep purple | `#6E1A4E` |
 | Overlay | Dark translucent | `#000000` @ 30% |
 
-### Fonts
-- Title overlay: **Cormorant Garamond Bold / Trajan**, 16–22pt, wide spacing
-- Body (below mosaic): **Georgia**, 13–15pt
-
 ### Layout
 - **6×4 (or similar) mosaic grid** covering full slide — 2pt dark gap between cells
 - Cells vary in color following a stained-glass color rhythm
@@ -960,11 +846,6 @@ Each style is documented with:
 | Blob 3 | Violet | `#7800FF` @ 25% |
 | Title | White / near-white | `#F0FFFE` |
 | Glow | Teal | `#00D2BE` radial glow |
-
-### Fonts
-- Title: **Bebas Neue**, 36–48pt, 6pt letter-spacing
-- Body: **DM Mono / Space Mono**, 12–14pt
-- All text white
 
 ### Layout
 - 3 large blurred blob shapes positioned asymmetrically (corners + center)
@@ -1002,10 +883,6 @@ Each style is documented with:
 | Dot accent | Mint green | `#22BB88` |
 | Star/triangle 2 | Golden yellow | `#FFD700` |
 
-### Fonts
-- Title: **Bebas Neue / Futura ExtraBold**, 32–44pt
-- Body: **Futura / DM Sans**, 12–14pt
-
 ### Layout
 - **Scattered geometric shapes** (triangles, circles, dots, zigzags) across slide
 - No central focal point — distribute shapes with intentional asymmetry
@@ -1041,11 +918,6 @@ Each style is documented with:
 | Stars | Pale green-white | `#D4F0B0` |
 | Mist glow | Soft mint | `#B4FFC8` @ 4% |
 | Title text | Sage-white italic | `rgba(200,255,180,0.85)` |
-
-### Fonts
-- Title: **Playfair Display Italic / DM Serif Display Italic**, 20–28pt
-- Body: **EB Garamond**, 13–15pt
-- Caption: **Space Mono**, 9pt, wide spacing
 
 ### Layout
 - **Tree silhouettes** rising from bottom — triangular/fir shapes, 3+ overlapping depths
@@ -1085,12 +957,6 @@ Each style is documented with:
 | Dimension text | Blueprint text | `#64C8FF` @ 60% |
 | Title | Blueprint white | `#96DCFF` @ 80% |
 
-### Fonts
-- All text: **Space Mono**, 8–12pt (no exceptions — monospace only)
-- Dimension annotations: 8pt
-- Title: 11–13pt, 4pt letter-spacing
-- Stamp: 8pt, multiline
-
 ### Layout
 - **Fine grid** (20pt) + **major grid** (60pt) layered
 - One or two geometric shapes with dimensions and annotation marks
@@ -1127,12 +993,6 @@ Each style is documented with:
 | Block 3 | Acid yellow | `#F5D020` |
 | Text on red | White | `#FFFFFF` |
 | Text on black | White | `#FFFFFF` |
-
-### Fonts
-- Bold word: **Bebas Neue**, 24–34pt
-- Secondary: **Playfair Display Italic**, 16–22pt, vertical writing
-- Giant number: **Bebas Neue**, 64–80pt (ghost/watermark at 8% opacity)
-- Caption: **Space Mono**, 8pt
 
 ### Layout
 - **Overlapping color blocks** (3 blocks, each slightly rotated ±2–5°)
@@ -1172,11 +1032,6 @@ Each style is documented with:
 | Text | Cyan | `#00C8FF` @ 70% |
 | Center dot | Bright cyan | `#00C8FF` |
 
-### Fonts
-- All text: **Space Mono**, 9–11pt
-- System labels: 10pt, 3pt letter-spacing
-- Coordinates/data: 8pt
-
 ### Layout
 - **3 concentric rings** (full circles, varying opacity increasing inward)
 - Middle ring rotated 30° from outer ring
@@ -1214,10 +1069,6 @@ Each style is documented with:
 | Circle 3 (Y) | Riso yellow | `#F5D020` |
 | Overlap zones | Multiply blend | auto (red+blue=purple, red+yellow=orange, blue+yellow=green) |
 | Ghost title | Red-tint offset | `#E8344A` @ 25%, shifted 3px |
-
-### Fonts
-- Main title: **Bebas Neue**, 34–44pt, 4pt letter-spacing
-- Caption: **Space Mono**, 9pt
 
 ### Layout
 - **Three overlapping circles** (CMYK primary colors) in center third

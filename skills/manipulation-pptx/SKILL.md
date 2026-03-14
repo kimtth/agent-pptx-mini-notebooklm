@@ -234,6 +234,25 @@ spec = flow_layout_spec(
 
 `flow_layout_spec()` expands title/key-message areas based on estimated text height, then pushes ALL lower zones (content, cards, stats, hero, chips, footer, sidebar) down automatically.
 
+#### Pre-Computed Layout Specs (Hybrid Engine)
+
+When available, `PRECOMPUTED_LAYOUT_SPECS` is a `list[LayoutSpec]` (one per slide) computed by the hybrid layout engine using **PowerPoint COM AutoFit + kiwisolver constraint solver**. These specs have pixel-perfect coordinates based on actual text measurements — they are more accurate than `flow_layout_spec()`.
+
+**Usage:** When `PRECOMPUTED_LAYOUT_SPECS` is not `None`, use it instead of calling `get_layout_spec()` / `flow_layout_spec()`:
+
+```python
+# ✅ PREFERRED: use pre-computed specs when available
+if PRECOMPUTED_LAYOUT_SPECS is not None:
+    spec = PRECOMPUTED_LAYOUT_SPECS[slide_index]
+else:
+    base_spec = get_layout_spec('bullets', has_icon=bool(slide_icon))
+    spec = flow_layout_spec(base_spec, title_text=slide_title, key_message_text=slide_key_message)
+
+# Then use spec.title_rect, spec.content_rect, etc. as usual
+```
+
+The `LayoutSpec` shape is identical whether from `PRECOMPUTED_LAYOUT_SPECS` or `flow_layout_spec()`. All field names (`title_rect`, `content_rect`, `cards`, `stats`, `timeline`, `comparison`, etc.) are the same.
+
 #### Mandatory: No Hardcoded Coordinates
 
 **HARD RULE:** Do NOT write literal positioning like `hero_x = 8.85` or `chip_y = 4.85`. Instead, derive positions from spec rects:
@@ -289,6 +308,18 @@ There is no runtime geometry repair pass. The generated code must produce the fi
 - **Preserve alignment intentionally.** If a slide uses a grid, mirrored comparison, stacked sidebar, or evenly aligned cards, do not introduce compensating offsets per box. Reduce content instead of breaking the alignment system.
 - **Reserve `notes_rect` as a hard boundary.** No content shape may start at or extend into `spec.notes_rect.y` or below.
 - **Height-budget every text box before placement.** Use `estimate_text_height_in()` for body copy, card copy, sidebars, and summary panels before you finalize `h`.
+- **Pass `chip_texts` to `flow_layout_spec()` for title layouts.** This auto-expands chip height and cascades footer/notes below the taller chips. Example:
+  ```python
+  spec = flow_layout_spec(
+      get_layout_spec("title", has_icon=True),
+      title_text=slide_data["key_message"],
+      key_message_text=slide_data["title"],
+      title_font_pt=28,
+      key_font_pt=15.2,
+      chip_texts=slide_data.get("bullets"),
+  )
+  ```
+- **Use two-tier density scaling in `write_panel_text`.** When estimated text height exceeds ~85% of available height (dense), reduce font by 0.4–0.8pt. When it exceeds ~105% (severe), reduce by up to 1.8pt for title and 1.4pt for body, and tighten line spacing to 1.16. Never go below 12pt title / 11pt body.
 - **Do not place paragraph text into shallow boxes.** A text box with 2+ lines of body copy should usually be at least `0.95in` tall. A card with a title plus paragraph body should usually be at least `1.45in` tall.
 - **Treat 85% text fill as the danger zone.** If estimated text height uses more than ~85% of a box height, the slide is too dense. Reduce content or split the slide.
 - **For stacked rows, prefer fewer rows with taller boxes.** Four readable rows are better than six compressed rows.

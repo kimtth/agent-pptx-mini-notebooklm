@@ -181,6 +181,17 @@ def _shape_text(shape) -> str:
         return ''
 
 
+def _is_decorative_glow(shape) -> bool:
+    """Heuristic: text-free oval shapes are background decoration (glow blobs)."""
+    name = getattr(shape, 'name', '') or ''
+    if not name.startswith('Oval'):
+        return False
+    if _shape_text(shape):
+        return False
+    # Text-free ovals are decorative by design
+    return True
+
+
 def _max_font_size_pt(shape, fallback: float = 18.0) -> float:
     if not getattr(shape, 'has_text_frame', False):
         return fallback
@@ -224,6 +235,11 @@ def validate_slide(slide, slide_index: int) -> list[LayoutIssue]:
         if _is_background_fill(shape):
             continue
         if _is_decorative_frame(shape):
+            continue
+        if _is_decorative_glow(shape):
+            continue
+        name = getattr(shape, 'name', '') or ''
+        if name.startswith('bg_blob'):
             continue
         box = _get_shape_box(shape)
         if box is None:
@@ -318,6 +334,13 @@ def validate_slide(slide, slide_index: int) -> list[LayoutIssue]:
                     # overlays (e.g., a caption label inside an image frame).
                     if severity == IssueSeverity.ERROR:
                         if _is_contained(a, b) or _is_contained(b, a):
+                            severity = IssueSeverity.WARNING
+
+                    # Image caption panels are an intentional overlay pattern when
+                    # they sit on top of a picture with a solid background.
+                    if severity == IssueSeverity.ERROR:
+                        names = {a.shape_name, b.shape_name}
+                        if any(name.startswith('image_caption') for name in names) and any(name.startswith('Picture') for name in names):
                             severity = IssueSeverity.WARNING
 
                     issues.append(LayoutIssue(

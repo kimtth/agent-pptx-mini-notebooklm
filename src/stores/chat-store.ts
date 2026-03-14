@@ -6,6 +6,7 @@
  */
 
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { ChatMessage } from '../application/chat-use-case'
 
 interface ChatStore {
@@ -59,7 +60,8 @@ function flushDeltasNow() {
   }))
 }
 
-export const useChatStore = create<ChatStore>((set, get) => ({
+export const useChatStore = create<ChatStore>()(persist(
+  (set, get) => ({
   messages: [],
   pendingContent: '',
   pendingThinking: '',
@@ -103,4 +105,10 @@ export const useChatStore = create<ChatStore>((set, get) => ({
     if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null }
     set({ messages: [], pendingContent: '', pendingThinking: '' })
   },
-}))
+}),
+  {
+    name: 'pptx-chat-messages',
+    storage: createJSONStorage(() => sessionStorage),
+    partialize: (state) => ({ messages: state.messages }),
+  },
+))

@@ -81,12 +81,58 @@ function getAppIconCacheDir(): string {
   return path.join(process.cwd(), 'skills', 'iconfy-list', 'cache')
 }
 
+/**
+ * Compute content-adaptive layout specs via the hybrid layout engine
+ * (PowerPoint COM AutoFit + kiwisolver constraint solver).
+ * Can be called from any IPC handler — does not depend on ipcMain.handle.
+ */
+export async function computeLayoutSpecs(
+  slidesJson: string,
+): Promise<{ success: boolean; specs?: string; error?: string }> {
+  try {
+    const workspaceDir = await readWorkspaceDir()
+    const layoutDir = path.join(workspaceDir, 'previews')
+    await fs.mkdir(layoutDir, { recursive: true })
+    const inputPath = path.join(layoutDir, 'layout-input.json')
+    const outputPath = path.join(layoutDir, 'layout-specs.json')
+
+    await fs.writeFile(inputPath, slidesJson, 'utf-8')
+
+    let hybridScript = path.join(app.getAppPath(), 'scripts', 'layout', 'hybrid_layout.py')
+    if (!existsSync(hybridScript)) {
+      hybridScript = path.join(process.cwd(), 'scripts', 'layout', 'hybrid_layout.py')
+    }
+
+    const python = await resolvePythonExecutable()
+    const { stdout, stderr } = await execFileAsync(
+      python,
+      [hybridScript, '--input', inputPath, '--output', outputPath],
+      {
+        windowsHide: true,
+        timeout: 60_000,
+        maxBuffer: 4 * 1024 * 1024,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        cwd: path.dirname(hybridScript),
+      },
+    )
+
+    if (stderr?.trim()) {
+      console.log('[computeLayoutSpecs]', stderr.trim())
+    }
+
+    const specsJson = stdout?.trim() || await fs.readFile(outputPath, 'utf-8')
+    return { success: true, specs: specsJson }
+  } catch (err) {
+    return { success: false, error: formatExecutionFailure(err) }
+  }
+}
+
 export async function executeGeneratedPythonCodeToFile(
   code: string,
   theme: ThemeTokens | null,
   title: string,
   outputPath: string,
-  opts?: { renderDir?: string; iconCollection?: string },
+  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string },
 ): Promise<void> {
   const workDir = path.dirname(outputPath)
   const sourcePath = path.join(workDir, 'generated-source.py')
@@ -136,6 +182,7 @@ export async function executeGeneratedPythonCodeToFile(
             PPTX_TITLE: title || 'Presentation',
             ICON_CACHE_DIR: iconCacheDir,
             WORKSPACE_DIR: workspaceDir,
+            ...(opts?.layoutSpecsJson ? { PPTX_LAYOUT_SPECS_JSON: opts.layoutSpecsJson } : {}),
           },
         },
       )
@@ -254,6 +301,10 @@ export function registerPptxHandlers(): void {
     } catch (err) {
       return { success: false, error: formatExecutionFailure(err) }
     }
+  })
+
+  ipcMain.handle('pptx:computeLayout', async (_event, slidesJson: string) => {
+    return computeLayoutSpecs(slidesJson)
   })
 
 }

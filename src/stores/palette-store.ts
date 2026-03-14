@@ -3,6 +3,7 @@
  */
 
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { PaletteColor, ThemeSlots, ThemeTokens } from '../domain/entities/palette';
 import { buildThemeTokens } from '../application/palette-use-case';
 import { DEFAULT_ICONIFY_COLLECTION } from '../domain/icons/iconify';
@@ -28,7 +29,8 @@ interface PaletteStore {
   commitTokens(): void;
 }
 
-export const usePaletteStore = create<PaletteStore>((set, get) => ({
+export const usePaletteStore = create<PaletteStore>()(persist(
+  (set, get) => ({
   seeds: DEFAULT_THEME_SEEDS,
   colors: [],
   slots: null,
@@ -50,4 +52,17 @@ export const usePaletteStore = create<PaletteStore>((set, get) => ({
     const tokens = buildThemeTokens(themeName, slots, colors);
     set({ tokens });
   },
-}));
+}),
+  {
+    name: 'pptx-palette',
+    storage: createJSONStorage(() => sessionStorage),
+    partialize: (state) => ({
+      seeds: state.seeds,
+      colors: state.colors,
+      slots: state.slots,
+      tokens: state.tokens,
+      themeName: state.themeName,
+      selectedIconCollection: state.selectedIconCollection,
+    }),
+  },
+));
