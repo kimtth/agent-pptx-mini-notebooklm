@@ -1,0 +1,281 @@
+"""Declarative layout blueprints for slide generation.
+
+Instead of hardcoded coordinates, each layout type is defined as a
+*blueprint* — a list of named zones, their structural relationships,
+and design tokens (margins, gaps, ratios).  The constraint solver
+(constraint_solver.py) reads a blueprint and computes concrete
+coordinates for every zone at runtime based on actual text
+measurements from the PowerPoint COM engine.
+
+This replaces the 200+ lines of per-layout-type coordinate math in
+get_layout_spec() with ~10 lines of declarative structure per layout.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+
+
+# ---------------------------------------------------------------------------
+# Design tokens — the small set of constants from which all geometry derives
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class DesignTokens:
+    """Parameterised spacing / sizing constants for a slide."""
+    margin_x: float = 0.5          # horizontal margin (left & right)
+    margin_top: float = 0.5        # space above first zone
+    notes_y: float = 6.18          # fixed Y for the notes zone
+    notes_h: float = 0.7           # notes zone height
+    gap_y: float = 0.08            # vertical gap between stacked zones
+    gap_x: float = 0.25            # horizontal gap between columns
+    accent_h: float = 0.04         # accent rule thickness
+    accent_gap: float = 0.18       # extra gap below accent rule
+    header_w_ratio: float = 0.95   # title/key-message width as fraction of available width
+    icon_corner_margin_x: float = 0.5
+    icon_corner_margin_y: float = 0.45
+
+
+DEFAULT_TOKENS = DesignTokens()
+
+
+# ---------------------------------------------------------------------------
+# Zone definitions — what exists on a slide, not where it is
+# ---------------------------------------------------------------------------
+
+class ZoneRole(Enum):
+    """Semantic role of a layout zone."""
+    TITLE = 'title'
+    KEY_MESSAGE = 'key_message'
+    ACCENT = 'accent'
+    CONTENT = 'content'
+    SUMMARY_BOX = 'summary_box'
+    ICON = 'icon'
+    HERO = 'hero'
+    SIDEBAR = 'sidebar'
+    CHIPS = 'chips'
+    FOOTER = 'footer'
+    NOTES = 'notes'
+
+
+@dataclass(frozen=True)
+class ZoneDef:
+    """Declarative specification for a single layout zone.
+
+    ``min_h`` and ``preferred_h`` are in inches and drive the constraint
+    solver.  ``font_pt`` / ``bold`` control the COM AutoFit measurement
+    request so the solver receives an accurate minimum height.
+
+    ``stretch`` marks a zone that should absorb remaining vertical space
+    (typically the content zone).
+    """
+    role: ZoneRole
+    min_h: float = 0.3             # absolute minimum (inches)
+    preferred_h: float = 0.5       # preferred height (used as a weak target)
+    font_pt: float = 18.0          # font size for COM measurement
+    bold: bool = False
+    stretch: bool = False          # zone expands to fill remaining space
+    fixed_h: float | None = None   # if set, solver treats height as constant
+    width_fraction: float = 1.0    # fraction of available content width
+
+
+# ---------------------------------------------------------------------------
+# Variant descriptors — layout-specific structural metadata
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class CardsVariant:
+    columns: int = 2
+    gap_x: float = 0.32
+    gap_y: float = 0.28
+
+
+@dataclass(frozen=True)
+class StatsVariant:
+    columns: int = 3
+    gap_x: float = 0.35
+
+
+@dataclass(frozen=True)
+class TimelineVariant:
+    line_x: float = 1.1
+    dot_x: float = 0.98
+    dot_size: float = 0.24
+    text_x: float = 1.45
+
+
+@dataclass(frozen=True)
+class ComparisonVariant:
+    gap_x: float = 0.25
+
+
+# ---------------------------------------------------------------------------
+# LayoutBlueprint — the top-level declaration for a layout type
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class LayoutBlueprint:
+    """Declarative description of a slide layout.
+
+    ``zones`` are listed in top-to-bottom visual order.  The constraint
+    solver walks them sequentially and stacks them vertically, respecting
+    measured text heights and the stretch flag.
+    """
+    layout_type: str
+    zones: tuple[ZoneDef, ...]
+    icon_size: float = 0.0                   # 0 → no icon zone
+    tokens: DesignTokens = field(default_factory=lambda: DEFAULT_TOKENS)
+
+    # Variant-specific structural metadata (mutually exclusive)
+    cards: CardsVariant | None = None
+    stats: StatsVariant | None = None
+    timeline: TimelineVariant | None = None
+    comparison: ComparisonVariant | None = None
+
+    # Structural flags
+    has_hero: bool = False                    # title-slide hero image zone
+    has_sidebar: bool = False                 # agenda/diagram sidebar
+
+
+# ---------------------------------------------------------------------------
+# Blueprint catalogue — one per layout type
+# ---------------------------------------------------------------------------
+
+_ZONE_TITLE = ZoneDef(ZoneRole.TITLE, min_h=0.40, preferred_h=0.50, font_pt=30, bold=True)
+_ZONE_KEY   = ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.30, preferred_h=0.55, font_pt=18)
+_ZONE_ACCENT = ZoneDef(ZoneRole.ACCENT, fixed_h=0.04, min_h=0.04, preferred_h=0.04)
+_ZONE_NOTES = ZoneDef(ZoneRole.NOTES, fixed_h=0.70, min_h=0.70, preferred_h=0.70)
+
+# Content zones — the stretch flag means "fill remaining vertical space"
+_ZONE_CONTENT = ZoneDef(ZoneRole.CONTENT, min_h=1.5, preferred_h=3.8, stretch=True)
+_ZONE_SUMMARY = ZoneDef(ZoneRole.SUMMARY_BOX, min_h=0.6, preferred_h=0.95)
+
+
+def _standard_header() -> tuple[ZoneDef, ...]:
+    """Title → key message → accent → … shared by most layouts."""
+    return (_ZONE_TITLE, _ZONE_KEY, _ZONE_ACCENT)
+
+
+# -- title slide (vertically centred, hero on right) -----------------------
+_TITLE_BLUEPRINT = LayoutBlueprint(
+    layout_type='title',
+    zones=(
+        ZoneDef(ZoneRole.ACCENT, fixed_h=0.06, min_h=0.06, preferred_h=0.06),
+        ZoneDef(ZoneRole.TITLE, min_h=0.50, preferred_h=0.60, font_pt=30, bold=True),
+        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.30, preferred_h=0.46, font_pt=18),
+        ZoneDef(ZoneRole.CHIPS, min_h=0.30, preferred_h=0.46),
+        ZoneDef(ZoneRole.FOOTER, min_h=0.40, preferred_h=0.70),
+        _ZONE_NOTES,
+    ),
+    icon_size=2.35,
+    has_hero=True,
+    tokens=DesignTokens(margin_top=1.08),
+)
+
+# -- section ----------------------------------------------------------------
+_SECTION_BLUEPRINT = LayoutBlueprint(
+    layout_type='section',
+    zones=(
+        ZoneDef(ZoneRole.ACCENT, fixed_h=0.05, min_h=0.05, preferred_h=0.05),
+        ZoneDef(ZoneRole.TITLE, min_h=0.40, preferred_h=0.48, font_pt=36, bold=True),
+        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.40, preferred_h=0.68, font_pt=24),
+        _ZONE_NOTES,
+    ),
+    icon_size=1.6,
+    tokens=DesignTokens(margin_x=0.9, margin_top=1.68),
+)
+
+# -- agenda -----------------------------------------------------------------
+_AGENDA_BLUEPRINT = LayoutBlueprint(
+    layout_type='agenda',
+    zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
+    has_sidebar=True,
+)
+
+# -- bullets (default) ------------------------------------------------------
+_BULLETS_BLUEPRINT = LayoutBlueprint(
+    layout_type='bullets',
+    zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
+    icon_size=2.1,
+)
+
+# -- cards ------------------------------------------------------------------
+_CARDS_BLUEPRINT = LayoutBlueprint(
+    layout_type='cards',
+    zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
+    icon_size=2.1,
+    cards=CardsVariant(columns=2, gap_x=0.32, gap_y=0.28),
+)
+
+# -- stats ------------------------------------------------------------------
+_STATS_BLUEPRINT = LayoutBlueprint(
+    layout_type='stats',
+    zones=(
+        *_standard_header(),
+        _ZONE_CONTENT,
+        ZoneDef(ZoneRole.FOOTER, min_h=0.50, preferred_h=0.72),
+        _ZONE_NOTES,
+    ),
+    icon_size=2.1,
+    stats=StatsVariant(columns=3, gap_x=0.35),
+)
+
+# -- comparison -------------------------------------------------------------
+_COMPARISON_BLUEPRINT = LayoutBlueprint(
+    layout_type='comparison',
+    zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
+    icon_size=2.1,
+    comparison=ComparisonVariant(gap_x=0.25),
+)
+
+# -- timeline ---------------------------------------------------------------
+_TIMELINE_BLUEPRINT = LayoutBlueprint(
+    layout_type='timeline',
+    zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
+    icon_size=2.1,
+    timeline=TimelineVariant(line_x=1.1, dot_x=0.98, dot_size=0.24, text_x=1.45),
+)
+
+# -- summary ----------------------------------------------------------------
+_SUMMARY_BLUEPRINT = LayoutBlueprint(
+    layout_type='summary',
+    zones=(*_standard_header(), _ZONE_SUMMARY, _ZONE_CONTENT, _ZONE_NOTES),
+    icon_size=2.1,
+)
+
+# -- diagram ----------------------------------------------------------------
+_DIAGRAM_BLUEPRINT = LayoutBlueprint(
+    layout_type='diagram',
+    zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
+    icon_size=1.8,
+    has_sidebar=True,
+)
+
+# -- registry ---------------------------------------------------------------
+
+_BLUEPRINTS: dict[str, LayoutBlueprint] = {
+    'title': _TITLE_BLUEPRINT,
+    'section': _SECTION_BLUEPRINT,
+    'agenda': _AGENDA_BLUEPRINT,
+    'bullets': _BULLETS_BLUEPRINT,
+    'cards': _CARDS_BLUEPRINT,
+    'stats': _STATS_BLUEPRINT,
+    'comparison': _COMPARISON_BLUEPRINT,
+    'timeline': _TIMELINE_BLUEPRINT,
+    'summary': _SUMMARY_BLUEPRINT,
+    'diagram': _DIAGRAM_BLUEPRINT,
+}
+
+
+def get_blueprint(layout_type: str) -> LayoutBlueprint:
+    """Return the declarative blueprint for a layout type.
+
+    Falls back to ``bullets`` for unknown types.
+    """
+    return _BLUEPRINTS.get(layout_type.lower().strip(), _BULLETS_BLUEPRINT)
+
+
+def list_layout_types() -> list[str]:
+    """Return all registered layout type names."""
+    return list(_BLUEPRINTS.keys())

@@ -58,6 +58,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('pptx:renderPreview', code, themeTokens, title, iconCollection),
     readExistingPreviews: () =>
       ipcRenderer.invoke('pptx:readExistingPreviews'),
+    computeLayout: (slidesJson: string) =>
+      ipcRenderer.invoke('pptx:computeLayout', slidesJson),
   },
 
   fs: {

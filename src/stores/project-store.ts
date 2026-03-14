@@ -11,29 +11,52 @@ import { usePaletteStore } from './palette-store';
 import { useDataSourcesStore } from './data-sources-store';
 import { DEFAULT_ICONIFY_COLLECTION } from '../domain/icons/iconify';
 
+function normalizeLoadedSelectedImages(slide: PptAppProject['slidesWork']['slides'][number]) {
+  if (Array.isArray(slide.selectedImages) && slide.selectedImages.length > 0) {
+    return slide.selectedImages.map((image) => ({
+      id: image.id,
+      imageQuery: image.imageQuery ?? slide.imageQuery ?? null,
+      imageUrl: image.imageUrl ?? null,
+      imagePath: image.imagePath ?? null,
+      imageAttribution: image.imageAttribution ?? null,
+      sourcePageUrl: image.sourcePageUrl ?? null,
+      thumbnailUrl: image.thumbnailUrl ?? image.imageUrl ?? null,
+    }));
+  }
+
+  if (!slide.imagePath && !slide.imageUrl) return []
+
+  return [{
+    id: slide.imagePath ?? slide.imageUrl ?? `${slide.number}`,
+    imageQuery: slide.imageQuery ?? null,
+    imageUrl: slide.imageUrl ?? null,
+    imagePath: slide.imagePath ?? null,
+    imageAttribution: slide.imageAttribution ?? null,
+    sourcePageUrl: null,
+    thumbnailUrl: slide.imageUrl ?? null,
+  }]
+}
+
 function normalizeLoadedWork(work: PptAppProject['slidesWork']) {
   return {
     ...work,
     designStyle: work.designStyle ?? null,
     framework: work.framework ?? null,
-    slides: (work.slides ?? []).map((slide) => ({
-      ...slide,
-      icon: slide.icon ?? null,
-      imageQuery: slide.imageQuery ?? null,
-      imageQueries: slide.imageQueries ?? (slide.imageQuery ? [slide.imageQuery] : []),
-      imageUrl: slide.imageUrl ?? null,
-      imagePath: slide.imagePath ?? null,
-      imageAttribution: slide.imageAttribution ?? null,
-      selectedImages: slide.selectedImages ?? (slide.imagePath ? [{
-        id: slide.imagePath,
+    slides: (work.slides ?? []).map((slide) => {
+      const selectedImages = normalizeLoadedSelectedImages(slide)
+      const primary = selectedImages[0] ?? null
+
+      return {
+        ...slide,
+        icon: slide.icon ?? null,
         imageQuery: slide.imageQuery ?? null,
-        imageUrl: slide.imageUrl ?? null,
-        imagePath: slide.imagePath ?? null,
-        imageAttribution: slide.imageAttribution ?? null,
-        sourcePageUrl: slide.imageUrl ?? null,
-        thumbnailUrl: slide.imageUrl ?? null,
-      }] : []),
-    })),
+        imageQueries: slide.imageQueries ?? (slide.imageQuery ? [slide.imageQuery] : []),
+        imageUrl: primary?.imageUrl ?? null,
+        imagePath: primary?.imagePath ?? null,
+        imageAttribution: primary?.imageAttribution ?? null,
+        selectedImages,
+      }
+    }),
   };
 }
 

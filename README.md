@@ -53,15 +53,52 @@ pnpm setup:python-env
 
 This creates `.venv` and installs the dependencies declared in [pyproject.toml](pyproject.toml). The Electron app automatically prefers that interpreter for both content ingestion and PPTX generation.
 
-If you need to override the interpreter manually, set `PPTX_SLIDE_AGENT_PYTHON`.
-
-`pnpm setup:python-env` remains available as an alias for the same environment setup.
+`pnpm setup:python-env` is available as an alias for the same environment setup.
 
 ### python-pptx
 
 https://python-pptx.readthedocs.io/
 
 PPTX generation runs through a bundled Python runner at [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py), which executes agent-generated `python-pptx` code with the runtime variables `OUTPUT_PATH`, `PPTX_TITLE`, and `PPTX_THEME`.
+
+### Layout Engine
+
+Layout modules live in `scripts/layout/` and compute content-adaptive slide coordinates **before** the LLM generates `python-pptx` code.
+
+#### Execution Order
+
+```
+pptx-handler.ts
+  │
+  ├─ 1. computeLayoutSpecs()          Call hybrid_layout.py as subprocess
+  │       ↓
+  │     hybrid_layout.py               Orchestrator (CLI entry point)
+  │       ├─ layout_blueprint.py       Load declarative zone definitions
+  │       ├─ com_text_measure.py       Measure text heights via PowerPoint COM
+  │       └─ constraint_solver.py      Solve zone positions with kiwisolver
+  │             └─ layout_specs.py     Emit LayoutSpec / RectSpec dataclasses
+  │       ↓
+  │     LayoutSpec JSON (stdout)
+  │
+  ├─ 2. executeGeneratedPythonCodeToFile()
+  │       ↓  PPTX_LAYOUT_SPECS_JSON env var
+  │     pptx-python-runner.py          Deserialize specs → PRECOMPUTED_LAYOUT_SPECS
+  │       └─ exec(generated code)      LLM code uses specs for positioning
+  │
+  └─ 3. Post-generation
+          layout_validator.py           Validate overlap, bounds, text overflow
+```
+
+| Module | Role |
+|--------|------|
+| `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point |
+| `layout_blueprint.py` | Declarative zone definitions for 10 layout types |
+| `com_text_measure.py` | PowerPoint COM AutoFit text height measurement (Windows) |
+| `constraint_solver.py` | Kiwisolver (Cassowary) constraint solver → `LayoutSpec` |
+| `layout_specs.py` | `LayoutSpec` / `RectSpec` dataclasses and fallback `get_layout_spec()` |
+| `layout_validator.py` | Post-generation validation (overlap, bounds, text overflow) |
+
+Pre-computed specs are injected as `PRECOMPUTED_LAYOUT_SPECS` into the generated code namespace. Requires `kiwisolver` and `pywin32` (Windows + PowerPoint).
 
 ## Persistent Storage
 

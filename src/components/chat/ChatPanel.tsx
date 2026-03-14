@@ -139,12 +139,13 @@ export function ChatPanel() {
     }
     setStreaming(true)
 
-    addMessage(createUserMessage(msg))
+    const userMessage = createUserMessage(msg)
+    addMessage(userMessage)
 
     const availableIcons = getAvailableIconChoices(selectedIconCollection)
     const workflow = options?.workflowId ? getWorkflowConfig(options.workflowId) : null
 
-    window.electronAPI.chat.send(msg, historyToIpc(messages), {
+    window.electronAPI.chat.send(msg, historyToIpc([...messages, userMessage]), {
       title: work.title,
       slides: work.slides,
       designBrief: work.designBrief,

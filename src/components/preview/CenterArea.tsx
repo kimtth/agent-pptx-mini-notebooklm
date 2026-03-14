@@ -30,6 +30,11 @@ export function CenterArea() {
 
   const slides = work.slides
   const prevPptxCodeRef = useRef<string | null>(null)
+  const tokensRef = useRef(tokens)
+
+  useEffect(() => {
+    tokensRef.current = tokens
+  }, [tokens])
 
   /** Send the build error to the coding agent for automatic regeneration */
   const triggerErrorFeedback = (error: string) => {
@@ -37,9 +42,10 @@ export function CenterArea() {
     const availableIcons = getAvailableIconChoices(selectedIconCollection)
     const workflow = getWorkflowConfig('create-pptx')
     const errorMessage = 'The generated python-pptx code failed to execute. Apply a MINIMAL fix — only change the specific lines causing the error. Do NOT regenerate the entire file from scratch.'
-    addMessage(createUserMessage(errorMessage))
+    const errorUserMessage = createUserMessage(errorMessage)
+    addMessage(errorUserMessage)
     setStreaming(true)
-    window.electronAPI.chat.send(errorMessage, historyToIpc(messages), {
+    window.electronAPI.chat.send(errorMessage, historyToIpc([...messages, errorUserMessage]), {
       title: work.title,
       slides: work.slides,
       designBrief: work.designBrief,
@@ -70,7 +76,6 @@ export function CenterArea() {
 
   useEffect(() => {
     let cancelled = false
-    const prevCode = prevPptxCodeRef.current
     prevPptxCodeRef.current = work.pptxCode
 
     const run = async () => {
@@ -81,27 +86,14 @@ export function CenterArea() {
         return
       }
 
-      // Only check existing previews when pptxCode first appears (null → code),
-      // e.g. loading a .pptapp file. When code updates (code → new code), always re-render.
-      if (!prevCode) {
-        try {
-          const existing = await window.electronAPI.pptx.readExistingPreviews()
-          if (cancelled) return
-          if (existing.success && existing.imagePaths.length > 0) {
-            setPreviewImages(existing.imagePaths)
-            setPreviewCacheToken((current) => current + 1)
-            setRendering(false)
-            return
-          }
-        } catch {
-          // ignore — fall through to full render
-        }
-        if (cancelled) return
-      }
-
       setRendering(true)
       setPreviewWarning(null)
-      const result = await window.electronAPI.pptx.renderPreview(work.pptxCode, tokens, work.title || 'presentation', selectedIconCollection)
+      const result = await window.electronAPI.pptx.renderPreview(
+        work.pptxCode,
+        tokensRef.current,
+        work.title || 'presentation',
+        selectedIconCollection,
+      )
       if (cancelled) return
 
       if (result.success) {
@@ -123,24 +115,12 @@ export function CenterArea() {
     return () => {
       cancelled = true
     }
-  }, [work.pptxCode, tokens, work.title, workspaceDir, selectedIconCollection])
+  }, [work.pptxCode, work.title, workspaceDir, selectedIconCollection])
 
   const refreshPreview = async () => {
     if (!work.pptxCode) return
     setRendering(true)
     setPreviewWarning(null)
-
-    try {
-      const existing = await window.electronAPI.pptx.readExistingPreviews()
-      if (existing.success && existing.imagePaths.length > 0) {
-        setPreviewImages(existing.imagePaths)
-        setPreviewCacheToken((current) => current + 1)
-        setRendering(false)
-        return
-      }
-    } catch {
-      // ignore and fall back to a fresh render
-    }
 
     const result = await window.electronAPI.pptx.renderPreview(work.pptxCode, tokens, work.title || 'presentation', selectedIconCollection)
     if (result.success) {

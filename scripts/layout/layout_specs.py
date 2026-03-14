@@ -35,7 +35,7 @@ CONTENT_LEFT_IN = 0.5
 CONTENT_RIGHT_IN = 0.5
 CONTENT_WIDTH_IN = SLIDE_WIDTH_IN - CONTENT_LEFT_IN - CONTENT_RIGHT_IN
 SAFE_MARGIN_IN = 0.3
-HEADER_WIDTH_RATIO = 0.86
+HEADER_WIDTH_RATIO = 0.95
 ICON_CORNER_MARGIN_X = 0.5
 ICON_CORNER_MARGIN_Y = 0.45
 
@@ -143,6 +143,18 @@ class LayoutSpec:
     comparison: ComparisonSpec | None = None
 
 
+def _is_wide_char(cp: int) -> bool:
+    """Return True for CJK, Kana, Hangul, and fullwidth characters."""
+    return (
+        (0x2E80 <= cp <= 0x9FFF) or   # CJK radicals, Kangxi, Kana, CJK unified
+        (0xAC00 <= cp <= 0xD7AF) or   # Hangul syllables
+        (0xF900 <= cp <= 0xFAFF) or   # CJK compatibility ideographs
+        (0xFE30 <= cp <= 0xFE4F) or   # CJK compatibility forms
+        (0xFF01 <= cp <= 0xFF60) or   # Fullwidth ASCII variants
+        (0x20000 <= cp <= 0x2FA1F)    # CJK extensions B-F
+    )
+
+
 def estimate_text_height_in(
     text: str,
     width_in: float,
@@ -153,24 +165,26 @@ def estimate_text_height_in(
 ) -> float:
     """Estimate text height in inches for wrapped text.
 
-    This is an intentionally simple heuristic. It is not a real font metrics engine,
-    but it is good enough to reserve vertical space before placing lower regions.
+    Uses per-character visual width to handle mixed Latin/CJK text accurately.
+    CJK characters are treated as full-width (1 em), Latin as ~0.52 em.
     """
     paragraphs = [part.strip() for part in text.splitlines() if part.strip()]
     if not paragraphs:
         lines = min_lines
     else:
-        # Use a slightly conservative character width so headings reserve more height
-        # before lower content zones are placed.
-        avg_char_width_in = max((font_size_pt / 72.0) * 0.52, 0.085)
-        chars_per_line = max(int(width_in / avg_char_width_in), 6)
+        em_size = font_size_pt / 72.0  # 1 em in inches
+        em_per_line = max(width_in / em_size, 3.0)
         lines = 0
         for paragraph in paragraphs:
-            logical_len = len(paragraph)
-            if logical_len == 0:
+            if not paragraph:
                 lines += 1
-            else:
-                lines += max(math.ceil(logical_len / chars_per_line), 1)
+                continue
+            # Weighted visual width: CJK ≈ 1 em, Latin ≈ 0.52 em
+            visual_w = sum(
+                1.0 if _is_wide_char(ord(ch)) else 0.52
+                for ch in paragraph
+            )
+            lines += max(math.ceil(visual_w / em_per_line), 1)
         lines = max(lines, min_lines)
 
     base_height = lines * (font_size_pt / 72.0) * line_height
@@ -188,15 +202,47 @@ def _cascade_subzone(rect: RectSpec | None, content_y: float, content_bottom: fl
     return replace(rect, y=content_y, h=max(content_bottom - content_y, 0.8))
 
 
-def _cascade_chips(chips: RectSpec | None, content_rect: RectSpec | None, content_bottom: float) -> RectSpec | None:
-    """Place chips rect below content or at a fraction of content bottom."""
+def _cascade_chips(
+    chips: RectSpec | None,
+    content_rect: RectSpec | None,
+    content_bottom: float,
+    *,
+    chip_texts: list[str] | None = None,
+    chip_font_pt: float = 11.0,
+    chip_count: int | None = None,
+    fallback_y: float | None = None,
+) -> RectSpec | None:
+    """Place chips rect below content or at a fraction of content bottom.
+
+    When *chip_texts* is provided the chip height is expanded so the tallest
+    chip can display its text without clipping.
+    """
     if chips is None:
         return None
     if content_rect is not None:
         target_y = content_rect.y + content_rect.h + 0.12
+    elif fallback_y is not None:
+        target_y = fallback_y
     else:
         target_y = content_bottom - 1.2
-    return replace(chips, y=min(target_y, content_bottom - 0.5))
+
+    new_h = chips.h
+    if chip_texts:
+        count = chip_count or len(chip_texts)
+        gap = chips.w * 0.02
+        chip_w = (chips.w - gap * max(count - 1, 0)) / max(count, 1)
+        usable_w = chip_w - 0.12  # subtract left+right margins
+        max_needed = 0.0
+        for text in chip_texts:
+            needed = estimate_text_height_in(
+                text, usable_w, chip_font_pt, line_height=1.12,
+            )
+            if needed > max_needed:
+                max_needed = needed
+        # add top+bottom margin (0.04 + 0.04) + small cushion
+        new_h = max(chips.h, max_needed + 0.10)
+
+    return replace(chips, y=min(target_y, content_bottom - 0.5), h=new_h)
 
 
 def _cascade_footer(
@@ -214,7 +260,10 @@ def _cascade_footer(
         target_y = content_rect.y + content_rect.h + 0.12
     else:
         target_y = content_bottom - 0.8
-    return replace(footer, y=min(target_y, content_bottom - 0.1))
+    y = min(target_y, content_bottom - 0.1)
+    # Shrink height so footer never extends past content_bottom
+    h = min(footer.h, max(content_bottom - y, 0.3))
+    return replace(footer, y=y, h=h)
 
 
 def _header_rect(x: float, y: float, w: float, h: float, ratio: float = HEADER_WIDTH_RATIO) -> RectSpec:
@@ -240,11 +289,16 @@ def flow_layout_spec(
     key_message_text: str = '',
     title_font_pt: float = 30,
     key_font_pt: float = 18,
+    chip_texts: list[str] | None = None,
+    chip_font_pt: float = 11.0,
 ) -> LayoutSpec:
     """Return a layout spec adjusted in display order for title -> key message -> content.
 
     The base template still defines widths and general regions, but vertical placement
     is recomputed from text demand so lower content starts below the actual title block.
+
+    When *chip_texts* is provided, chip height is expanded to fit the tallest
+    chip text and the footer is cascaded below the taller chips.
     """
     if spec.title_rect is None:
         return spec
@@ -316,6 +370,12 @@ def flow_layout_spec(
             start_y=next_y - 0.04,
         )
 
+    cascaded_chips = _cascade_chips(
+        spec.chips_rect, content_rect, content_bottom,
+        chip_texts=chip_texts, chip_font_pt=chip_font_pt,
+        fallback_y=next_y,
+    )
+
     return replace(
         spec,
         title_rect=title_rect,
@@ -324,8 +384,8 @@ def flow_layout_spec(
         content_rect=content_rect,
         summary_box=summary_box,
         hero_rect=_cascade_subzone(spec.hero_rect, next_y, content_bottom),
-        chips_rect=_cascade_chips(spec.chips_rect, content_rect, content_bottom),
-        footer_rect=_cascade_footer(spec.footer_rect, content_rect, spec.chips_rect, content_bottom),
+        chips_rect=cascaded_chips,
+        footer_rect=_cascade_footer(spec.footer_rect, content_rect, cascaded_chips, content_bottom),
         sidebar_rect=_cascade_subzone(spec.sidebar_rect, next_y, content_bottom),
         cards=cards,
         stats=stats,
@@ -347,14 +407,14 @@ def get_layout_spec(layout_type: str, has_icon: bool = False) -> LayoutSpec:
     if lt == 'title':
         return LayoutSpec(
             layout_type=lt,
-            title_rect=_header_rect(0.5, 1.45, 7.9, 0.6),
-            key_message_rect=_header_rect(0.5, 2.16, 7.3, 0.46),
-            accent_rect=RectSpec(0.5, 1.08, 0.9, 0.06),
+            title_rect=_header_rect(0.5, 1.15, 7.9, 0.6),
+            key_message_rect=_header_rect(0.5, 1.86, 7.3, 0.46),
+            accent_rect=RectSpec(0.5, 0.78, 0.9, 0.06),
             icon_rect=_icon_corner_rect(2.35),
             hero_rect=RectSpec(8.85, 1.20, 3.65, 3.65),
-            chips_rect=RectSpec(0.5, 4.85, 7.85, 0.46),
-            footer_rect=RectSpec(0.5, 5.52, 7.85, 0.70),
-            notes_rect=RectSpec(0.5, 6.18, 12.33, 0.7),
+            chips_rect=RectSpec(0.5, 4.55, 7.85, 0.46),
+            footer_rect=RectSpec(0.5, 5.22, 7.85, 0.70),
+            notes_rect=RectSpec(0.5, 6.58, 12.33, 0.35),
             max_items=0,
         )
 
@@ -398,11 +458,11 @@ def get_layout_spec(layout_type: str, has_icon: bool = False) -> LayoutSpec:
             cards=CardsSpec(
                 columns=2,
                 card_w=card_w_val,
-                card_h=1.04,
+                card_h=1.28,
                 start_x=0.5,
                 start_y=1.86,
                 gap_x=0.32,
-                gap_y=0.28,
+                gap_y=0.22,
             ),
         )
 
@@ -481,9 +541,9 @@ def get_layout_spec(layout_type: str, has_icon: bool = False) -> LayoutSpec:
             key_message_rect=_header_rect(0.5, 1.02, tw, 0.55),
             accent_rect=RectSpec(0.5, 1.62, 1.5, 0.04),
             icon_rect=_icon_corner_rect(2.1) if has_icon else None,
-            summary_box=RectSpec(0.5, 1.86, cw, 0.95),
-            content_rect=RectSpec(0.5, 3.1, cw, 2.0),
-            notes_rect=RectSpec(0.5, 6.18, 12.33, 0.7),
+            summary_box=RectSpec(0.5, 1.86, cw, 0.88),
+            content_rect=RectSpec(0.5, 3.1, cw, 2.8),
+            notes_rect=RectSpec(0.5, 6.58, 12.33, 0.35),
             max_items=3,
         )
 
