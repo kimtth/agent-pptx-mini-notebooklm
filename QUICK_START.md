@@ -41,7 +41,6 @@ When you open the app for the first time:
 You may see fields such as:
 
 - `GITHUB_TOKEN` **Mandatory**
-- `MODEL_PROVIDER`: `github` or `openai`
 - `AZURE_OPENAI_ENDPOINT`
 - `AZURE_OPENAI_API_KEY`
 - `AZURE_TENANT_ID`
@@ -51,7 +50,7 @@ You may see fields such as:
 In most setups, the important requirement is valid model access, not a separate Copilot CLI installation.
 
 - If your team uses GitHub-hosted models, enter a `GITHUB_TOKEN` that has Copilot access.
-- If your team uses Azure OpenAI, enter the Azure endpoint and related credentials provided by your team.
+- If your team uses Azure OpenAI, enter the Azure endpoint and related credentials provided by your team. When `AZURE_OPENAI_ENDPOINT` is set, the app uses Azure automatically.
 
 If you do not know which values to enter, contact the person who set up the app for you.
 

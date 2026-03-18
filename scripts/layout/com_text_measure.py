@@ -43,12 +43,6 @@ class TextMeasureRequest:
 
 # ppAutoSizeShapeToFitText  — shape grows to fit text
 _PP_AUTO_SIZE_SHAPE_TO_FIT = 1
-# ppAutoSizeNone
-_PP_AUTO_SIZE_NONE = 0
-
-# EMU per inch
-_EMU_PER_IN = 914400
-
 
 # ---------------------------------------------------------------------------
 # Public API

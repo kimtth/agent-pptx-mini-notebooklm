@@ -34,7 +34,6 @@ PPTX Slide Agent は、以下の情報をもとに PowerPoint プレゼンテー
 設定画面には次のような項目があります。
 
 - `GITHUB_TOKEN` 必須
-- `MODEL_PROVIDER`: `github` または `openai`
 - `AZURE_OPENAI_ENDPOINT`
 - `AZURE_OPENAI_API_KEY`
 - `AZURE_TENANT_ID`
@@ -44,7 +43,7 @@ PPTX Slide Agent は、以下の情報をもとに PowerPoint プレゼンテー
 多くの環境では、重要なのは別途 Copilot CLI を入れることではなく、有効なモデル接続情報を設定することです。
 
 - GitHub ホストのモデルを使う場合は、Copilot 利用権のある `GITHUB_TOKEN` を入力します。
-- Azure OpenAI を使う場合は、チームから案内された Azure のエンドポイントや認証情報を入力します。
+- Azure OpenAI を使う場合は、チームから案内された Azure のエンドポイントや認証情報を入力します。`AZURE_OPENAI_ENDPOINT` を設定すると、アプリは自動的に Azure を使います。
 
 どの値を入力すべきかわからない場合は、アプリのセットアップ担当者に確認してください。
 

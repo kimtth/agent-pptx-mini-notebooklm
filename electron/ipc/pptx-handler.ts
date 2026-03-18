@@ -5,6 +5,7 @@ import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { ThemeTokens } from '../../src/domain/entities/palette'
+import type { TemplateMeta } from '../../src/domain/entities/slide-work'
 import { DEFAULT_THEME_C } from '../../src/domain/theme/default-theme'
 import { ensurePythonModule, pythonSetupHint, resolvePythonExecutable } from './python-runtime.ts'
 import { readWorkspaceDir, resolveBundledPath } from './workspace-utils.ts'
@@ -89,8 +90,17 @@ function isLikelyPythonPptxCode(code: string): boolean {
   return /from\s+pptx\s+import|import\s+pptx|Presentation\(|python-pptx|def\s+build_presentation\s*\(/i.test(code)
 }
 
+function sanitizeWindowsFilenameStem(value: string, fallback: string): string {
+  const cleaned = (value || fallback)
+    .replace(/[\u0000-\u001f<>:"/\\|?*]/g, '-')
+    .trim()
+    .replace(/[. ]+$/g, '')
+
+  return cleaned.length > 0 ? cleaned : fallback
+}
+
 async function savePresentationFile(filePath: string, title: string, win: BrowserWindow | null) {
-  const safeTitle = (title || 'presentation').replace(/[^\w\s\-]/g, '_')
+  const safeTitle = sanitizeWindowsFilenameStem(title, 'presentation')
   const dialogOptions = {
     title: 'Save Presentation',
     defaultPath: `${safeTitle}.pptx`,
@@ -309,7 +319,7 @@ export async function executeGeneratedPythonCodeToFile(
   theme: ThemeTokens | null,
   title: string,
   outputPath: string,
-  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string },
+  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null },
 ): Promise<void> {
   const workDir = path.dirname(outputPath)
   const sourcePath = path.join(workDir, 'generated-source.py')
@@ -348,6 +358,14 @@ export async function executeGeneratedPythonCodeToFile(
     ? await fs.readFile(slideAssetsPath, 'utf-8').catch(() => '')
     : ''
 
+  // Auto-detect custom template from workspace if not explicitly provided
+  let templatePath = opts?.templatePath
+  if (!templatePath) {
+    const candidate = path.join(workspaceDir, 'template', 'template.pptx')
+    if (existsSync(candidate)) templatePath = candidate
+  }
+  const templateMetaJson = opts?.templateMeta ? JSON.stringify(opts.templateMeta) : ''
+
   const args = [runnerScriptPath, sourcePath, outputPath]
   if (opts?.renderDir) {
     args.push('--render-dir', opts.renderDir)
@@ -373,6 +391,8 @@ export async function executeGeneratedPythonCodeToFile(
             PPTX_ICON_COLLECTION: opts?.iconCollection ?? 'all',
             ...(opts?.renderDir ? { PPTX_SKIP_COM_LAYOUT_FIX: '1' } : {}),
             ...(slideAssetsJson.trim() ? { PPTX_SLIDE_ASSETS_JSON: slideAssetsJson } : {}),
+            ...(templatePath ? { PPTX_TEMPLATE_PATH: templatePath } : {}),
+            ...(templateMetaJson ? { PPTX_TEMPLATE_META_JSON: templateMetaJson } : {}),
             WORKSPACE_DIR: workspaceDir,
             PPTX_LAYOUT_SPECS_JSON: layoutSpecsJson,
           },
@@ -452,7 +472,7 @@ async function renderPngFromPptx(pptxPath: string, renderDir: string): Promise<v
 }
 
 export function registerPptxHandlers(): void {
-  ipcMain.handle('pptx:generate', async (_event, code: string, themeTokens: ThemeTokens | null, title: string, iconCollection?: string) => {
+  ipcMain.handle('pptx:generate', async (_event, code: string, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, templateMeta?: TemplateMeta | null) => {
     try {
       const win = BrowserWindow.fromWebContents(_event.sender)
       if (!code || typeof code !== 'string' || code.trim().length === 0) {
@@ -468,7 +488,7 @@ export function registerPptxHandlers(): void {
       const outputPath = path.join(previewRoot, 'presentation-preview.pptx')
 
       try {
-        await executeGeneratedPythonCodeToFile(code, themeTokens, title, outputPath, { iconCollection })
+        await executeGeneratedPythonCodeToFile(code, themeTokens, title, outputPath, { iconCollection, templateMeta })
         return await savePresentationFile(outputPath, title, win)
       } catch (err) {
         // Keep workDir for debugging — generated-source.py + error context
@@ -510,7 +530,7 @@ export function registerPptxHandlers(): void {
     }
   })
 
-  ipcMain.handle('pptx:renderPreview', async (_event, code: string, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[]) => {
+  ipcMain.handle('pptx:renderPreview', async (_event, code: string, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], templateMeta?: TemplateMeta | null) => {
     try {
       if (!code || typeof code !== 'string' || code.trim().length === 0) {
         return { success: false, error: 'code must not be empty' }
@@ -535,7 +555,7 @@ export function registerPptxHandlers(): void {
         await removeStaleTimestampedPptx(previewRoot, 'presentation-preview.pptx')
         await removePreviewImages(renderDir)
         await fs.mkdir(previewRoot, { recursive: true })
-        await executeGeneratedPythonCodeToFile(code, themeTokens, title, outputPath, { renderDir, iconCollection })
+        await executeGeneratedPythonCodeToFile(code, themeTokens, title, outputPath, { renderDir, iconCollection, templateMeta })
 
         // Find actual PPTX (may have a timestamped name if the original was locked)
         let actualPptx: string | null = null
@@ -575,6 +595,78 @@ export function registerPptxHandlers(): void {
 
   ipcMain.handle('pptx:computeLayout', async (_event, slidesJson: string) => {
     return computeLayoutSpecs(slidesJson)
+  })
+
+  ipcMain.handle('pptx:importTemplate', async (_event) => {
+    try {
+      const win = BrowserWindow.getFocusedWindow()
+      const dialogOptions = {
+        title: 'Select PPTX Template',
+        filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
+        properties: ['openFile' as const],
+      }
+      const { filePaths, canceled } = win
+        ? await dialog.showOpenDialog(win, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions)
+
+      if (canceled || filePaths.length === 0) {
+        return { success: false, error: 'Cancelled' }
+      }
+
+      const sourcePath = filePaths[0]
+      const workspaceDir = await readWorkspaceDir()
+      const templateDir = path.join(workspaceDir, 'template')
+      const templatePath = path.join(templateDir, 'template.pptx')
+      const assetsDir = path.join(templateDir, 'assets')
+
+      await fs.mkdir(templateDir, { recursive: true })
+      await fs.copyFile(sourcePath, templatePath)
+
+      // Extract metadata via Python script
+      const python = await resolvePythonExecutable()
+      const extractScript = resolveBundledPath('scripts', 'extract_template_meta.py')
+      const { stdout, stderr } = await execFileAsync(
+        python,
+        [extractScript, templatePath, assetsDir],
+        {
+          windowsHide: true,
+          timeout: 30_000,
+          maxBuffer: 4 * 1024 * 1024,
+          env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        },
+      )
+
+      if (stderr?.trim()) {
+        console.log('[importTemplate]', stderr.trim())
+      }
+
+      const meta = JSON.parse(stdout.trim())
+      if (meta.error) {
+        return { success: false, error: meta.error }
+      }
+
+      // Build warning if dimensions are not 16:9
+      const { widthIn, heightIn } = meta.originalDimensions ?? {}
+      const isWidescreen = Math.abs((widthIn ?? 13.333) - 13.333) < 0.1 && Math.abs((heightIn ?? 7.5) - 7.5) < 0.1
+      const warning = isWidescreen
+        ? undefined
+        : `Template dimensions (${widthIn}\" \u00D7 ${heightIn}\") have been adjusted to 16:9 widescreen (13.333\" \u00D7 7.5\") for layout compatibility.`
+
+      return { success: true, templatePath, meta, warning }
+    } catch (err) {
+      return { success: false, error: formatExecutionFailure(err) }
+    }
+  })
+
+  ipcMain.handle('pptx:removeTemplate', async () => {
+    try {
+      const workspaceDir = await readWorkspaceDir()
+      const templateDir = path.join(workspaceDir, 'template')
+      await fs.rm(templateDir, { recursive: true, force: true }).catch(() => {})
+      return { success: true }
+    } catch {
+      return { success: true } // Best-effort cleanup
+    }
   })
 
 }

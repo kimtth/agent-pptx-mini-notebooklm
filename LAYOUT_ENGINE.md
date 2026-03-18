@@ -2,7 +2,12 @@
 
 ## Architecture Overview
 
-The layout engine is a three-stage pipeline that produces pixel-perfect slide element coordinates:
+The layout system has two distinct phases:
+
+1. **Pre-generation layout computation** — compute `LayoutSpec` coordinates before the LLM-generated `python-pptx` code runs.
+2. **Post-generation processing** — repair and validate the generated PPTX after it is written.
+
+The pre-generation layout pipeline is a three-stage process that produces pixel-perfect slide element coordinates:
 
 ```
 ┌─────────────────┐     ┌─────────────────────┐     ┌──────────────────┐
@@ -21,6 +26,8 @@ The output `LayoutSpec` provides `RectSpec(x, y, w, h)` for every element zone (
 The workspace keeps both sides of this contract in `previews/`: `layout-input.json` stores the storyboard-derived `SlideContent[]` input, and `layout-specs.json` stores the computed `LayoutSpec[]` output.
 
 When the hybrid engine is unavailable or precomputation fails, the runtime raises a `RuntimeError`. Generated code must always use `PRECOMPUTED_LAYOUT_SPECS`.
+
+After the PPTX is generated, the runner performs a separate post-generation phase: optional COM overflow repair, contrast repair, validation, and optional preview image rendering.
 
 ---
 
@@ -253,6 +260,7 @@ def estimate_text_height_in(text, width_in, font_size_pt, line_height=1.22):
 The validator then adds a small extra pad for real slide conditions:
 
 - `+0.08"` when the text appears to be bulleted
+- text-frame top/bottom margins from the shape itself
 - `+0.04"` as a general text-frame safety margin
 
 | Height Ratio (required / available) | Severity | Meaning |
@@ -340,6 +348,8 @@ Not every layout measures text the same way.
 
 This distinction matters because measuring a whole bullet list at full slide width systematically underestimates height for narrow card columns or timeline labels.
 
+One small exception exists outside the COM path: chip text uses the shared `estimate_text_height_in()` heuristic with a tighter `line_height=1.12` when computing chip-band height.
+
 ---
 
 ## JSON Contract Between Processes
@@ -385,7 +395,7 @@ The workspace also stores `slide-assets.json` beside those files. That artifact 
 
 ---
 
-## Validation Pipeline Integration
+## Post-Generation Processing
 
 ```
 Generated python-pptx code
@@ -397,7 +407,11 @@ Generated python-pptx code
   validate_and_fix_output(output_path)
         │
     ├── COM layout fix (normal PPTX export path)
-    │     Resize overflow-prone shapes when PowerPoint COM is available
+    │     Measure overflow and repair text-bearing shapes when PowerPoint COM is available
+    │     Runs in up to 2 bounded passes, becoming slightly more aggressive on the second pass
+    │
+    ├── Auto-size fallback (when COM is unavailable)
+    │     Enable `TEXT_TO_FIT_SHAPE` on panel/card shapes only
     │
     ├── Contrast fix
     │     Repair low-contrast text/fill combinations on glass panels/cards
@@ -408,16 +422,22 @@ Generated python-pptx code
       │
       ├── INFO/WARNING only → ⚠️ Report (non-blocking)
       │
-      ├── ≤ 2 blocking issues → ⚠️ Tolerated as incomplete layout
+      ├── ≤ 2 blocking issues without text overflow → ⚠️ Tolerated as incomplete layout
       │
-      └── > 2 blocking issues → ❌ Raise runtime error with remediation hints
+      └── > 2 blocking issues → ❌ Raise runtime error
 ```
 
-The validator runs automatically after every PPTX generation, but it is not the first post-processing step. `pptx-python-runner.py` currently performs COM-based overflow repair first when available, falls back to enabling auto-size flags when COM is unavailable, then applies a contrast-repair pass, and only then runs `validate_presentation()`.
+    `pptx-python-runner.py` performs post-generation steps in this order:
+
+    1. COM-based overflow repair when available
+    2. Fallback auto-size flags when COM repair is unavailable
+    3. Contrast repair
+    4. Layout validation
+    5. Preview image rendering when requested
 
 There is one preview-specific exception: when the Electron app is generating local preview PNGs, it sets `PPTX_SKIP_COM_LAYOUT_FIX=1`. In that path the runner skips the COM overflow-repair phase and keeps only contrast repair + validation before `render_preview_images()`. This avoids opening PowerPoint twice during preview generation while preserving the normal export path's stricter repair behavior.
 
-If validation still finds more than two blocking issues, the runner raises a `RuntimeError` with remediation hints. In the Electron app, those hints may point the agent toward helper tools such as `patch_layout_infrastructure` and `rerun_pptx`, but those tools are app-level recovery tooling rather than part of the layout engine's public API.
+    If validation still finds blocking issues that exceed tolerance, or any blocking text-overflow issue, the runner raises a `RuntimeError`.
 
 ---
 

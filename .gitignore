@@ -377,3 +377,4 @@ temp/
 build-log.txt
 /samples/test
 /out
+.vscode

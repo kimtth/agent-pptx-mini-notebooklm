@@ -52,14 +52,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   pptx: {
-    generate: (code: string, themeTokens: unknown, title: string, iconCollection?: string) =>
-      ipcRenderer.invoke('pptx:generate', code, themeTokens, title, iconCollection),
-    renderPreview: (code: string, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[]) =>
-      ipcRenderer.invoke('pptx:renderPreview', code, themeTokens, title, iconCollection, slides),
+    generate: (code: string, themeTokens: unknown, title: string, iconCollection?: string, templateMeta?: unknown) =>
+      ipcRenderer.invoke('pptx:generate', code, themeTokens, title, iconCollection, templateMeta),
+    renderPreview: (code: string, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[], templateMeta?: unknown) =>
+      ipcRenderer.invoke('pptx:renderPreview', code, themeTokens, title, iconCollection, slides, templateMeta),
     readExistingPreviews: () =>
       ipcRenderer.invoke('pptx:readExistingPreviews'),
     computeLayout: (slidesJson: string) =>
       ipcRenderer.invoke('pptx:computeLayout', slidesJson),
+    importTemplate: () =>
+      ipcRenderer.invoke('pptx:importTemplate'),
+    removeTemplate: () =>
+      ipcRenderer.invoke('pptx:removeTemplate'),
   },
 
   fs: {
@@ -74,6 +78,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   images: {
     searchForSlide: (slide: unknown) => ipcRenderer.invoke('images:searchForSlide', slide),
     downloadForSlide: (slide: unknown, candidate: unknown) => ipcRenderer.invoke('images:downloadForSlide', slide, candidate),
+    pickLocalFilesForSlide: (slide: unknown) => ipcRenderer.invoke('images:pickLocalFilesForSlide', slide),
     resolveForSlides: (slides: unknown[]) => ipcRenderer.invoke('images:resolveForSlides', slides),
   },
 

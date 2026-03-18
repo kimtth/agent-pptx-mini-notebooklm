@@ -72,6 +72,19 @@ export interface SlideItem {
   accent: 'blue' | 'green' | 'purple' | 'teal' | 'orange';
 }
 
+export interface TemplateMeta {
+  themeColors: {
+    dk1: string; lt1: string; dk2: string; lt2: string;
+    accent1: string; accent2: string; accent3: string;
+    accent4: string; accent5: string; accent6: string;
+    hlink: string; folHlink: string;
+  };
+  backgroundImages: string[];
+  blankLayoutIndex: number;
+  fonts: { major: string; minor: string };
+  originalDimensions: { widthIn: number; heightIn: number };
+}
+
 export type SlidePhase = 'empty' | 'planning' | 'story' | 'generating' | 'ready';
 
 export interface SlideWork {
@@ -81,11 +94,14 @@ export interface SlideWork {
   designBrief: DesignBrief | null;
   designStyle: DesignStyle | null;
   framework: FrameworkType | null;
+  templatePath: string | null;
+  templateMeta: TemplateMeta | null;
   slides: SlideItem[];
   pptxCode: string | null;
   pptxBuildError: string | null;
   thinking: string | null;
   isStreaming: boolean;
+  isPptxBusy: boolean;
 }
 
 /** Scenario payload emitted by set_scenario tool */

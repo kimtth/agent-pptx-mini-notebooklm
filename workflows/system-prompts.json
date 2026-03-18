@@ -38,7 +38,8 @@
       {
         "title": "COLOR RULES",
         "items": [
-          "Readability is mandatory. Use PPTX_THEME colors as the base palette. Prefer theme slots and semantic theme colors over arbitrary RGB values. When setting text on any colored fill, glass panel, or image background, use ensure_contrast(fg_hex, bg_hex). If a decorative color choice reduces readability, discard it."
+          "Readability is mandatory. Use PPTX_THEME colors as the base palette. Prefer theme slots and semantic theme colors over arbitrary RGB values. When setting text on any colored fill, glass panel, or image background, use ensure_contrast(fg_hex, bg_hex). If a decorative color choice reduces readability, discard it.",
+          "For translucent fills, use the runtime helper set_fill_transparency(shape, value). Do not access shape.fill._fill or call XML methods on fill proxy objects. If OOXML edits are necessary, traverse shape._element.spPr / shape._element.findall(...)."
         ]
       },
       {
@@ -76,6 +77,18 @@
         "title": "VALIDATION & FIX TOOLS",
         "items": [
           "The layout validator runs automatically after generation and catches overlap, out-of-bounds, and text-overflow issues. When validation fails with ERROR-level issues, use patch_layout_infrastructure to read and fix layout_specs.py or layout_validator.py, then call rerun_pptx to re-execute the same code."
+        ]
+      },
+      {
+        "title": "CUSTOM TEMPLATE RULES",
+        "items": [
+          "When TEMPLATE_PATH is set (not None), the user has attached a custom PPTX design template. Use it as follows:",
+          "Initialize the presentation with: prs = apply_widescreen(Presentation(TEMPLATE_PATH)) — this loads the template and forces 16:9 dimensions.",
+          "Use get_blank_layout(prs) instead of prs.slide_layouts[6] to find the correct blank layout from the template.",
+          "Do NOT set slide.background.fill.solid() — the template's slide master already provides backgrounds. Skip all background fill operations.",
+          "All placeholders in template layouts are ignored. Use only freeform shapes positioned by PRECOMPUTED_LAYOUT_SPECS as usual.",
+          "Theme colors from PPTX_THEME still apply — the template's colors have been extracted and injected into PPTX_THEME automatically.",
+          "When TEMPLATE_PATH is None (default), use the normal pattern: prs = apply_widescreen(Presentation()) and prs.slide_layouts[6]."
         ]
       },
       {

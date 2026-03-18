@@ -13,7 +13,6 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "dist": "pnpm setup:python-env && electron-vite build && pnpm exec electron-builder",
-    "dist:dir": "pnpm setup:python-env && electron-vite build && pnpm exec electron-builder --dir",
     "dist:skip-venv": "pnpm verify:python-env && electron-vite build && pnpm exec electron-builder",
     "setup:python-env": "node scripts/setup-python.mjs",
     "verify:python-env": "node scripts/verify-python-env.mjs",

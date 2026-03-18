@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, dialog } from 'electron'
 import { execFile } from 'child_process'
 import fs from 'fs/promises'
 import path from 'path'
@@ -126,11 +126,47 @@ async function ensureImagesDir(): Promise<string> {
   return imagesDir
 }
 
-async function searchGoogleImages(query: string): Promise<ImageSearchCandidate[]> {
+async function copyLocalFilesForSlide(slide: ImageSearchRequest): Promise<ResolvedSlideImage[]> {
+  const { filePaths, canceled } = await dialog.showOpenDialog({
+    title: `Choose images for slide ${slide.number}`,
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif', 'bmp'] },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  })
+
+  if (canceled || filePaths.length === 0) return []
+
+  const imagesDir = await ensureImagesDir()
+  const query = deriveQuery(slide) || null
+  const copied: ResolvedSlideImage[] = []
+
+  for (const sourcePath of filePaths) {
+    const ext = path.extname(sourcePath) || '.jpg'
+    const baseName = `${String(slide.number).padStart(2, '0')}-${slugify(slide.title)}-${hashValue(sourcePath)}${ext.toLowerCase()}`
+    const destination = path.join(imagesDir, baseName)
+    await fs.copyFile(sourcePath, destination)
+    copied.push({
+      id: candidateId('local', sourcePath),
+      number: slide.number,
+      imageQuery: query,
+      imageUrl: null,
+      imagePath: destination,
+      imageAttribution: path.basename(sourcePath),
+      sourcePageUrl: null,
+      thumbnailUrl: null,
+    })
+  }
+
+  return copied
+}
+
+async function performImageQuery(query: string): Promise<ImageSearchCandidate[]> {
   const python = await resolvePythonExecutable()
   await ensurePythonModule(python, 'icrawler', `Install the Python dependencies first. ${pythonSetupHint()}`)
 
-  const scriptPath = resolveBundledPath('scripts', 'google_image_search_icrawler.py')
+  const scriptPath = resolveBundledPath('scripts', 'google_image_search.py')
   const queries = deriveQueries({ number: 0, title: '', keyMessage: '', bullets: [], imageQuery: query, imageQueries: [query] })
   const args = [scriptPath]
   for (const item of queries) {
@@ -240,7 +276,7 @@ async function searchImageCandidatesForSlide(slide: ImageSearchRequest): Promise
 
   return {
     query,
-    candidates: dedupeCandidates((await Promise.all(queries.map((item) => searchGoogleImages(item)))).flat()).slice(0, 32),
+    candidates: dedupeCandidates((await Promise.all(queries.map((item) => performImageQuery(item)))).flat()).slice(0, 32),
   }
 }
 
@@ -321,6 +357,10 @@ export function registerImageHandlers(): void {
 
   ipcMain.handle('images:downloadForSlide', async (_event, slide: ImageSearchRequest, candidate: ImageSearchCandidate): Promise<ResolvedSlideImage> => {
     return downloadCandidateForSlide(slide, candidate)
+  })
+
+  ipcMain.handle('images:pickLocalFilesForSlide', async (_event, slide: ImageSearchRequest): Promise<ResolvedSlideImage[]> => {
+    return copyLocalFilesForSlide(slide)
   })
 
   ipcMain.handle('images:resolveForSlides', async (_event, slides: ImageSearchRequest[]): Promise<ResolvedSlideImage[]> => {

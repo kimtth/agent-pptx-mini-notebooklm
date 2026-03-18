@@ -30,6 +30,8 @@ export default function App() {
       useChatStore.getState().addMessage(
         createAssistantMessage(`🛑 Gave up after ${MAX_AUTO_RETRIES} automatic retries. Please review the error and try again manually.`),
       )
+      useSlidesStore.getState().setStreaming(false)
+      useSlidesStore.getState().setPptxBusy(false)
       return
     }
     autoRetryCount.current += 1
@@ -43,6 +45,7 @@ export default function App() {
     const userMsg = createUserMessage(retryPrompt)
     useChatStore.getState().addMessage(userMsg)
     useSlidesStore.getState().setStreaming(true)
+    useSlidesStore.getState().setPptxBusy(true)
 
     const { work } = useSlidesStore.getState()
     const { tokens, selectedIconCollection } = usePaletteStore.getState()
@@ -56,6 +59,7 @@ export default function App() {
       designBrief: work.designBrief,
       designStyle: work.designStyle,
       framework: work.framework,
+      templateMeta: work.templateMeta,
       pptxBuildError: errMsg,
       theme: tokens,
       workflow,
@@ -89,7 +93,6 @@ export default function App() {
         useChatStore.getState().flushAssistantMessage()
         const lastMessage = useChatStore.getState().messages.at(-1)
         const pendingContent = lastMessage?.role === 'assistant' ? lastMessage.content : ''
-        useSlidesStore.getState().setStreaming(false)
 
         requestAnimationFrame(() => {
           const hasCodeBlock = /```(?:python|py)?\s*[\s\S]*?```/i.test(pendingContent)
@@ -101,11 +104,12 @@ export default function App() {
 
             // Auto-execute the generated code to produce PPTX + preview PNGs in workspace
             const { tokens: paletteTokens, selectedIconCollection } = usePaletteStore.getState()
-            const pptxTitle = useSlidesStore.getState().work.title || 'presentation'
+            const currentWork = useSlidesStore.getState().work
+            const pptxTitle = currentWork.title || 'presentation'
             useChatStore.getState().addMessage(
               createAssistantMessage('✅ PowerPoint code is ready. Generating the deck and preview images…'),
             )
-            window.electronAPI.pptx.renderPreview(code, paletteTokens, pptxTitle, selectedIconCollection, useSlidesStore.getState().work.slides)
+            window.electronAPI.pptx.renderPreview(code, paletteTokens, pptxTitle, selectedIconCollection, currentWork.slides, currentWork.templateMeta)
               .then((result) => {
                 if (result.success) {
                   autoRetryCount.current = 0
@@ -114,6 +118,8 @@ export default function App() {
                   useChatStore.getState().addMessage(
                     createAssistantMessage(`✅ Deck generated! Preview images are ready.${warningNote}`),
                   )
+                  useSlidesStore.getState().setStreaming(false)
+                  useSlidesStore.getState().setPptxBusy(false)
                 } else {
                   const errMsg = result.error ?? result.warning ?? 'Unknown error'
                   useSlidesStore.getState().setPptxBuildError(errMsg)
@@ -132,6 +138,8 @@ export default function App() {
                 retryWithBuildError(msg)
               })
           } else {
+            useSlidesStore.getState().setStreaming(false)
+            useSlidesStore.getState().setPptxBusy(false)
             const message = hasCodeBlock
               ? 'The model returned code, but it did not match a supported python-pptx script.'
               : null
@@ -146,6 +154,7 @@ export default function App() {
         useChatStore.getState().appendContent(`\n\n⚠️ ${msg}`)
         useChatStore.getState().flushAssistantMessage()
         useSlidesStore.getState().setStreaming(false)
+        useSlidesStore.getState().setPptxBusy(false)
       }),
     ]
 

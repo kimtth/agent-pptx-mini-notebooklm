@@ -29,6 +29,7 @@ export const DESIGN_STYLE_OPTIONS = [
   { value: 'Maximalist Collage', label: 'Maximalist Collage', mood: 'Energetic · Layered', bestFor: 'Advertising, fashion' },
   { value: 'SciFi Holographic Data', label: 'SciFi Holographic Data', mood: 'Hologram · HUD', bestFor: 'AI, quantum, defense' },
   { value: 'Risograph Print', label: 'Risograph Print', mood: 'CMYK · Indie', bestFor: 'Publishing, art, music' },
+  { value: 'Custom Template', label: 'Custom Template', mood: 'Your Brand', bestFor: 'Corporate templates' },
 ] as const
 
 export type DesignStyle = (typeof DESIGN_STYLE_OPTIONS)[number]['value']

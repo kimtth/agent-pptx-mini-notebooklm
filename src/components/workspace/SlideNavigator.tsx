@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSlidesStore } from '../../stores/slides-store'
+import { usePaletteStore } from '../../stores/palette-store'
 import { DESIGN_STYLE_OPTIONS, getDesignStyleMeta } from '../../domain/design-styles'
 import { FRAMEWORK_OPTIONS, getFrameworkMeta } from '../../domain/frameworks'
 import type { SlideItem } from '../../domain/entities/slide-work'
@@ -17,10 +18,12 @@ const LAYOUT_BADGE: Record<string, string> = {
 }
 
 export function SlideNavigator() {
-  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework } = useSlidesStore()
+  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework, setTemplatePath, setTemplateMeta } = useSlidesStore()
   const slides = work.slides
   const selectedFramework = getFrameworkMeta(work.framework)
   const selectedStyle = getDesignStyleMeta(work.designStyle)
+  const isCustomTemplate = work.designStyle === 'Custom Template'
+  const [templateLoading, setTemplateLoading] = useState(false)
 
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--surface)' }}>
@@ -99,6 +102,69 @@ export function SlideNavigator() {
               ? `${selectedStyle.mood}. Best for ${selectedStyle.bestFor}.`
               : 'Choose one of the available brand styles to guide layout, typography, and visual treatment before generating slides.'}
           </p>
+          {isCustomTemplate && (
+            <div className="flex flex-col gap-1.5 mt-1 p-2 border" style={{ borderColor: 'var(--panel-border)', background: 'var(--surface-hover)' }}>
+              {work.templatePath ? (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                      {work.templatePath.split(/[\\/]/).pop()}
+                    </span>
+                    <button
+                      onClick={async () => {
+                        await window.electronAPI.pptx.removeTemplate()
+                        setTemplatePath(null)
+                        setTemplateMeta(null)
+                      }}
+                      className="flex-none text-[10px] px-2 py-0.5 border transition-colors hover:bg-[var(--surface)]"
+                      style={{ borderColor: 'var(--panel-border)', color: 'var(--text-secondary)' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                    {work.templateMeta
+                      ? 'Theme colors and backgrounds have been extracted. The palette is locked to this template\u2019s color scheme.'
+                      : 'Template attached. Extracting metadata\u2026'}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <button
+                    disabled={templateLoading}
+                    onClick={async () => {
+                      setTemplateLoading(true)
+                      try {
+                        const result = await window.electronAPI.pptx.importTemplate()
+                        if (result.success && result.templatePath) {
+                          setTemplatePath(result.templatePath)
+                          if (result.meta) {
+                            setTemplateMeta(result.meta)
+                            // Auto-populate palette from template's theme colors
+                            const { setSlots, setColors, setThemeName, commitTokens } = usePaletteStore.getState()
+                            setSlots(result.meta.themeColors)
+                            const slotEntries = Object.entries(result.meta.themeColors)
+                            setColors(slotEntries.map(([name, hex]) => ({ name, hex })))
+                            setThemeName('Custom Template')
+                            commitTokens()
+                          }
+                        }
+                      } finally {
+                        setTemplateLoading(false)
+                      }
+                    }}
+                    className="h-8 px-3 text-xs font-semibold transition-colors"
+                    style={{ background: 'var(--accent)', color: '#fff', opacity: templateLoading ? 0.6 : 1 }}
+                  >
+                    {templateLoading ? 'Importing\u2026' : 'Attach PPTX Template'}
+                  </button>
+                  <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                    The attached PPTX will be used as a design template. All placeholders will be ignored — only the blank layout, theme colors, and background images will be used.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -227,7 +293,7 @@ function SlideListItem({
           <p className="text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
             {slide.selectedImages.length > 0
               ? `${slide.selectedImages.length} image${slide.selectedImages.length === 1 ? '' : 's'} selected. Files are stored under workspace/images.`
-              : 'Search Google Images with one or more keywords, or paste direct image URLs, then choose one or more images for this slide.'}
+              : 'Search for images, paste direct image URLs, or choose local image files, then select one or more images for this slide.'}
           </p>
           {slide.selectedImages.length > 0 ? (
             <div className="flex flex-wrap gap-2">

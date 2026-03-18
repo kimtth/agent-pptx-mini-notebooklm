@@ -11,7 +11,6 @@ const CONFIG_FILE = path.join(app.getPath('userData'), 'settings.json');
 
 export const SETTINGS_KEYS = [
   'GITHUB_TOKEN',
-  'MODEL_PROVIDER',
   'AZURE_OPENAI_ENDPOINT',
   'AZURE_OPENAI_API_KEY',
   'AZURE_TENANT_ID',

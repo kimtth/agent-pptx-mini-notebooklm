@@ -77,7 +77,7 @@ Also available at runtime:
 - `IMAGES_DIR`: workspace images directory (`{WORKSPACE_DIR}/images`)
 - `SLIDE_WIDTH_IN`, `SLIDE_HEIGHT_IN`
 - `Presentation`, `Inches`, `Pt`, `RGBColor`, `PP_ALIGN`, `MSO_ANCHOR`, `MSO_AUTO_SHAPE_TYPE`
-- `rgb_color()`, `apply_widescreen()`, `safe_image_path()`, `safe_add_picture()`
+- `rgb_color()`, `apply_widescreen()`, `safe_image_path()`, `safe_add_picture()`, `ensure_contrast()`, `set_fill_transparency()`
 - `resolve_font(text, base_font)` — returns the correct Noto Sans font for non-Latin text
 - `ensure_noto_fonts(text)` — downloads missing Noto Sans fonts (called automatically at startup)
 
@@ -125,6 +125,12 @@ The design style defines mood, layout technique, and visual structure. The theme
 - If an image sits behind text, add a solid or semi-transparent overlay panel; never place raw text over a busy photo.
 - Body text must be readable at projection distance — avoid anything below 14pt for main content.
 - If a slide looks stylish but forces effort to decode, revise it — choose readability over aesthetics.
+
+### Fill Transparency Safety
+
+- When applying transparency to a shape fill, use `set_fill_transparency(shape, value)`.
+- Do not access `shape.fill._fill` or other private python-pptx fill proxy internals. They are proxy objects, not XML nodes.
+- If direct OOXML access is required, work from `shape._element.spPr` / `shape._element.findall(...)`, not `shape.fill._fill`.
 
 ### Icon Usage (MANDATORY)
 
@@ -349,10 +355,22 @@ tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE  # shrink to fit fixed shape
 from pptx import Presentation
 
 def build_presentation(output_path, theme, title):
-    prs = apply_widescreen(Presentation())
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    slide.background.fill.solid()
-    slide.background.fill.fore_color.rgb = rgb_color(theme.get('BG'), 'FFFFFF')
+    # If a custom template is attached, load it instead of a blank presentation.
+    # apply_widescreen() forces 16:9 dimensions regardless of the template's original size.
+    if TEMPLATE_PATH:
+        prs = apply_widescreen(Presentation(TEMPLATE_PATH))
+        blank = get_blank_layout(prs)
+    else:
+        prs = apply_widescreen(Presentation())
+        blank = prs.slide_layouts[6]
+
+    slide = prs.slides.add_slide(blank)
+
+    # Only set background fill when NOT using a custom template —
+    # template slide masters already provide backgrounds.
+    if not TEMPLATE_PATH:
+        slide.background.fill.solid()
+        slide.background.fill.fore_color.rgb = rgb_color(theme.get('BG'), 'FFFFFF')
 
     # Use PRECOMPUTED_LAYOUT_SPECS for text placement
     spec = PRECOMPUTED_LAYOUT_SPECS[0]
@@ -372,6 +390,16 @@ def build_presentation(output_path, theme, title):
 
     prs.save(output_path)
 ```
+
+### Custom Template Notes
+
+When `TEMPLATE_PATH` is set (not `None`), the user has provided a corporate PPTX as a design template:
+
+- **Initialization**: `prs = apply_widescreen(Presentation(TEMPLATE_PATH))` — loads the template and forces 16:9 dimensions.
+- **Layout selection**: `get_blank_layout(prs)` instead of `prs.slide_layouts[6]` — finds the correct blank layout regardless of template ordering.
+- **Backgrounds**: Do NOT call `slide.background.fill.solid()` — the template's slide master already provides backgrounds.
+- **Placeholders**: All ignored. Use only freeform shapes positioned by `PRECOMPUTED_LAYOUT_SPECS`.
+- **Theme colors**: `PPTX_THEME` is auto-populated from the template's color scheme. Use it as usual.
 
 ## Input Assumptions
 

@@ -5,6 +5,8 @@
  *   manifest.json   — project JSON with relative image paths
  *   images/         — slide images (JPG/PNG/WebP)
  *   previews/       — rendered slide PNGs (if available)
+ *   contents/       — data-source artifacts (.source.md, .summary.md)
+ *   template/       — custom PPTX template + extracted assets
  */
 
 import fs from 'fs/promises';
@@ -32,10 +34,30 @@ interface SlideItem {
   [key: string]: unknown;
 }
 
+interface SourceArtifact {
+  markdownPath: string;
+  summaryPath: string;
+  summaryText: string;
+}
+
+interface DataFile {
+  consumed?: SourceArtifact;
+  [key: string]: unknown;
+}
+
+interface ScrapeResult {
+  consumed?: SourceArtifact;
+  [key: string]: unknown;
+}
+
 interface ProjectData {
   version: number;
   workspaceDir: string;
-  slidesWork: { slides: SlideItem[]; [key: string]: unknown };
+  slidesWork: { slides: SlideItem[]; templatePath?: string | null; [key: string]: unknown };
+  dataSources?: {
+    files: DataFile[];
+    urls: Array<{ url: string; status: string; result?: ScrapeResult }>;
+  };
   [key: string]: unknown;
 }
 
@@ -136,6 +158,8 @@ function rewritePathsToRelative(
   mapping: Map<string, string>,
 ): ProjectData {
   const clone = structuredClone(project) as ProjectData;
+  const wsDir = project.workspaceDir;
+
   // Keep the version from the source project (do not override).
   for (const slide of clone.slidesWork.slides ?? []) {
     if (slide.imagePath && mapping.has(slide.imagePath)) {
@@ -147,6 +171,28 @@ function rewritePathsToRelative(
       }
     }
   }
+
+  // templatePath — absolute → relative
+  if (clone.slidesWork.templatePath && wsDir) {
+    clone.slidesWork.templatePath = path.relative(wsDir, clone.slidesWork.templatePath);
+  }
+
+  // dataSources artifact paths — absolute → relative
+  if (clone.dataSources && wsDir) {
+    for (const f of clone.dataSources.files ?? []) {
+      if (f.consumed) {
+        f.consumed.markdownPath = path.relative(wsDir, f.consumed.markdownPath);
+        f.consumed.summaryPath = path.relative(wsDir, f.consumed.summaryPath);
+      }
+    }
+    for (const u of clone.dataSources.urls ?? []) {
+      if (u.result?.consumed) {
+        u.result.consumed.markdownPath = path.relative(wsDir, u.result.consumed.markdownPath);
+        u.result.consumed.summaryPath = path.relative(wsDir, u.result.consumed.summaryPath);
+      }
+    }
+  }
+
   return clone;
 }
 
@@ -167,7 +213,52 @@ function rewritePathsToAbsolute(
       }
     }
   }
+
+  // templatePath — relative → absolute
+  if (project.slidesWork.templatePath && !path.isAbsolute(project.slidesWork.templatePath)) {
+    project.slidesWork.templatePath = path.join(workspaceDir, project.slidesWork.templatePath);
+  }
+
+  // dataSources artifact paths — relative → absolute
+  if (project.dataSources) {
+    for (const f of project.dataSources.files ?? []) {
+      if (f.consumed) {
+        if (!path.isAbsolute(f.consumed.markdownPath)) f.consumed.markdownPath = path.join(workspaceDir, f.consumed.markdownPath);
+        if (!path.isAbsolute(f.consumed.summaryPath)) f.consumed.summaryPath = path.join(workspaceDir, f.consumed.summaryPath);
+      }
+    }
+    for (const u of project.dataSources.urls ?? []) {
+      if (u.result?.consumed) {
+        if (!path.isAbsolute(u.result.consumed.markdownPath)) u.result.consumed.markdownPath = path.join(workspaceDir, u.result.consumed.markdownPath);
+        if (!path.isAbsolute(u.result.consumed.summaryPath)) u.result.consumed.summaryPath = path.join(workspaceDir, u.result.consumed.summaryPath);
+      }
+    }
+  }
+
   return project;
+}
+
+/** Recursively add all files under `dir` into the archive under `prefix`. */
+async function archiveDirectory(
+  archive: archiver.Archiver,
+  dir: string,
+  prefix: string,
+): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return; // directory does not exist — skip
+  }
+  for (const entry of entries) {
+    const abs = path.join(dir, entry);
+    const stat = await fs.stat(abs);
+    if (stat.isFile()) {
+      archive.file(abs, { name: `${prefix}/${entry}` });
+    } else if (stat.isDirectory()) {
+      await archiveDirectory(archive, abs, `${prefix}/${entry}`);
+    }
+  }
 }
 
 // ── Save ─────────────────────────────────────────────────────────────────────
@@ -220,6 +311,12 @@ export async function saveProjectAsZip(
     } catch {
       // No previews directory — skip
     }
+
+    // 4. contents/ — data-source artifacts
+    await archiveDirectory(archive, path.join(workspaceDir, 'contents'), 'contents');
+
+    // 5. template/ — custom PPTX template + assets
+    await archiveDirectory(archive, path.join(workspaceDir, 'template'), 'template');
   }
 
   await archive.finalize();
@@ -266,7 +363,16 @@ export async function loadProjectFromZip(
     }
   }
 
-  // 4. Rewrite relative paths back to absolute
+  // 4. Extract contents/ and template/ (preserving subdirectory structure)
+  for (const entry of zip.getEntries()) {
+    if ((entry.entryName.startsWith('contents/') || entry.entryName.startsWith('template/')) && !entry.isDirectory) {
+      const targetPath = path.join(workspaceDir, entry.entryName);
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.writeFile(targetPath, entry.getData());
+    }
+  }
+
+  // 5. Rewrite relative paths back to absolute
   project.workspaceDir = workspaceDir;
   rewritePathsToAbsolute(project, workspaceDir);
 

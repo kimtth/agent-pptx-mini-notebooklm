@@ -33,15 +33,14 @@ export async function getSessionOptions(opts?: {
   streaming?: boolean;
   model?: string;
 }): Promise<Partial<SessionConfig>> {
-  const provider = process.env.MODEL_PROVIDER?.trim().toLowerCase();
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT?.trim();
   const modelName = opts?.model ?? process.env.MODEL_NAME;
   const streaming = opts?.streaming ?? false;
   const reasoningEffort = resolveReasoningEffort();
   const useAzureOpenAI = Boolean(endpoint);
-  const useGitHubModels = !useAzureOpenAI && (!provider || provider === 'openai' || provider === 'github');
+  const useGitHubModels = !useAzureOpenAI;
 
-  if (!provider && !modelName && !useAzureOpenAI) return { streaming, reasoningEffort };
+  if (!modelName && !useAzureOpenAI) return { streaming, reasoningEffort };
   if (useGitHubModels) {
     return { ...(modelName ? { model: modelName } : {}), streaming, reasoningEffort };
   }
@@ -77,7 +76,7 @@ export async function getSessionOptions(opts?: {
     };
   }
 
-  throw new Error(`Unknown MODEL_PROVIDER: ${provider}`);
+  throw new Error('Invalid model session configuration.');
 }
 
 export function resolveWorkflowInstructionsDir(): string {

@@ -21,6 +21,7 @@ import type {
   SlideItem,
   DesignBrief,
   FrameworkType,
+  TemplateMeta,
   ScenarioPayload,
   SlideUpdatePayload,
 } from '../../src/domain/entities/slide-work';
@@ -50,6 +51,7 @@ interface WorkspaceContext {
   designBrief: DesignBrief | null;
   designStyle: import('../../src/domain/entities/slide-work').DesignStyle | null;
   framework: FrameworkType | null;
+  templateMeta: TemplateMeta | null;
   pptxBuildError: string | null;
   theme: ThemeTokens | null;
   workflow: WorkflowConfig | null;
@@ -286,6 +288,19 @@ async function buildPrompt(
     if (workspace.title) parts.push(`Presentation: "${workspace.title}"`);
     if (workspace.framework) parts.push(`Framework: ${workspace.framework}`);
     if (workspace.designStyle) parts.push(`Design style: ${workspace.designStyle}`);
+    // Signal to the AI when a custom template is active
+    const wsTemplatePath = path.join(workspaceAbsPath, 'template', 'template.pptx');
+    if (workspace.designStyle === 'Custom Template' && fsExistsSync(wsTemplatePath)) {
+      parts.push('Custom PPTX template: ACTIVE — use TEMPLATE_PATH variable. See CUSTOM TEMPLATE RULES in system prompt.');
+      if (workspace.templateMeta) {
+        const bgImages = workspace.templateMeta.backgroundImages ?? [];
+        parts.push(`Template metadata: blankLayoutIndex=${workspace.templateMeta.blankLayoutIndex}, fonts.major=${workspace.templateMeta.fonts.major}, fonts.minor=${workspace.templateMeta.fonts.minor}, extractedBackgroundImages=${bgImages.length}`);
+        parts.push('Template runtime helpers available in Python: TEMPLATE_META, TEMPLATE_BACKGROUND_IMAGES, TEMPLATE_BLANK_LAYOUT_INDEX. Use the predefined font behavior unless explicitly required otherwise.');
+        if (bgImages.length > 0) {
+          parts.push(`Template background assets: ${bgImages.slice(0, 4).join(' | ')}`);
+        }
+      }
+    }
     if (workspace.slides.length > 0) {
       parts.push(`Slides: ${workspace.slides.length}`);
       for (const s of workspace.slides) {
@@ -320,6 +335,9 @@ async function buildPrompt(
   if (workspace.pptxBuildError) {
     parts.push('## Last PPTX Build Failure\n');
     parts.push('The previous generated python-pptx code failed to run. Apply a MINIMAL, targeted fix — only change the lines that caused the error. Output the full file but keep all working code unchanged. Do NOT redesign or regenerate slides that were not part of the failure.');
+    if (/shape\.fill\._fill|_SolidFill|AttributeError:.*find\(/i.test(workspace.pptxBuildError)) {
+      parts.push('For fill transparency or alpha fixes, do not use shape.fill._fill. Use set_fill_transparency(shape, value), or if you must edit OOXML directly, traverse shape._element.spPr instead.');
+    }
     parts.push(workspace.pptxBuildError);
 
     // Include the failing generated-source.py so the LLM can make a surgical fix

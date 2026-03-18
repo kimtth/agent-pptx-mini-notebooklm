@@ -37,6 +37,7 @@ Use the approved slide content, icon set, theme, colors, and slide images to gen
 - The layout validator runs automatically after code generation — it replaces manual review.
 - Use attached slide images as grounded design inputs.
 - Preserve theme consistency and business clarity across the full deck.
+- When a design uses translucent fills, use the runtime helper `set_fill_transparency(shape, value)` or manipulate OOXML via `shape._element.spPr`. Never call XML methods on `shape.fill._fill`.
 - Output only the final python-pptx implementation for this workflow.
 - Do not output slide listings, framework brainstorming, or narrative status updates.
 - Use runtime variables such as `OUTPUT_PATH`, `PPTX_TITLE`, and `PPTX_THEME` correctly.

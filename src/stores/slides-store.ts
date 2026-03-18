@@ -13,6 +13,7 @@ import type {
   SlideUpdatePayload,
   FrameworkType,
   DesignBrief,
+  TemplateMeta,
 } from '../domain/entities/slide-work';
 
 function normalizeImageQueries(imageQuery: string | null | undefined, imageQueries?: string[]): string[] {
@@ -71,7 +72,10 @@ interface SlidesStore {
   removeSlideImage(number: number, imageId: string): void;
   setDesignStyle(style: DesignStyle | null): void;
   setFramework(fw: FrameworkType): void;
+  setTemplatePath(path: string | null): void;
+  setTemplateMeta(meta: TemplateMeta | null): void;
   setStreaming(v: boolean): void;
+  setPptxBusy(v: boolean): void;
   setThinking(delta: string): void;
   appendChatContent(delta: string): void;
   setPptxCode(code: string): void;
@@ -89,11 +93,14 @@ const initial: SlideWork = {
   designBrief: null,
   designStyle: null,
   framework: null,
+  templatePath: null,
+  templateMeta: null,
   slides: [],
   pptxCode: null,
   pptxBuildError: null,
   thinking: null,
   isStreaming: false,
+  isPptxBusy: false,
 };
 
 export const useSlidesStore = create<SlidesStore>()(persist(
@@ -221,6 +228,8 @@ export const useSlidesStore = create<SlidesStore>()(persist(
         designBrief: state.work.designBrief
           ? { ...state.work.designBrief, visualStyle: style ?? state.work.designBrief.visualStyle }
           : state.work.designBrief,
+        // Clear template when switching away from Custom Template
+        ...(style !== 'Custom Template' ? { templatePath: null, templateMeta: null } : {}),
       },
     }));
   },
@@ -231,8 +240,24 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     }));
   },
 
+  setTemplatePath(templatePath) {
+    set((state) => ({
+      work: { ...state.work, templatePath },
+    }));
+  },
+
+  setTemplateMeta(templateMeta) {
+    set((state) => ({
+      work: { ...state.work, templateMeta },
+    }));
+  },
+
   setStreaming(v) {
     set((state) => ({ work: { ...state.work, isStreaming: v } }));
+  },
+
+  setPptxBusy(v) {
+    set((state) => ({ work: { ...state.work, isPptxBusy: v } }));
   },
 
   setThinking(delta) {
@@ -292,7 +317,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     name: 'pptx-slides-work',
     storage: createJSONStorage(() => sessionStorage),
     partialize: (state) => ({
-      work: { ...state.work, isStreaming: false, thinking: null },
+      work: { ...state.work, isStreaming: false, isPptxBusy: false, thinking: null },
     }),
   },
 ));

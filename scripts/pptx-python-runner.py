@@ -395,6 +395,46 @@ def apply_widescreen(prs: PresentationType) -> PresentationType:
     return prs
 
 
+# ---------------------------------------------------------------------------
+# Custom template support
+# ---------------------------------------------------------------------------
+
+TEMPLATE_PATH: str = os.environ.get('PPTX_TEMPLATE_PATH', '')
+_template_meta_raw = os.environ.get('PPTX_TEMPLATE_META_JSON', '')
+try:
+    TEMPLATE_META: dict[str, object] = json.loads(_template_meta_raw) if _template_meta_raw.strip() else {}
+except Exception:
+    TEMPLATE_META = {}
+TEMPLATE_BACKGROUND_IMAGES: list[str] = [
+    str(path) for path in TEMPLATE_META.get('backgroundImages', [])
+    if isinstance(path, str) and path.strip()
+] if isinstance(TEMPLATE_META, dict) else []
+TEMPLATE_BLANK_LAYOUT_INDEX = TEMPLATE_META.get('blankLayoutIndex') if isinstance(TEMPLATE_META, dict) else None
+
+
+def get_blank_layout(prs: PresentationType) -> object:
+    """Find the blank slide layout from the presentation.
+
+    When a custom template is loaded, the blank layout may not be at index 6.
+    This helper finds it by name first ('Blank'), then falls back to the layout
+    with the fewest placeholders.
+    """
+    layouts = prs.slide_layouts
+    # Try name match first
+    for layout in layouts:
+        name = layout.name.lower().strip()
+        if name in ('blank', '\u767d\u7d19'):  # 'blank' or Japanese '白紙'
+            return layout
+    # Fall back to fewest placeholders
+    best = layouts[min(6, len(layouts) - 1)]
+    best_count = len(best.placeholders)
+    for layout in layouts:
+        if len(layout.placeholders) < best_count:
+            best = layout
+            best_count = len(layout.placeholders)
+    return best
+
+
 def _convert_to_pptx_compatible(source: Path) -> Path:
     """Convert unsupported image formats (e.g. WebP) to PNG for python-pptx."""
     if source.suffix.lower() not in ('.webp',):
@@ -636,6 +676,10 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
         'IMAGES_DIR': images_dir,
         'SLIDE_WIDTH_IN': SLIDE_WIDTH_IN,
         'SLIDE_HEIGHT_IN': SLIDE_HEIGHT_IN,
+        'TEMPLATE_PATH': TEMPLATE_PATH if TEMPLATE_PATH else None,
+        'TEMPLATE_META': TEMPLATE_META,
+        'TEMPLATE_BACKGROUND_IMAGES': TEMPLATE_BACKGROUND_IMAGES,
+        'TEMPLATE_BLANK_LAYOUT_INDEX': TEMPLATE_BLANK_LAYOUT_INDEX,
         'os': os,
         'Presentation': Presentation,
         'Inches': Inches,
@@ -648,6 +692,7 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
         'rgb_color': rgb_color,
         'ensure_parent_dir': ensure_parent_dir,
         'apply_widescreen': apply_widescreen,
+        'get_blank_layout': get_blank_layout,
         'safe_image_path': safe_image_path,
         'safe_add_picture': safe_add_picture,
         'estimate_text_height_in': estimate_text_height_in,

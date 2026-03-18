@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+@source not "../../samples";
+@source not "../../temp";
+@source not "../../scripts/tempfiles";
+@source not "../../scripts/__pycache__";
+@source not "../../ref";
+
 :root {
   --panel-bg: #f0f2f5;
   --panel-border: #d1d5db;

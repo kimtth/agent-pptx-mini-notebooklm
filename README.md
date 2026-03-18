@@ -4,9 +4,35 @@ Electron desktop app for AI-powered PowerPoint slide generation using the GitHub
 
 ## Getting Started
 
+Development requirements:
+
+- Node.js with `pnpm`
+- `uv` with Python 3.13+
+- `GITHUB_TOKEN` with Copilot access
+- Microsoft PowerPoint desktop on Windows if you want local slide preview rendering and COM-based layout measurement
+
+Install dependencies:
+
+```bash
+pnpm install
+```
+
+Set up the Python environment once:
+
+```bash
+pnpm setup:python-env
+```
+
+If you use Azure OpenAI instead of GitHub-hosted models, set `AZURE_OPENAI_ENDPOINT`, `MODEL_NAME`, and either `AZURE_OPENAI_API_KEY` or Azure login credentials.
+
 Run the development server:
 ```
 pnpm dev
+```
+
+Build the application
+```
+pnpm dist
 ```
 
 ## Github Copilot SDK
@@ -34,7 +60,6 @@ Your Application
 GITHUB_TOKEN=your_github_token
 
 # Required for Azure OpenAI (omit to use GitHub-hosted models)
-MODEL_PROVIDER=azure
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
 
 # Optional: override the default model/deployment

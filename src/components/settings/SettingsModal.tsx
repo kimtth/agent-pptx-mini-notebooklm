@@ -27,10 +27,20 @@ const FIELDS: SettingsField[] = [
     hint: 'GitHub PAT with Copilot entitlement',
   },
   {
-    key: 'MODEL_PROVIDER',
-    label: 'Model Provider',
-    placeholder: 'github or azure (optional)',
-    hint: 'Use github for GitHub-hosted Copilot models such as gpt-5.4. If AZURE_OPENAI_ENDPOINT is set, the app uses Azure OpenAI / Foundry automatically.',
+    key: 'MODEL_NAME',
+    label: 'Model Name',
+    placeholder: 'gpt-5.4',
+    hint: 'For github, use a GitHub-hosted Copilot model name such as gpt-5.4 or claude-opus-4.6. For azure, use the deployment or model name.',
+  },
+  {
+    key: 'REASONING_EFFORT',
+    label: 'Reasoning Effort',
+    hint: 'Controls the model reasoning budget for chat sessions. Use low for speed, medium for balance, and high for harder planning or debugging tasks.',
+    options: [
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'high', label: 'High' },
+    ],
   },
   {
     key: 'AZURE_OPENAI_ENDPOINT',
@@ -50,22 +60,6 @@ const FIELDS: SettingsField[] = [
     label: 'Azure Tenant ID',
     placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
     hint: 'Required when you have multiple tenants. Ensures DefaultAzureCredential targets the correct tenant.',
-  },
-  {
-    key: 'MODEL_NAME',
-    label: 'Model Name',
-    placeholder: 'gpt-5.4',
-    hint: 'For github, use a GitHub-hosted Copilot model name such as gpt-5.4. For azure, use the deployment or model name.',
-  },
-  {
-    key: 'REASONING_EFFORT',
-    label: 'Reasoning Effort',
-    hint: 'Controls the model reasoning budget for chat sessions. Use low for speed, medium for balance, and high for harder planning or debugging tasks.',
-    options: [
-      { value: 'low', label: 'Low' },
-      { value: 'medium', label: 'Medium' },
-      { value: 'high', label: 'High' },
-    ],
   },
 ]
 

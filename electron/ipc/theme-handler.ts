@@ -335,13 +335,12 @@ function getClient(): CopilotClient {
 }
 
 async function getPaletteSessionOptions(): Promise<Partial<SessionConfig>> {
-  const provider = process.env.MODEL_PROVIDER?.trim().toLowerCase();
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT?.trim();
   const modelName = process.env.MODEL_NAME;
   const useAzureOpenAI = Boolean(endpoint);
-  const useGitHubModels = !useAzureOpenAI && (!provider || provider === 'openai' || provider === 'github');
+  const useGitHubModels = !useAzureOpenAI;
 
-  if (!provider && !modelName && !useAzureOpenAI) return { streaming: false };
+  if (!modelName && !useAzureOpenAI) return { streaming: false };
   if (useGitHubModels) {
     return { ...(modelName ? { model: modelName } : {}), streaming: false };
   }
@@ -376,7 +375,7 @@ async function getPaletteSessionOptions(): Promise<Partial<SessionConfig>> {
     };
   }
 
-  throw new Error(`Unknown MODEL_PROVIDER: ${provider}`);
+  throw new Error('Invalid model session configuration.');
 }
 
 async function generatePaletteWithLLM(seeds: string[]): Promise<PaletteColor[]> {

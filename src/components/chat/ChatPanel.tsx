@@ -122,10 +122,14 @@ export function ChatPanel() {
   const addMessage = useChatStore((s) => s.addMessage)
   const clearMessages = useChatStore((s) => s.clear)
   const removeMessage = useChatStore((s) => s.removeMessage)
-  const { work, setStreaming } = useSlidesStore()
-  const streaming = work.isStreaming
+  const streaming = useSlidesStore((s) => s.work.isStreaming)
+  const pptxBusy = useSlidesStore((s) => s.work.isPptxBusy)
+  const hasSlides = useSlidesStore((s) => s.work.slides.length > 0)
+  const setStreaming = useSlidesStore((s) => s.setStreaming)
+  const setPptxBusy = useSlidesStore((s) => s.setPptxBusy)
   const { tokens, selectedIconCollection } = usePaletteStore()
   const { files: dataSources, urls: urlSources } = useDataSourcesStore()
+  const busy = streaming || pptxBusy
 
   // Scroll for new completed messages
   useEffect(() => {
@@ -134,7 +138,7 @@ export function ChatPanel() {
 
   const sendMessage = async (rawMessage: string, options?: { clearInput?: boolean; workflowId?: WorkflowId | null }) => {
     const msg = rawMessage.trim()
-    if (!msg || streaming) return
+    if (!msg || streaming || pptxBusy) return
     if (options?.clearInput !== false) {
       setInput('')
     }
@@ -143,6 +147,7 @@ export function ChatPanel() {
     const userMessage = createUserMessage(msg)
     addMessage(userMessage)
 
+    const work = useSlidesStore.getState().work
     const availableIcons = getAvailableIconChoices(selectedIconCollection)
     const workflow = options?.workflowId ? getWorkflowConfig(options.workflowId) : null
 
@@ -152,6 +157,7 @@ export function ChatPanel() {
       designBrief: work.designBrief,
       designStyle: work.designStyle,
       framework: work.framework,
+      templateMeta: work.templateMeta,
       pptxBuildError: work.pptxBuildError,
       theme: tokens,
       workflow,
@@ -168,33 +174,35 @@ export function ChatPanel() {
   }
 
   const brainstorm = async () => {
-    if (streaming) return
+    if (busy) return
     const workflow = getWorkflowConfig('prestaging')
     let prompt = input.trim()
     if (!prompt) {
-      prompt = work.framework
-        ? `Start the prestaging workflow now. The user has already chosen the "${work.framework}" business framework — apply it directly and do NOT ask the user to choose again. Understand the content and generate the preliminary slide scenario in the slide panel. Do not generate PPTX code in this step.`
+      const fw = useSlidesStore.getState().work.framework
+      prompt = fw
+        ? `Start the prestaging workflow now. The user has already chosen the "${fw}" business framework — apply it directly and do NOT ask the user to choose again. Understand the content and generate the preliminary slide scenario in the slide panel. Do not generate PPTX code in this step.`
         : workflow.triggerPrompt
     }
     await sendMessage(prompt, { workflowId: workflow.id })
   }
 
   const createPptx = async () => {
-    if (streaming || work.slides.length === 0) return
+    if (busy || !hasSlides) return
 
     const workflow = getWorkflowConfig('create-pptx')
     const prompt = input.trim() || workflow.triggerPrompt
 
+    setPptxBusy(true)
     await sendMessage(prompt, { clearInput: false, workflowId: workflow.id })
   }
 
   const cancel = () => {
-    if (!streaming) return
+    if (!busy) return
     window.electronAPI.chat.cancel()
   }
 
   const clearChatHistory = () => {
-    if (streaming || messages.length === 0) return
+    if (busy || messages.length === 0) return
     clearMessages()
   }
 
@@ -216,7 +224,7 @@ export function ChatPanel() {
         <button
           type="button"
           onClick={clearChatHistory}
-          disabled={streaming || messages.length === 0}
+          disabled={busy || messages.length === 0}
           className="flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-widest transition-opacity disabled:opacity-40"
           style={{ color: 'var(--text-muted)' }}
           aria-label="Clear chat history"
@@ -305,7 +313,7 @@ export function ChatPanel() {
           onKeyDown={handleKey}
           placeholder="Message the agent…"
           rows={3}
-          disabled={streaming}
+          disabled={busy}
           className="w-full resize-none border-b bg-transparent text-sm outline-none"
           style={{
             display: 'block',
@@ -322,7 +330,7 @@ export function ChatPanel() {
           <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
             <button
               onClick={brainstorm}
-              disabled={streaming}
+              disabled={busy}
               className="flex shrink-0 items-center justify-center gap-2 text-xs font-semibold disabled:opacity-40 transition-colors"
               style={{
                 background: 'var(--surface-hover)',
@@ -334,12 +342,12 @@ export function ChatPanel() {
               }}
               aria-label="Brainstorm"
             >
-              {streaming ? <Loader2 size={14} className="animate-spin" /> : <Lightbulb size={14} />}
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Lightbulb size={14} />}
               <span>Brainstorm</span>
             </button>
             <button
               onClick={createPptx}
-              disabled={streaming || work.slides.length === 0}
+              disabled={busy || !hasSlides}
               className="flex shrink-0 items-center justify-center gap-2 text-xs font-semibold disabled:opacity-40 transition-colors"
               style={{
                 background: 'var(--surface-hover)',
@@ -351,10 +359,10 @@ export function ChatPanel() {
               }}
               aria-label="Create PPTX"
             >
-              {streaming ? <Loader2 size={14} className="animate-spin" /> : <FileCode2 size={14} />}
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <FileCode2 size={14} />}
               <span>Create PPTX</span>
             </button>
-            {streaming && (
+            {busy && (
               <button
                 onClick={cancel}
                 className="flex shrink-0 items-center justify-center text-xs font-semibold transition-colors"
@@ -372,7 +380,7 @@ export function ChatPanel() {
             )}
             <button
               onClick={send}
-              disabled={!input.trim() || streaming}
+              disabled={!input.trim() || busy}
               className="flex shrink-0 items-center justify-center gap-2 text-xs font-semibold disabled:opacity-40 transition-colors"
               style={{
                 background: 'var(--accent)',
@@ -384,8 +392,8 @@ export function ChatPanel() {
               }}
               aria-label="Send"
             >
-              {streaming ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-              <span>{streaming ? 'Sending' : 'Send'}</span>
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              <span>{busy ? 'Sending' : 'Send'}</span>
             </button>
           </div>
         </div>

@@ -3,7 +3,7 @@
  * This interface is mirrored by window.electronAPI in the renderer.
  */
 
-import type { ScenarioPayload, SlideUpdatePayload } from '../entities/slide-work';
+import type { ScenarioPayload, SlideUpdatePayload, TemplateMeta } from '../entities/slide-work';
 import type { PaletteColor, ThemeSlots, ThemeTokens } from '../entities/palette';
 import type { IconifyCollectionId } from '../icons/iconify';
 import type { WorkflowConfig } from '../workflows/workflow-config';
@@ -81,6 +81,7 @@ export interface IpcChatAPI {
       designBrief: import('../entities/slide-work').DesignBrief | null;
       designStyle: import('../entities/slide-work').DesignStyle | null;
       framework: import('../entities/slide-work').FrameworkType | null;
+      templateMeta: import('../entities/slide-work').TemplateMeta | null;
       pptxBuildError: string | null;
       theme: ThemeTokens | null;
       workflow: WorkflowConfig | null;
@@ -114,6 +115,7 @@ export interface IpcPptxAPI {
     themeTokens: ThemeTokens | null,
     title: string,
     iconCollection?: string,
+    templateMeta?: TemplateMeta | null,
   ): Promise<{ success: boolean; path?: string; error?: string }>;
   renderPreview(
     code: string,
@@ -121,8 +123,11 @@ export interface IpcPptxAPI {
     title: string,
     iconCollection?: string,
     slides?: Array<{ number: number; title: string; layout: string; icon?: string | null; imageQuery?: string | null; imageQueries?: string[]; imagePath?: string | null; selectedImages?: Array<{ id: string; imageQuery?: string | null; imageUrl?: string | null; imagePath?: string | null; thumbnailUrl?: string | null }> }>,
+    templateMeta?: TemplateMeta | null,
   ): Promise<{ success: boolean; imagePaths?: string[]; error?: string; warning?: string }>;
   readExistingPreviews(): Promise<{ success: boolean; imagePaths: string[] }>;
+  importTemplate(): Promise<{ success: boolean; templatePath?: string; meta?: TemplateMeta; error?: string; warning?: string }>;
+  removeTemplate(): Promise<{ success: boolean }>;
 }
 
 export interface IpcFsAPI {
@@ -137,6 +142,7 @@ export interface IpcScrapeAPI {
 export interface IpcImagesAPI {
   searchForSlide(slide: ImageSearchRequest): Promise<ImageSearchResult>;
   downloadForSlide(slide: ImageSearchRequest, candidate: ImageSearchCandidate): Promise<ResolvedSlideImage>;
+  pickLocalFilesForSlide(slide: ImageSearchRequest): Promise<ResolvedSlideImage[]>;
   resolveForSlides(slides: ImageSearchRequest[]): Promise<ResolvedSlideImage[]>;
 }
 

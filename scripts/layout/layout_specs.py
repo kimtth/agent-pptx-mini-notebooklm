@@ -157,19 +157,25 @@ def estimate_text_height_in(
 
     Uses per-character visual width to handle mixed Latin/CJK text accurately.
     CJK characters are treated as full-width (1 em), Latin as ~0.52 em.
+
+    Notes:
+    - ``em`` is a typography-relative unit based on the current font size.
+      In this estimator, ``1 em`` is treated as the font size itself.
+    - ``width_in`` and the return value are in inches. ``1 inch = 2.54 cm``.
     """
     paragraphs = [part.strip() for part in text.splitlines() if part.strip()]
     if not paragraphs:
         lines = min_lines
     else:
-        em_size = font_size_pt / 72.0  # 1 em in inches
+        em_size = font_size_pt / 72.0  # 1 em = current font size; 1 em ≈ font_size_pt × 0.03528 cm
         em_per_line = max(width_in / em_size, 3.0)
         lines = 0
         for paragraph in paragraphs:
             if not paragraph:
                 lines += 1
                 continue
-            # Weighted visual width: CJK ≈ 1 em, Latin ≈ 0.52 em
+            # Weighted visual width: CJK ≈ 1 em, Latin ≈ 0.52 em.
+            # Here, 1 em means roughly one full font-size unit of horizontal space.
             visual_w = sum(
                 1.0 if _is_wide_char(ord(ch)) else 0.52
                 for ch in paragraph

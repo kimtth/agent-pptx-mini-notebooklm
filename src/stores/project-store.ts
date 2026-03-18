@@ -42,6 +42,9 @@ function normalizeLoadedWork(work: PptAppProject['slidesWork']) {
     ...work,
     designStyle: work.designStyle ?? null,
     framework: work.framework ?? null,
+    isStreaming: false,
+    isPptxBusy: false,
+    thinking: null,
     slides: (work.slides ?? []).map((slide) => {
       const selectedImages = normalizeLoadedSelectedImages(slide)
       const primary = selectedImages[0] ?? null

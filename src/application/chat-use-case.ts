@@ -3,7 +3,7 @@
  * Business logic for chat history, prompt formatting, and workspace serialization.
  */
 
-import type { SlideItem, DesignBrief, DesignStyle, FrameworkType } from '../domain/entities/slide-work';
+import type { SlideItem, DesignBrief, DesignStyle, FrameworkType, TemplateMeta } from '../domain/entities/slide-work';
 import type { ThemeTokens } from '../domain/entities/palette';
 import type { DataFile, ScrapeResult } from '../domain/ports/ipc';
 import type { IconifyCollectionId } from '../domain/icons/iconify';
@@ -23,6 +23,8 @@ export interface WorkspaceContext {
   designBrief: DesignBrief | null;
   designStyle: DesignStyle | null;
   framework: FrameworkType | null;
+  templateMeta: TemplateMeta | null;
+  pptxBuildError?: string | null;
   theme: ThemeTokens | null;
   workflow: WorkflowConfig | null;
   dataSources: DataFile[];

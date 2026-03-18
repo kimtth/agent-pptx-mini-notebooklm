@@ -46,6 +46,11 @@ export default defineConfig({
         input: { index: path.resolve(__dirname, 'index.html') },
       },
     },
+    server: {
+      watch: {
+        ignored: ['**/samples/**', '**/temp/**', '**/scripts/tempfiles/**', '**/scripts/__pycache__/**', '**/previews/**', '**/*.pptx', '**/*.pptapp'],
+      },
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
