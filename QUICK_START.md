@@ -18,11 +18,9 @@ The app has three main areas:
 
 ## Before You Begin
 
-To use the app smoothly, make sure:
-
-- you are on Windows if you want local slide preview rendering
-- Microsoft PowerPoint desktop is installed for preview image rendering
-- your organization has provided valid model access settings
+- Use Windows if you want local slide previews.
+- Install Microsoft PowerPoint desktop for preview rendering.
+- Have valid model settings ready.
 
 You do not need to install GitHub Copilot CLI manually for this app. The desktop app includes the Copilot runtime it uses internally.
 
@@ -50,7 +48,7 @@ You may see fields such as:
 In most setups, the important requirement is valid model access, not a separate Copilot CLI installation.
 
 - If your team uses GitHub-hosted models, enter a `GITHUB_TOKEN` that has Copilot access.
-- If your team uses Azure OpenAI, enter the Azure endpoint and related credentials provided by your team. When `AZURE_OPENAI_ENDPOINT` is set, the app uses Azure automatically.
+- If your team uses Azure OpenAI, enter the Azure endpoint and related credentials provided by your team. Use the full base URL in `AZURE_OPENAI_ENDPOINT`, including `/openai/v1`.
 
 If you do not know which values to enter, contact the person who set up the app for you.
 
@@ -98,6 +96,8 @@ Before generating slides, choose:
 
 The business framework controls how the story is organized. The brand style helps guide the final visual direction.
 
+If you select the `Custom Template` brand style, you can attach a PPTX template and reuse its theme colors and backgrounds.
+
 ### 4. Ask the agent to build the first draft
 
 In the chat panel, describe the deck you want.
@@ -141,6 +141,7 @@ You can enter:
 - a single keyword
 - multiple keywords, one per line
 - direct image URLs
+- local image files
 
 Then click `Choose images` and select one or more images for that slide.
 
@@ -180,7 +181,7 @@ Available actions include:
 - `.thmx`
 - `Export .pptx`
 
-Use `Refresh Preview` if slides were generated but the preview needs to be reloaded.
+Use `Refresh Preview` if you want to reload preview images that already exist in the workspace.
 
 Use `Export .pptx` when you want to save the finished presentation.
 

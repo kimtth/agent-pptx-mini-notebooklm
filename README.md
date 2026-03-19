@@ -1,15 +1,17 @@
 # pptx-slide-agent
 
-Electron desktop app for AI-powered PowerPoint slide generation using the GitHub Copilot SDK.
+Electron desktop app for generating PowerPoint decks from chat, files, and URLs with the GitHub Copilot SDK.
+
+<img src="./samples/main.png" alt="main screen" width="500" />
 
 ## Getting Started
 
-Development requirements:
+Requirements:
 
 - Node.js with `pnpm`
-- `uv` with Python 3.13+
-- `GITHUB_TOKEN` with Copilot access
-- Microsoft PowerPoint desktop on Windows if you want local slide preview rendering and COM-based layout measurement
+- `uv` and Python 3.13+
+- `GITHUB_TOKEN` with Copilot access, or Azure OpenAI credentials
+- Microsoft PowerPoint on Windows for local preview rendering and COM-based layout measurement
 
 Install dependencies:
 
@@ -26,20 +28,24 @@ pnpm setup:python-env
 If you use Azure OpenAI instead of GitHub-hosted models, set `AZURE_OPENAI_ENDPOINT`, `MODEL_NAME`, and either `AZURE_OPENAI_API_KEY` or Azure login credentials.
 
 Run the development server:
-```
+
+```bash
 pnpm dev
 ```
 
-Build the application
-```
+Build:
+
+```bash
 pnpm dist
 ```
 
-## Github Copilot SDK
+If `.venv` already exists and you only want to package:
 
-[Getting Started](https://github.com/github/copilot-sdk?tab=readme-ov-file#getting-started)  
+```bash
+pnpm dist:skip-venv
+```
 
-All SDKs communicate with the Copilot CLI server via JSON-RPC:
+Useful check:
 
 ```
 Your Application
@@ -58,29 +64,28 @@ Your Application
 ```env
 # Required: GitHub PAT with Copilot access
 GITHUB_TOKEN=your_github_token
+MODEL_NAME=gpt-5.4
+REASONING_EFFORT=medium
 
-# Required for Azure OpenAI (omit to use GitHub-hosted models)
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
-
-# Optional: override the default model/deployment
-MODEL_NAME=gpt-5
+# Azure only
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/openai/v1
+AZURE_OPENAI_API_KEY=your_api_key
+AZURE_TENANT_ID=your_tenant_id
 ```
+
+Notes:
+
+- For GitHub-hosted models, use a token with Copilot entitlement.
+- For Azure, use the full base URL including `/openai/v1`.
+- `MODEL_NAME` can be a GitHub-hosted model such as `gpt-5.4` or an Azure deployment/model name.
 
 ## Python Environment
 
 Datasource ingestion and PPTX generation use a local `uv`-managed Python environment so MarkItDown and `python-pptx` stay isolated from the system Python installation.
 
-Set it up once from the repo root:
-
-```bash
-pnpm setup:python-env
-```
-
 This creates `.venv` and installs the dependencies declared in [pyproject.toml](pyproject.toml). The Electron app automatically prefers that interpreter for both content ingestion and PPTX generation.
 
-`pnpm setup:python-env` is available as an alias for the same environment setup.
-
-For packaged builds, `.venv` is bundled into the app's `resources` directory. `pnpm dist:skip-venv` only skips recreating the environment; it still requires an existing `.venv` in the repo root and now fails fast if that environment is missing.
+For packaged builds, `.venv` is bundled into the app's `resources` directory. `pnpm dist:skip-venv` only skips recreating the environment; it still requires an existing `.venv` in the repo root.
 
 ### python-pptx
 
@@ -153,15 +158,15 @@ Work can be saved and loaded as `.pptapp` project files (JSON). A project snapsh
 
 The center preview panel renders local slide images from the generated PPTX.
 
-- The app generates the deck through the existing Python runner and exports slide images locally for preview.
 - Rendered preview assets are stored under `previews/` in the configured workspace directory.
-- On Windows, local rendering requires Microsoft PowerPoint and the `pywin32` package in the managed Python environment.
-- Preview rendering is local and does not require a public URL.
+- On Windows, local rendering requires Microsoft PowerPoint and the managed Python environment.
+- `Refresh Preview` reloads preview images that already exist in the workspace.
 
 ## Agentic Workflows
 
-Repository-level Copilot workflow instructions live under [workflows/prestaging.md](workflows/prestaging.md) and [workflows/create-pptx.md](workflows/create-pptx.md).
+Prompt workflow files live here:
 
-- `prestaging.md` defines the planning workflow for understanding content, selecting a framework, and staging slide definitions.
-- `create-pptx.md` defines the final PPTX workflow with automated layout validation and infrastructure patching tools.
-- `electron/ipc/copilot-runtime.ts` defines the root workflow instruction path used by the app when building Copilot prompts.
+- [workflows/prestaging.md](workflows/prestaging.md)
+- [workflows/create-pptx.md](workflows/create-pptx.md)
+
+The runtime wiring is in [electron/ipc/copilot-runtime.ts](electron/ipc/copilot-runtime.ts).
