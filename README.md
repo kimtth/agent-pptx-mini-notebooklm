@@ -9,6 +9,7 @@ Electron desktop app for generating PowerPoint decks from chat, files, and URLs 
 - [Quick Start (English)](./QUICK_START.md)
 - [Quick Start (Japanese)](./QUICK_START_JP.md)
 - [Layout Engine Whitepaper](./LAYOUT_ENGINE.md)
+- [Sample PPTX English (Web Viewer)](https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2Fkimtth%2Fagent-cowork-pptx-creator%2Fmain%2Fsamples%2Fen%2Fpreviews%2Fpresentation-preview.pptx)
 
 ## Getting Started
 
@@ -150,6 +151,8 @@ App data is stored in the Electron `userData` directory:
 |------|----------------|-------------|
 | `settings.json` | `%APPDATA%\pptx-slide-agent\settings.json` | API keys, model settings, and other preferences |
 | `workspace.json` | `%APPDATA%\pptx-slide-agent\workspace.json` | Last-used workspace directory |
+
+On macOS the equivalent path is `~/Library/Application Support/pptx-slide-agent/`.
 
 ### Project Files
 

@@ -7,9 +7,10 @@ let clientInstance: CopilotClient | null = null;
 const AZURE_OPENAI_SCOPE = 'https://cognitiveservices.azure.com/.default';
 const require = createRequire(import.meta.url);
 
-function resolveReasoningEffort(): 'low' | 'medium' | 'high' {
+function resolveReasoningEffort(): 'low' | 'medium' | 'high' | undefined {
   const value = process.env.REASONING_EFFORT?.trim().toLowerCase();
-  return value === 'medium' || value === 'high' ? value : 'low';
+  if (value === 'low' || value === 'medium' || value === 'high') return value;
+  return undefined;
 }
 
 export function resetCopilotClient(): void {
@@ -40,9 +41,10 @@ export async function getSessionOptions(opts?: {
   const useAzureOpenAI = Boolean(endpoint);
   const useGitHubModels = !useAzureOpenAI;
 
-  if (!modelName && !useAzureOpenAI) return { streaming, reasoningEffort };
+  const effort = reasoningEffort ? { reasoningEffort } : {};
+  if (!modelName && !useAzureOpenAI) return { streaming, ...effort };
   if (useGitHubModels) {
-    return { ...(modelName ? { model: modelName } : {}), streaming, reasoningEffort };
+    return { ...(modelName ? { model: modelName } : {}), streaming, ...effort };
   }
 
   if (useAzureOpenAI) {
@@ -66,7 +68,7 @@ export async function getSessionOptions(opts?: {
     return {
       model: modelName,
       streaming,
-      reasoningEffort,
+      ...effort,
       provider: {
         type: 'openai',
         baseUrl: endpoint.replace(/\/$/, ''),

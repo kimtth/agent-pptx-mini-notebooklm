@@ -1304,6 +1304,17 @@ def main() -> int:
     run_generated_code(generated_path, namespace)
     finalize_output(output_path, namespace)
 
+    # Stamp the actual creation date (python-pptx's bundled default.pptx has a frozen 2013 date)
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        _prs = Presentation(str(output_path))
+        _now = _dt.now(_tz.utc)
+        _prs.core_properties.created = _now
+        _prs.core_properties.modified = _now
+        _prs.save(str(output_path))
+    except Exception as _exc:
+        print(f'[WARNING] Could not update core properties date: {_exc}', file=sys.stderr)
+
     try:
         skip_com_layout_fix = render_dir is not None and os.environ.get('PPTX_SKIP_COM_LAYOUT_FIX') == '1'
         validate_and_fix_output(output_path, run_com_layout_fix=not skip_com_layout_fix)

@@ -3,7 +3,7 @@
  * This interface is mirrored by window.electronAPI in the renderer.
  */
 
-import type { ScenarioPayload, SlideUpdatePayload, TemplateMeta } from '../entities/slide-work';
+import type { ScenarioPayload, SlideItem, SlideUpdatePayload, TemplateMeta } from '../entities/slide-work';
 import type { PaletteColor, ThemeSlots, ThemeTokens } from '../entities/palette';
 import type { IconifyCollectionId } from '../icons/iconify';
 import type { WorkflowConfig } from '../workflows/workflow-config';
@@ -115,6 +115,7 @@ export interface IpcPptxAPI {
     themeTokens: ThemeTokens | null,
     title: string,
     iconCollection?: string,
+    slides?: SlideItem[],
     templateMeta?: TemplateMeta | null,
   ): Promise<{ success: boolean; path?: string; error?: string }>;
   renderPreview(

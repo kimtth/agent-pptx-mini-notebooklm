@@ -85,7 +85,14 @@ export function CenterArea() {
     setExporting(true)
     setExportError(null)
     try {
-      const result = await window.electronAPI.pptx.generate(work.pptxCode, tokens, work.title || 'presentation', selectedIconCollection, work.templateMeta)
+      const result = await window.electronAPI.pptx.generate(
+        work.pptxCode,
+        tokens,
+        work.title || 'presentation',
+        selectedIconCollection,
+        work.slides,
+        work.templateMeta,
+      )
 
       if (result.success) {
         addMessage(createAssistantMessage(`PPTX generation complete.${result.path ? ` Saved to ${result.path}.` : ''}`))

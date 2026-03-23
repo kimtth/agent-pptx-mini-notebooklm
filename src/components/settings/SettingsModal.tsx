@@ -37,6 +37,7 @@ const FIELDS: SettingsField[] = [
     label: 'Reasoning Effort',
     hint: 'Controls the model reasoning budget for chat sessions. Use low for speed, medium for balance, and high for harder planning or debugging tasks.',
     options: [
+      { value: '', label: 'Default (unset)' },
       { value: 'low', label: 'Low' },
       { value: 'medium', label: 'Medium' },
       { value: 'high', label: 'High' },

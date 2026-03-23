@@ -37,6 +37,9 @@ type SlideAssetSourceSlide = {
   number: number
   title: string
   layout: string
+  keyMessage?: string
+  bullets?: string[]
+  notes?: string
   icon?: string | null
   imageQuery?: string | null
   imageQueries?: string[]
@@ -273,6 +276,36 @@ export async function persistSlideAssetsToWorkspace(
   }
 }
 
+async function refreshPreviewArtifacts(
+  slides: SlideAssetSourceSlide[] | undefined,
+  iconCollection: string,
+): Promise<{ success: boolean; layoutSpecsJson?: string; error?: string }> {
+  if (!slides || slides.length === 0) {
+    return { success: true }
+  }
+
+  const slideAssetsResult = await persistSlideAssetsToWorkspace(slides, iconCollection)
+  if (!slideAssetsResult.success) {
+    return { success: false, error: slideAssetsResult.error ?? 'Failed to persist slide assets.' }
+  }
+
+  const layoutInput: LayoutInputSourceSlide[] = slides.map((slide) => ({
+    layout: slide.layout,
+    title: slide.title,
+    keyMessage: slide.keyMessage ?? '',
+    bullets: slide.bullets ?? [],
+    notes: slide.notes ?? '',
+    icon: slide.icon,
+  }))
+
+  const layoutSpecsResult = await computeLayoutSpecs(layoutInput)
+  if (!layoutSpecsResult.success || !layoutSpecsResult.specs?.trim()) {
+    return { success: false, error: layoutSpecsResult.error ?? 'Failed to compute layout specs.' }
+  }
+
+  return { success: true, layoutSpecsJson: layoutSpecsResult.specs.trim() }
+}
+
 /**
  * Compute content-adaptive layout specs via the hybrid layout engine
  * (PowerPoint COM AutoFit + kiwisolver constraint solver).
@@ -472,7 +505,7 @@ async function renderPngFromPptx(pptxPath: string, renderDir: string): Promise<v
 }
 
 export function registerPptxHandlers(): void {
-  ipcMain.handle('pptx:generate', async (_event, code: string, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, templateMeta?: TemplateMeta | null) => {
+  ipcMain.handle('pptx:generate', async (_event, code: string, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], templateMeta?: TemplateMeta | null) => {
     try {
       const win = BrowserWindow.fromWebContents(_event.sender)
       if (!code || typeof code !== 'string' || code.trim().length === 0) {
@@ -488,7 +521,16 @@ export function registerPptxHandlers(): void {
       const outputPath = path.join(previewRoot, 'presentation-preview.pptx')
 
       try {
-        await executeGeneratedPythonCodeToFile(code, themeTokens, title, outputPath, { iconCollection, templateMeta })
+        const artifactRefresh = await refreshPreviewArtifacts(slides, iconCollection ?? 'all')
+        if (!artifactRefresh.success) {
+          return { success: false, error: artifactRefresh.error ?? 'Failed to refresh preview artifacts.' }
+        }
+
+        await executeGeneratedPythonCodeToFile(code, themeTokens, title, outputPath, {
+          iconCollection,
+          templateMeta,
+          layoutSpecsJson: artifactRefresh.layoutSpecsJson,
+        })
         return await savePresentationFile(outputPath, title, win)
       } catch (err) {
         // Keep workDir for debugging — generated-source.py + error context
@@ -545,9 +587,9 @@ export function registerPptxHandlers(): void {
       const outputPath = path.join(previewRoot, 'presentation-preview.pptx')
 
       try {
-        // Always persist fresh slide-assets.json to prevent stale image references
-        if (slides && slides.length > 0) {
-          await persistSlideAssetsToWorkspace(slides, iconCollection ?? 'all')
+        const artifactRefresh = await refreshPreviewArtifacts(slides, iconCollection ?? 'all')
+        if (!artifactRefresh.success) {
+          return { success: false, error: artifactRefresh.error ?? 'Failed to refresh preview artifacts.' }
         }
 
         // Try to remove the old PPTX before regenerating; ignore if locked
@@ -555,7 +597,12 @@ export function registerPptxHandlers(): void {
         await removeStaleTimestampedPptx(previewRoot, 'presentation-preview.pptx')
         await removePreviewImages(renderDir)
         await fs.mkdir(previewRoot, { recursive: true })
-        await executeGeneratedPythonCodeToFile(code, themeTokens, title, outputPath, { renderDir, iconCollection, templateMeta })
+        await executeGeneratedPythonCodeToFile(code, themeTokens, title, outputPath, {
+          renderDir,
+          iconCollection,
+          templateMeta,
+          layoutSpecsJson: artifactRefresh.layoutSpecsJson,
+        })
 
         // Find actual PPTX (may have a timestamped name if the original was locked)
         let actualPptx: string | null = null
