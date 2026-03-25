@@ -1,6 +1,5 @@
 import { readFileSync, existsSync } from 'fs'
-import { app } from 'electron'
-import { resolveBundledPath } from './workspace-utils.ts'
+import { resolveBundledPath } from '../project/workspace-utils.ts'
 
 export type SystemPromptMode = 'pptx' | 'story'
 

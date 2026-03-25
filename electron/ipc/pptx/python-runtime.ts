@@ -4,7 +4,7 @@ import { existsSync } from 'fs'
 import { app } from 'electron'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { getAppResourceRoots } from './workspace-utils.ts'
+import { getAppResourceRoots } from '../project/workspace-utils.ts'
 
 const execFileAsync = promisify(execFile)
 

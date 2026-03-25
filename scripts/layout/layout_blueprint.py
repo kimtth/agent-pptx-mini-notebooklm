@@ -264,6 +264,40 @@ _CHART_BLUEPRINT = LayoutBlueprint(
     icon_size=1.6,
 )
 
+# -- closing (thank-you / end slide) ----------------------------------------
+_CLOSING_BLUEPRINT = LayoutBlueprint(
+    layout_type='closing',
+    zones=(
+        ZoneDef(ZoneRole.ACCENT, fixed_h=0.05, min_h=0.05, preferred_h=0.05),
+        ZoneDef(ZoneRole.TITLE, min_h=0.50, preferred_h=0.60, font_pt=36, bold=True),
+        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.30, preferred_h=0.50, font_pt=18),
+        ZoneDef(ZoneRole.FOOTER, min_h=0.40, preferred_h=0.60),
+        _ZONE_NOTES,
+    ),
+    icon_size=1.6,
+    tokens=DesignTokens(margin_x=0.9, margin_top=2.0),
+)
+
+# -- photo_fullbleed (full-bleed photo with overlaid title) -----------------
+_PHOTO_FULLBLEED_BLUEPRINT = LayoutBlueprint(
+    layout_type='photo_fullbleed',
+    zones=(
+        ZoneDef(ZoneRole.TITLE, min_h=0.60, preferred_h=1.0, font_pt=36, bold=True),
+        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.30, preferred_h=0.50, font_pt=18),
+        _ZONE_NOTES,
+    ),
+    has_hero=True,
+    tokens=DesignTokens(margin_x=0.7, margin_top=4.0),
+)
+
+# -- multi_column (3–5 equal-width content columns) -------------------------
+_MULTI_COLUMN_BLUEPRINT = LayoutBlueprint(
+    layout_type='multi_column',
+    zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
+    icon_size=1.6,
+    cards=CardsVariant(columns=3, gap_x=0.30, gap_y=0.25),
+)
+
 # -- registry ---------------------------------------------------------------
 
 _BLUEPRINTS: dict[str, LayoutBlueprint] = {
@@ -278,6 +312,9 @@ _BLUEPRINTS: dict[str, LayoutBlueprint] = {
     'summary': _SUMMARY_BLUEPRINT,
     'diagram': _DIAGRAM_BLUEPRINT,
     'chart': _CHART_BLUEPRINT,
+    'closing': _CLOSING_BLUEPRINT,
+    'photo_fullbleed': _PHOTO_FULLBLEED_BLUEPRINT,
+    'multi_column': _MULTI_COLUMN_BLUEPRINT,
 }
 
 

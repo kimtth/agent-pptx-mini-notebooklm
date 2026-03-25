@@ -32,19 +32,29 @@ GitHub Copilot CLI を別途インストールする必要はありません。
 2. チームまたは管理者から案内された接続情報を入力します。
 3. Save で保存します。
 
-設定画面には次のような項目があります。
+Settings では、最初にプロバイダーを選び、そのプロバイダーに必要な項目だけ入力します。
 
-- `GITHUB_TOKEN` 必須
-- `AZURE_OPENAI_ENDPOINT`
-- `AZURE_OPENAI_API_KEY`
-- `AZURE_TENANT_ID`
-- `MODEL_NAME` 必須
-- `REASONING_EFFORT`
+- `GitHub Copilot` + `GitHub-hosted models`:
+	`GITHUB_TOKEN` と `MODEL_NAME`
+- `GitHub Copilot` + `Self-serving Azure OpenAI / Foundry`:
+	`GITHUB_TOKEN`、`COPILOT_MODEL_SOURCE`、`MODEL_NAME`、Azure の接続情報
+- `Azure OpenAI`:
+	`MODEL_NAME` と Azure の接続情報
+- `OpenAI`:
+	`MODEL_NAME` と `OPENAI_API_KEY`
+- `Claude`:
+	`MODEL_NAME` と `ANTHROPIC_API_KEY`
 
-多くの環境では、重要なのは別途 Copilot CLI を入れることではなく、有効なモデル接続情報を設定することです。
+`REASONING_EFFORT` は任意です。
 
-- GitHub ホストのモデルを使う場合は、Copilot 利用権のある `GITHUB_TOKEN` を入力します。
-- Azure OpenAI を使う場合は、チームから案内された Azure のエンドポイントや認証情報を入力します。`AZURE_OPENAI_ENDPOINT` には `/openai/v1` を含む完全な URL を入力してください。
+多くの環境では、重要なのは別途 CLI を入れることではなく、有効なモデル接続情報を設定することです。
+
+多くのユーザーには、`GitHub Copilot` と `GitHub-hosted models` の組み合わせを推奨します。
+
+- GitHub ホストのモデルを Copilot 経由で使う場合は、Copilot 利用権のある `GITHUB_TOKEN` を入力します。
+- Copilot から Azure OpenAI / Foundry のセルフホスト系モデルを使う場合は、`COPILOT_MODEL_SOURCE` を `azure-openai` にして Azure の接続情報を入力します。
+- Azure OpenAI、OpenAI、Claude を使う場合は、チームから案内された各プロバイダー用の認証情報を入力します。
+- Azure OpenAI を使う場合は、`AZURE_OPENAI_ENDPOINT` に `/openai/v1` を含む完全な URL を入力してください。
 
 どの値を入力すべきかわからない場合は、アプリのセットアップ担当者に確認してください。
 
@@ -160,6 +170,25 @@ GitHub Copilot CLI を別途インストールする必要はありません。
 
 配色にこだわりたい場合は、PPTX 生成前にこのタブで調整してください。
 
+## NotebookLM インフォグラフィック
+
+スライドパネルの **NotebookLM Infographic** トグルを使うと、[Google NotebookLM](https://notebooklm.google/) のノートブックからインフォグラフィック画像を生成できます。
+
+利用前の準備:
+
+1. このコンピューターで NotebookLM にサインインする。
+2. [notebooklm.google.com](https://notebooklm.google.com/) でノートブックを作成し、ソースドキュメントをアップロードする。
+3. まだ接続できていない場合は、アプリのセットアップ担当者に初回接続を依頼する。
+
+インフォグラフィックの生成手順:
+
+1. 右パネルの `Slides` タブを開く。
+2. **NotebookLM Infographic** をオンにする。
+3. ドロップダウンからノートブックを選択する。
+4. **Generate Infographic** をクリックする。
+
+生成された PNG 画像はワークスペースの `images/` フォルダに保存され、スライドの背景画像として使用できます。
+
 ## プレビューと出力
 
 中央パネルには生成結果のプレビューが表示されます。
@@ -190,7 +219,7 @@ GitHub Copilot CLI を別途インストールする必要はありません。
 
 Settings を開き、接続情報が正しく入力されているか確認してください。
 
-この問題は、GitHub Copilot CLI の未インストールではなく、モデル接続情報の不足または誤りが原因であることがほとんどです。
+この問題は、ローカル CLI の未インストールではなく、モデル接続情報の不足または誤りが原因であることがほとんどです。
 
 ### スライドプレビューが表示されない
 

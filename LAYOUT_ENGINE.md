@@ -100,6 +100,9 @@ The blueprint catalog currently defines these layout families:
 | `timeline` | Vertical timeline spine + node text |
 | `summary` | Summary box followed by content |
 | `diagram` | Content with sidebar for diagram support |
+| `closing` | Thank-you / end slide — centered title + footer |
+| `photo_fullbleed` | Full-bleed hero image with overlaid title |
+| `multi_column` | Three-to-five equal-width content columns |
 
 The key design principle is: **blueprints define intent, not final geometry**. Final geometry is always solved from blueprint + measured content.
 

@@ -10,10 +10,14 @@ import path from 'path';
 const CONFIG_FILE = path.join(app.getPath('userData'), 'settings.json');
 
 export const SETTINGS_KEYS = [
+  'LLM_PROVIDER',
+  'COPILOT_MODEL_SOURCE',
   'GITHUB_TOKEN',
   'AZURE_OPENAI_ENDPOINT',
   'AZURE_OPENAI_API_KEY',
   'AZURE_TENANT_ID',
+  'OPENAI_API_KEY',
+  'ANTHROPIC_API_KEY',
   'MODEL_NAME',
   'REASONING_EFFORT',
 ] as const;

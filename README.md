@@ -1,6 +1,6 @@
 # pptx-slide-agent
 
-Electron desktop app for generating PowerPoint decks from chat, files, and URLs with the GitHub Copilot SDK.
+Electron desktop app for generating PowerPoint decks from chat, files, and URLs with support for GitHub Copilot, OpenAI, Azure OpenAI, and Claude.
 
 <img src="./samples/main.png" alt="main screen" width="500" />
 
@@ -17,8 +17,11 @@ Requirements:
 
 - Node.js with `pnpm`
 - `uv` and Python 3.13+
-- `GITHUB_TOKEN` with Copilot access, or Azure OpenAI credentials
-- Microsoft PowerPoint on Windows for local preview rendering and COM-based layout measurement
+- credentials for at least one supported model provider
+- Microsoft PowerPoint on Windows — required for local preview images; layout measurement falls back in order:
+  - **COM** (PowerPoint on Windows) — WYSIWYG: renders a real textbox and reads back the exact shape height *(highest accuracy)*
+  - **Pillow font-metrics** — cross-platform: simulates word-wrap via TrueType glyph metrics; accurate but not pixel-perfect *(~90–95% accuracy)*
+  - **Auto-size** — last resort: sets `TEXT_TO_FIT_SHAPE` on shapes and lets PowerPoint shrink text at open time; no pre-measured height *(lowest accuracy — text may be visibly scaled down)*
 
 Install dependencies:
 
@@ -29,10 +32,18 @@ pnpm install
 Set up the Python environment once:
 
 ```bash
-pnpm setup:python-env
+uv sync
 ```
 
-If you use Azure OpenAI instead of GitHub-hosted models, set `AZURE_OPENAI_ENDPOINT`, `MODEL_NAME`, and either `AZURE_OPENAI_API_KEY` or Azure login credentials.
+Before running the app, decide which provider you want to use in Settings:
+
+- GitHub Copilot with GitHub-hosted models
+- GitHub Copilot with your own Azure OpenAI or Foundry deployment
+- OpenAI
+- Azure OpenAI
+- Claude
+
+Recommended option for most users: **GitHub Copilot with GitHub-hosted models**. It has the simplest setup in this app and is the most tested path.
 
 Run the development server:
 
@@ -52,39 +63,28 @@ If `.venv` already exists and you only want to package:
 pnpm dist:skip-venv
 ```
 
-Useful check:
-
-```
-Your Application
-       ↓
-  SDK Client
-       ↓ JSON-RPC
-  Copilot CLI (server mode)
-```
-
 ## Settings
 
 **GitHub PAT permissions:**
 - **Classic PAT** — no specific scope needed; the account must have an active Copilot subscription.
 - **Fine-grained PAT** — Under "Permissions," click Add permissions and select **Copilot Requests**.
 
-```env
-# Required: GitHub PAT with Copilot access
-GITHUB_TOKEN=your_github_token
-MODEL_NAME=gpt-5.4
-REASONING_EFFORT=medium
+Choose the provider in Settings first, then enter only the matching fields:
 
-# Azure only
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/openai/v1
-AZURE_OPENAI_API_KEY=your_api_key
-AZURE_TENANT_ID=your_tenant_id
-```
+- `GitHub Copilot` + `GitHub-hosted models`: `GITHUB_TOKEN`, `MODEL_NAME`
+- `GitHub Copilot` + `Self-serving Azure OpenAI / Foundry`: `GITHUB_TOKEN`, `COPILOT_MODEL_SOURCE`, `MODEL_NAME`, Azure connection details
+- `Azure OpenAI`: `MODEL_NAME`, Azure connection details
+- `OpenAI`: `MODEL_NAME`, `OPENAI_API_KEY`
+- `Claude`: `MODEL_NAME`, `ANTHROPIC_API_KEY`
+
+`REASONING_EFFORT` is optional for all providers.
 
 Notes:
 
 - For [GitHub-hosted models](https://models.github.ai/catalog/models), use a token with Copilot entitlement.
+- For Copilot with self-serving Azure, set `LLM_PROVIDER=copilot` and `COPILOT_MODEL_SOURCE=azure-openai`, then provide your Azure endpoint and authentication details in Settings.
 - For Azure, use the full base URL including `/openai/v1`.
-- `MODEL_NAME` can be a GitHub-hosted model such as `gpt-5.4` or an Azure deployment/model name.
+- `MODEL_NAME` can be a GitHub-hosted model name, an Azure deployment name, or another provider-specific model identifier.
 
 ## Python Environment
 
@@ -131,7 +131,7 @@ pptx-handler.ts
 | Module | Role |
 |--------|------|
 | `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point |
-| `layout_blueprint.py` | Declarative zone definitions for 10 layout types |
+| `layout_blueprint.py` | Declarative zone definitions for 14 layout types |
 | `com_text_measure.py` | PowerPoint COM AutoFit text height measurement (Windows) |
 | `constraint_solver.py` | Kiwisolver (Cassowary) constraint solver → `LayoutSpec` |
 | `layout_specs.py` | `LayoutSpec` / `RectSpec` dataclasses and `flow_layout_spec()` cascade helper |
@@ -166,7 +166,7 @@ Work can be saved and loaded as `.pptapp` project files (JSON). A project snapsh
 The center preview panel renders local slide images from the generated PPTX.
 
 - Rendered preview assets are stored under `previews/` in the configured workspace directory.
-- On Windows, local rendering requires Microsoft PowerPoint and the managed Python environment.
+- On Windows, local preview image rendering requires Microsoft PowerPoint and the managed Python environment. Without PowerPoint, the app can still generate decks with non-COM layout fallbacks, but it cannot render local preview images.
 - `Refresh Preview` reloads preview images that already exist in the workspace.
 
 ## Agentic Workflows
@@ -176,4 +176,15 @@ Prompt workflow files live here:
 - [workflows/prestaging.md](workflows/prestaging.md)
 - [workflows/create-pptx.md](workflows/create-pptx.md)
 
-The runtime wiring is in [electron/ipc/copilot-runtime.ts](electron/ipc/copilot-runtime.ts).
+Workflow loading is provider-neutral. The provider-specific runtime wiring lives in [electron/ipc/llm](electron/ipc/llm).
+
+## NotebookLM Integration
+
+The app can generate infographic images and slide decks from [Google NotebookLM](https://notebooklm.google/) notebooks via the unofficial `notebooklm-py` library.
+
+Requirements:
+
+- `notebooklm-py` installed in the project `.venv` (declared in `pyproject.toml`)
+- one-time NotebookLM sign-in completed on this computer
+
+In the slide panel, toggle **NotebookLM Infographic** to select a notebook and generate an infographic PNG saved to the workspace `images/` folder.

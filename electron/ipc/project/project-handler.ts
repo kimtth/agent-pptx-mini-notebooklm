@@ -2,7 +2,7 @@
  * IPC Handler: Project — workspace directory management and .pptapp save/load
  */
 
-import { ipcMain, dialog, app, BrowserWindow } from 'electron';
+import { ipcMain, dialog, BrowserWindow } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
 import { readWorkspaceDir, writeWorkspaceDir } from './workspace-utils.ts';

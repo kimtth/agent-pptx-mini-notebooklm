@@ -1,7 +1,7 @@
-import { CopilotClient, approveAll } from '@github/copilot-sdk';
+import { CopilotClient } from '@github/copilot-sdk';
 import type { SessionConfig } from '@github/copilot-sdk';
 import { createRequire } from 'module';
-import { resolveBundledPath } from './workspace-utils.ts';
+import { resolveBundledPath } from '../project/workspace-utils.ts';
 
 let clientInstance: CopilotClient | null = null;
 const AZURE_OPENAI_SCOPE = 'https://cognitiveservices.azure.com/.default';
@@ -11,6 +11,12 @@ function resolveReasoningEffort(): 'low' | 'medium' | 'high' | undefined {
   const value = process.env.REASONING_EFFORT?.trim().toLowerCase();
   if (value === 'low' || value === 'medium' || value === 'high') return value;
   return undefined;
+}
+
+function resolveCopilotModelSource(): 'github-hosted' | 'azure-openai' {
+  return process.env.COPILOT_MODEL_SOURCE?.trim().toLowerCase() === 'azure-openai'
+    ? 'azure-openai'
+    : 'github-hosted';
 }
 
 export function resetCopilotClient(): void {
@@ -38,7 +44,7 @@ export async function getSessionOptions(opts?: {
   const modelName = opts?.model ?? process.env.MODEL_NAME;
   const streaming = opts?.streaming ?? false;
   const reasoningEffort = resolveReasoningEffort();
-  const useAzureOpenAI = Boolean(endpoint);
+  const useAzureOpenAI = resolveCopilotModelSource() === 'azure-openai';
   const useGitHubModels = !useAzureOpenAI;
 
   const effort = reasoningEffort ? { reasoningEffort } : {};

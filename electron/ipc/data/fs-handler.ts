@@ -1,12 +1,12 @@
 /**
- * IPC Handler: File System — CSV, DOCX, TXT, MD ingestion
+ * IPC Handler: File System — CSV, DOCX, TXT, MD, PDF ingestion
  */
 
 import { ipcMain, dialog } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
 import { parse as csvParse } from 'csv-parse/sync';
-import type { DataFile } from '../../src/domain/ports/ipc';
+import type { DataFile } from '../../../src/domain/ports/ipc';
 import { consumeFileData } from './data-consumer.ts';
 
 // ---------------------------------------------------------------------------
@@ -49,12 +49,20 @@ async function readMd(filePath: string): Promise<DataFile> {
   return consumeFileData({ path: filePath, name, type: 'md', text, summary }, raw);
 }
 
+async function readPdf(filePath: string): Promise<DataFile> {
+  const name = path.basename(filePath);
+  // PDF text extraction is handled by MarkItDown in consumeFileData.
+  // Provide a minimal placeholder that consumeFileData will replace.
+  return consumeFileData({ path: filePath, name, type: 'pdf', text: '', summary: '' }, '');
+}
+
 async function readAnyFile(filePath: string): Promise<DataFile> {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === '.csv') return readCsv(filePath);
   if (ext === '.docx') return readDocx(filePath);
   if (ext === '.txt') return readTxt(filePath);
   if (ext === '.md') return readMd(filePath);
+  if (ext === '.pdf') return readPdf(filePath);
   throw new Error(`Unsupported file type: ${ext}`);
 }
 
@@ -68,7 +76,7 @@ export function registerFsHandlers(): void {
       title: 'Select Data Files',
       properties: ['openFile', 'multiSelections'],
       filters: [
-        { name: 'Data Files', extensions: ['csv', 'docx', 'txt', 'md'] },
+        { name: 'Data Files', extensions: ['csv', 'docx', 'txt', 'md', 'pdf'] },
         { name: 'All Files', extensions: ['*'] },
       ],
     });

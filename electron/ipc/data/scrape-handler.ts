@@ -4,7 +4,7 @@
 
 import { ipcMain } from 'electron';
 import { load } from 'cheerio';
-import type { ScrapeResult } from '../../src/domain/ports/ipc';
+import type { ScrapeResult } from '../../../src/domain/ports/ipc';
 import { consumeUrlData } from './data-consumer.ts';
 
 const MAX_TEXT_LEN = 4096;

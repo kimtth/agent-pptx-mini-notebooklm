@@ -17,7 +17,7 @@ export interface SourceArtifact {
 export interface DataFile {
   path: string;
   name: string;
-  type: 'csv' | 'docx' | 'txt' | 'md';
+  type: 'csv' | 'docx' | 'txt' | 'md' | 'pdf';
   headers?: string[];
   rows?: Record<string, string>[];
   text?: string;
@@ -152,6 +152,26 @@ export interface IpcSettingsAPI {
   save(settings: Record<string, string>): Promise<void>;
 }
 
+export interface NotebookLMNotebook {
+  id: string;
+  title: string;
+}
+
+export interface NotebookLMArtifactResult {
+  success: boolean;
+  path?: string;
+  error?: string;
+}
+
+export interface IpcNotebookLMAPI {
+  authStatus(): Promise<{ authenticated: boolean; notebookCount?: number; error?: string }>;
+  list(): Promise<{ notebooks: NotebookLMNotebook[] }>;
+  generateInfographic(notebookId: string, options?: { orientation?: string; detailLevel?: string }): Promise<NotebookLMArtifactResult>;
+  generateSlideDeck(notebookId: string, options?: { format?: string }): Promise<NotebookLMArtifactResult>;
+  clearInfographics(): Promise<{ success: boolean }>;
+  getInfographics(): Promise<string[]>;
+}
+
 export interface PptAppProject {
   version: 1;
   savedAt: string;
@@ -192,6 +212,7 @@ export interface ElectronAPI {
   images: IpcImagesAPI;
   settings: IpcSettingsAPI;
   project: IpcProjectAPI;
+  notebooklm: IpcNotebookLMAPI;
 }
 
 declare global {

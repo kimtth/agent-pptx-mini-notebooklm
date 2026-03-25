@@ -22,7 +22,7 @@ The app has three main areas:
 - Install Microsoft PowerPoint desktop for preview rendering.
 - Have valid model settings ready.
 
-You do not need to install GitHub Copilot CLI manually for this app. The desktop app includes the Copilot runtime it uses internally.
+You do not need to install a separate AI CLI manually for normal use.
 
 If your team gave you a prebuilt desktop app, open it normally.
 
@@ -36,19 +36,29 @@ When you open the app for the first time:
 2. Enter the connection details provided by your team.
 3. Save the settings.
 
-You may see fields such as:
+In Settings, first choose the provider, then fill only the fields that match that choice:
 
-- `GITHUB_TOKEN` **Mandatory**
-- `AZURE_OPENAI_ENDPOINT`
-- `AZURE_OPENAI_API_KEY`
-- `AZURE_TENANT_ID`
-- `MODEL_NAME` **Mandatory**
-- `REASONING_EFFORT`
+- `GitHub Copilot` + `GitHub-hosted models`:
+	`GITHUB_TOKEN` and `MODEL_NAME`
+- `GitHub Copilot` + `Self-serving Azure OpenAI / Foundry`:
+	`GITHUB_TOKEN`, `COPILOT_MODEL_SOURCE`, `MODEL_NAME`, and Azure connection details
+- `Azure OpenAI`:
+	`MODEL_NAME` and Azure connection details
+- `OpenAI`:
+	`MODEL_NAME` and `OPENAI_API_KEY`
+- `Claude`:
+	`MODEL_NAME` and `ANTHROPIC_API_KEY`
 
-In most setups, the important requirement is valid model access, not a separate Copilot CLI installation.
+`REASONING_EFFORT` is optional.
 
-- If your team uses GitHub-hosted models, enter a `GITHUB_TOKEN` that has Copilot access.
-- If your team uses Azure OpenAI, enter the Azure endpoint and related credentials provided by your team. Use the full base URL in `AZURE_OPENAI_ENDPOINT`, including `/openai/v1`.
+In most setups, the important requirement is valid model access, not any separate CLI installation.
+
+For most users, the recommended option is `GitHub Copilot` with `GitHub-hosted models`.
+
+- If your team uses GitHub-hosted models through Copilot, enter a `GITHUB_TOKEN` that has Copilot access.
+- If your team uses Copilot with your own Azure OpenAI or Foundry deployment, set `COPILOT_MODEL_SOURCE` to `azure-openai` and enter the Azure connection details.
+- If your team uses Azure OpenAI, OpenAI, or Claude, enter the provider-specific credentials provided by your team.
+- If your team uses Azure OpenAI, use the full base URL in `AZURE_OPENAI_ENDPOINT`, including `/openai/v1`.
 
 If you do not know which values to enter, contact the person who set up the app for you.
 
@@ -171,6 +181,25 @@ You can:
 
 Use this section before generating the PPTX if color control is important for your deck.
 
+## NotebookLM Infographic
+
+The slide panel includes a **NotebookLM Infographic** toggle that lets you generate infographic images from [Google NotebookLM](https://notebooklm.google/) notebooks.
+
+Before using this feature:
+
+1. Sign in to NotebookLM on this computer.
+2. Create a notebook at [notebooklm.google.com](https://notebooklm.google.com/) and upload your source documents.
+3. If NotebookLM is not connected yet, ask the person who set up the app to help complete the one-time connection.
+
+To generate an infographic:
+
+1. Open the `Slides` tab in the right panel.
+2. Toggle **NotebookLM Infographic** on.
+3. Select a notebook from the dropdown.
+4. Click **Generate Infographic**.
+
+The generated PNG image is saved to the workspace `images/` folder and can be used as a slide background image.
+
 ## Preview And Export
 
 The center panel shows the generated preview.
@@ -201,7 +230,7 @@ Saved projects let you reopen:
 
 Open Settings and check that the connection details are filled in correctly.
 
-This issue is usually caused by missing or invalid model credentials, not by a missing GitHub Copilot CLI installation.
+This issue is usually caused by missing or invalid model credentials, not by a missing local CLI installation.
 
 ### Slide previews do not appear
 

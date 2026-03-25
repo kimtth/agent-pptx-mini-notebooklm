@@ -10,15 +10,16 @@ import { net, protocol } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { pathToFileURL } from 'url';
-import { registerChatHandlers } from './ipc/chat-handler.ts';
-import { registerPptxHandlers } from './ipc/pptx-handler.ts';
-import { registerThemeHandlers } from './ipc/theme-handler.ts';
-import { registerFsHandlers } from './ipc/fs-handler.ts';
-import { registerScrapeHandlers } from './ipc/scrape-handler.ts';
-import { registerImageHandlers } from './ipc/image-handler.ts';
-import { registerSettingsHandlers, applySettingsToEnv } from './ipc/settings-handler.ts';
-import { registerProjectHandlers } from './ipc/project-handler.ts';
-import { readWorkspaceDir } from './ipc/workspace-utils.ts';
+import { registerChatHandlers } from './ipc/llm/chat-handler.ts';
+import { registerPptxHandlers } from './ipc/pptx/pptx-handler.ts';
+import { registerThemeHandlers } from './ipc/config/theme-handler.ts';
+import { registerFsHandlers } from './ipc/data/fs-handler.ts';
+import { registerScrapeHandlers } from './ipc/data/scrape-handler.ts';
+import { registerImageHandlers } from './ipc/data/image-handler.ts';
+import { registerSettingsHandlers, applySettingsToEnv } from './ipc/config/settings-handler.ts';
+import { registerProjectHandlers } from './ipc/project/project-handler.ts';
+import { registerNotebookLMHandlers } from './ipc/data/notebooklm-handler.ts';
+import { readWorkspaceDir } from './ipc/project/workspace-utils.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -110,6 +111,7 @@ app.whenReady()
     registerFsHandlers();
     registerScrapeHandlers();
     registerImageHandlers();
+    registerNotebookLMHandlers();
 
     createWindow();
 

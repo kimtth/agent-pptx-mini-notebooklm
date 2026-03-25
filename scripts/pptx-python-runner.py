@@ -1267,6 +1267,61 @@ def _unlock_or_rename(output_path: Path) -> Path:
         return alt
 
 
+def append_notebooklm_infographics(output_path: Path) -> None:
+    """Append NotebookLM-generated infographic images as full-bleed slides at the end of the PPTX."""
+    raw = os.environ.get('PPTX_NOTEBOOKLM_INFOGRAPHICS', '')
+    if not raw.strip():
+        return
+
+    try:
+        paths = json.loads(raw)
+    except json.JSONDecodeError:
+        return
+    if not isinstance(paths, list) or len(paths) == 0:
+        return
+
+    # Filter to existing image files
+    valid_paths = [p for p in paths if isinstance(p, str) and os.path.isfile(p)]
+    if not valid_paths:
+        return
+
+    print(f'[notebooklm] Appending {len(valid_paths)} infographic slide(s)…', file=sys.stderr)
+
+    prs = Presentation(str(output_path))
+    slide_w = prs.slide_width
+    slide_h = prs.slide_height
+    blank_layout = get_blank_layout(prs)
+
+    for img_path in valid_paths:
+        resolved = safe_image_path(img_path)
+        if not resolved:
+            print(f'[notebooklm] Skipping missing image: {img_path}', file=sys.stderr)
+            continue
+
+        slide = prs.slides.add_slide(blank_layout)
+
+        # Fit image to slide while preserving aspect ratio, centered
+        try:
+            from PIL import Image as _PILImage
+            with _PILImage.open(resolved) as img:
+                img_w, img_h = img.size
+            if img_w > 0 and img_h > 0:
+                scale = min(slide_w / img_w, slide_h / img_h)
+                fit_w = int(img_w * scale)
+                fit_h = int(img_h * scale)
+                left = (slide_w - fit_w) // 2
+                top = (slide_h - fit_h) // 2
+                slide.shapes.add_picture(resolved, left, top, fit_w, fit_h)
+            else:
+                slide.shapes.add_picture(resolved, 0, 0, slide_w, slide_h)
+        except Exception:
+            # Fallback: stretch to full slide
+            slide.shapes.add_picture(resolved, 0, 0, slide_w, slide_h)
+
+    prs.save(str(output_path))
+    print(f'[notebooklm] Appended {len(valid_paths)} infographic slide(s)', file=sys.stderr)
+
+
 def main() -> int:
     import io
     if isinstance(sys.stdout, io.TextIOWrapper):
@@ -1303,6 +1358,12 @@ def main() -> int:
 
     run_generated_code(generated_path, namespace)
     finalize_output(output_path, namespace)
+
+    # Append NotebookLM infographic slides if the option is activated
+    try:
+        append_notebooklm_infographics(output_path)
+    except Exception as exc:  # noqa: BLE001
+        print(f'[notebooklm] Failed to append infographics (PPTX was generated): {exc}', file=sys.stderr)
 
     # Stamp the actual creation date (python-pptx's bundled default.pptx has a frozen 2013 date)
     try:

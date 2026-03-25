@@ -404,6 +404,7 @@ def build_presentation(output_path: Path) -> Path:
         'title': 0, 'section': 0, 'agenda': 5, 'bullets': 6,
         'cards': 4, 'stats': 3, 'comparison': 6, 'timeline': 5,
         'summary': 3, 'diagram': 5, 'chart': 1,
+        'closing': 0, 'photo_fullbleed': 0, 'multi_column': 5,
     }
 
     for layout_type in list_layout_types():
@@ -429,7 +430,7 @@ def build_presentation(output_path: Path) -> Path:
 
 
 def main() -> None:
-    output_path = REPO_ROOT / 'samples' / 'sample_layout_blueprint.pptx'
+    output_path = REPO_ROOT / 'samples' / 'layout_blueprint.pptx'
     saved_path = build_presentation(output_path)
     print(saved_path)
 

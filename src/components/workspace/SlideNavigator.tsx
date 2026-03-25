@@ -2,12 +2,13 @@
  * SlideNavigator: numbered slide list with per-slide actions
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useSlidesStore } from '../../stores/slides-store'
 import { usePaletteStore } from '../../stores/palette-store'
 import { DESIGN_STYLE_OPTIONS, getDesignStyleMeta } from '../../domain/design-styles'
 import { FRAMEWORK_OPTIONS, getFrameworkMeta } from '../../domain/frameworks'
 import type { SlideItem } from '../../domain/entities/slide-work'
+import type { NotebookLMNotebook } from '../../domain/ports/ipc'
 import { ImagePickerModal } from './ImagePickerModal.tsx'
 import { toLocalImageUrl } from '../../application/local-image-url.ts'
 
@@ -167,6 +168,9 @@ export function SlideNavigator() {
           )}
         </div>
       </div>
+
+      {/* NotebookLM Infographic */}
+      <NotebookLMSection />
 
       {/* Slide list */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
@@ -346,6 +350,158 @@ function SlideListItem({
         />
       ) : null}
     </>
+  )
+}
+
+function NotebookLMSection() {
+  const [enabled, setEnabled] = useState(false)
+  const [authOk, setAuthOk] = useState<boolean | null>(null)
+  const [notebooks, setNotebooks] = useState<NotebookLMNotebook[]>([])
+  const [selectedNotebook, setSelectedNotebook] = useState<string>('')
+  const [generating, setGenerating] = useState(false)
+  const [result, setResult] = useState<{ success: boolean; path?: string; error?: string } | null>(null)
+  const [infographicPaths, setInfographicPaths] = useState<string[]>([])
+
+  const checkAuth = useCallback(async () => {
+    try {
+      const status = await window.electronAPI.notebooklm.authStatus()
+      setAuthOk(status.authenticated)
+      if (status.authenticated) {
+        const res = await window.electronAPI.notebooklm.list()
+        setNotebooks(res.notebooks)
+        if (res.notebooks.length > 0 && !selectedNotebook) {
+          setSelectedNotebook(res.notebooks[0].id)
+        }
+      }
+    } catch {
+      setAuthOk(false)
+    }
+  }, [selectedNotebook])
+
+  // Load existing infographic manifest when toggled on
+  useEffect(() => {
+    if (enabled) {
+      if (authOk === null) checkAuth()
+      window.electronAPI.notebooklm.getInfographics().then(setInfographicPaths).catch(() => {})
+    }
+  }, [enabled, authOk, checkAuth])
+
+  async function handleToggle() {
+    const next = !enabled
+    setEnabled(next)
+    if (!next) {
+      // Clear the manifest so infographics are not included in next PPTX generation
+      await window.electronAPI.notebooklm.clearInfographics().catch(() => {})
+      setInfographicPaths([])
+    }
+  }
+
+  async function handleGenerate() {
+    if (!selectedNotebook) return
+    setGenerating(true)
+    setResult(null)
+    try {
+      const res = await window.electronAPI.notebooklm.generateInfographic(selectedNotebook)
+      setResult(res)
+      if (res.success && res.path) {
+        setInfographicPaths((prev) => prev.includes(res.path!) ? prev : [...prev, res.path!])
+      }
+    } catch (e) {
+      setResult({ success: false, error: e instanceof Error ? e.message : 'Unknown error' })
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function handleClearInfographics() {
+    await window.electronAPI.notebooklm.clearInfographics().catch(() => {})
+    setInfographicPaths([])
+    setResult(null)
+  }
+
+  return (
+    <div
+      className="flex-none border-b px-4 py-3"
+      style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)' }}
+    >
+      <div className="flex items-center justify-between">
+        <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+          NotebookLM Infographic
+        </label>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          onClick={handleToggle}
+          className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
+          style={{ background: enabled ? 'var(--accent)' : 'var(--surface-hover)' }}
+        >
+          <span
+            className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
+            style={{ transform: enabled ? 'translateX(17px)' : 'translateX(3px)' }}
+          />
+        </button>
+      </div>
+
+      {enabled && (
+        <div className="mt-2 flex flex-col gap-2">
+          {authOk === null && (
+            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Checking authentication…</p>
+          )}
+          {authOk === false && (
+            <p className="text-[11px]" style={{ color: 'var(--danger, #ef4444)' }}>
+              NotebookLM is not connected yet. Sign in at https://notebooklm.google/ on this computer, then come back and try again.
+            </p>
+          )}
+          {authOk && (
+            <>
+              <select
+                value={selectedNotebook}
+                onChange={(e) => setSelectedNotebook(e.target.value)}
+                className="h-8 border px-2 text-xs outline-none"
+                style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
+              >
+                {notebooks.length === 0 && <option value="">No notebooks found</option>}
+                {notebooks.map((nb) => (
+                  <option key={nb.id} value={nb.id}>{nb.title}</option>
+                ))}
+              </select>
+              <button
+                disabled={generating || !selectedNotebook}
+                onClick={handleGenerate}
+                className="h-8 px-3 text-xs font-semibold transition-colors"
+                style={{ background: 'var(--accent)', color: '#fff', opacity: generating ? 0.6 : 1 }}
+              >
+                {generating ? 'Generating…' : 'Generate Infographic'}
+              </button>
+              {result && (
+                <p className="text-[11px]" style={{ color: result.success ? 'var(--text-secondary)' : 'var(--danger, #ef4444)' }}>
+                  {result.success ? `Saved to ${result.path?.split(/[\\/]/).pop()}` : result.error}
+                </p>
+              )}
+              {infographicPaths.length > 0 && (
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                    {infographicPaths.length} infographic{infographicPaths.length !== 1 ? 's' : ''} will be appended to the generated PPTX.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleClearInfographics}
+                    className="text-[10px] px-2 py-0.5 border transition-colors hover:bg-[var(--surface)]"
+                    style={{ borderColor: 'var(--panel-border)', color: 'var(--text-secondary)' }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+          <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+            Generate an infographic from a NotebookLM notebook. When enabled, generated infographics will be automatically appended as slides in the PPTX output.
+          </p>
+        </div>
+      )}
+    </div>
   )
 }
 

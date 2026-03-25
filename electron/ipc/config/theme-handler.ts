@@ -9,11 +9,11 @@ import { ipcMain, dialog } from 'electron';
 import fs from 'fs/promises';
 import JSZip from 'jszip';
 import { CopilotClient, approveAll } from '@github/copilot-sdk';
-import { normalizeGitHubToken, resolveCopilotCliPath } from './copilot-runtime.ts';
+import { normalizeGitHubToken, resolveCopilotCliPath } from '../llm/copilot-runtime.ts';
 import { onSettingsSaved } from './settings-handler.ts';
 import type { SessionConfig } from '@github/copilot-sdk';
-import type { PaletteColor, ThemeSlots, ThemeTokens } from '../../src/domain/entities/palette';
-import { DEFAULT_THEME_SLOTS } from '../../src/domain/theme/default-theme';
+import type { PaletteColor, ThemeSlots, ThemeTokens } from '../../../src/domain/entities/palette';
+import { DEFAULT_THEME_SLOTS } from '../../../src/domain/theme/default-theme';
 
 // ---------------------------------------------------------------------------
 // Color utilities (ported from oppadu)

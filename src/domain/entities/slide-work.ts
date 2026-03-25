@@ -32,7 +32,10 @@ export type SlideLayout =
   | 'timeline'
   | 'diagram'
   | 'summary'
-  | 'chart';
+  | 'chart'
+  | 'closing'
+  | 'photo_fullbleed'
+  | 'multi_column';
 
 export type FrameworkType =
   | 'mckinsey'

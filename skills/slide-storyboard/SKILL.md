@@ -180,6 +180,9 @@ N+1. Appendix section (layout: section)
 | `timeline` | Sequential steps / roadmap |
 | `diagram` | Concept diagram / architecture |
 | `summary` | Key Takeaways (3 points) |
+| `closing` | Thank-you / end slide |
+| `photo_fullbleed` | Full-bleed photo with overlaid title |
+| `multi_column` | 3–5 equal-width content columns |
 
 ## Available Icons
 

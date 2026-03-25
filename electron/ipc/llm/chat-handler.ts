@@ -11,12 +11,14 @@ import type { BrowserWindow } from 'electron';
 import fs from 'fs/promises';
 import { existsSync as fsExistsSync } from 'fs';
 import path from 'path';
-import { app } from 'electron';
-import { onSettingsSaved } from './settings-handler.ts';
-import { CopilotClient, defineTool, approveAll } from '@github/copilot-sdk';
-import type { SessionConfig } from '@github/copilot-sdk';
-import { getCopilotClient, getSessionOptions, resetCopilotClient, resolveWorkflowInstructionPath } from './copilot-runtime.ts';
-import type { ThemeTokens } from '../../src/domain/entities/palette';
+import { onSettingsSaved } from '../config/settings-handler.ts';
+import type { LLMToolDefinition, LLMSessionConfig } from './llm-provider.ts';
+import { getActiveProvider, resetAllProviders, registerProvider } from './llm-provider.ts';
+import type { LLMSession, LLMStreamDelta } from './llm-provider.ts';
+import { resolveWorkflowInstructionPath } from './copilot-runtime.ts';
+import { copilotProvider } from './copilot-adapter.ts';
+import { openaiProvider, azureOpenAIProvider, claudeProvider } from './aisdk-adapter.ts';
+import type { ThemeTokens } from '../../../src/domain/entities/palette';
 import type {
   SlideItem,
   DesignBrief,
@@ -24,14 +26,14 @@ import type {
   TemplateMeta,
   ScenarioPayload,
   SlideUpdatePayload,
-} from '../../src/domain/entities/slide-work';
-import type { DataFile, ScrapeResult } from '../../src/domain/ports/ipc';
-import { getIconifyCollectionById } from '../../src/domain/icons/iconify';
-import type { IconifyCollectionId } from '../../src/domain/icons/iconify';
-import { formatWorkflowForPrompt, getWorkflowConfig, type WorkflowConfig } from '../../src/domain/workflows/workflow-config';
-import { executeGeneratedPythonCodeToFile, formatExecutionFailure, computeLayoutSpecs, persistLayoutInputToWorkspace, persistSlideAssetsToWorkspace } from './pptx-handler.ts';
+} from '../../../src/domain/entities/slide-work';
+import type { DataFile, ScrapeResult } from '../../../src/domain/ports/ipc';
+import { getIconifyCollectionById } from '../../../src/domain/icons/iconify';
+import type { IconifyCollectionId } from '../../../src/domain/icons/iconify';
+import { formatWorkflowForPrompt, getWorkflowConfig, type WorkflowConfig } from '../../../src/domain/workflows/workflow-config';
+import { executeGeneratedPythonCodeToFile, formatExecutionFailure, computeLayoutSpecs, persistLayoutInputToWorkspace, persistSlideAssetsToWorkspace } from '../pptx/pptx-handler.ts';
 import { buildManagedSystemPrompt } from './system-prompts.ts';
-import { readWorkspaceDir, resolveBundledPath } from './workspace-utils.ts';
+import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts';
 
 const CHAT_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -49,7 +51,7 @@ interface WorkspaceContext {
   title: string;
   slides: SlideItem[];
   designBrief: DesignBrief | null;
-  designStyle: import('../../src/domain/entities/slide-work').DesignStyle | null;
+  designStyle: import('../../../src/domain/entities/slide-work').DesignStyle | null;
   framework: FrameworkType | null;
   templateMeta: TemplateMeta | null;
   pptxBuildError: string | null;
@@ -446,9 +448,14 @@ function sendToWindow(win: BrowserWindow, channel: string, ...args: unknown[]): 
 // ---------------------------------------------------------------------------
 
 export function registerChatHandlers(getWindow: () => BrowserWindow | null): void {
-  // Reset the Copilot client singleton whenever the user saves new settings
-  // so the next chat:send picks up the updated token / endpoint.
-  onSettingsSaved(() => { resetCopilotClient(); });
+  // Register all LLM providers
+  registerProvider('copilot', copilotProvider);
+  registerProvider('openai', openaiProvider);
+  registerProvider('azure-openai', azureOpenAIProvider);
+  registerProvider('claude', claudeProvider);
+
+  // Reset all provider clients whenever the user saves new settings
+  onSettingsSaved(() => { resetAllProviders(); });
 
   ipcMain.on('chat:cancel', () => {
     activeChatRequest?.cancel('Generation cancelled.');
@@ -505,7 +512,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           });
       }
 
-      let session: Awaited<ReturnType<CopilotClient['createSession']>> | null = null;
+      let session: LLMSession | null = null;
       let requestSettled = false;
       let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
@@ -539,8 +546,9 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         },
       };
 
-      // Tool factories (close over win for IPC emission)
-      const scenarioTool = defineTool('set_scenario', {
+      // Tool definitions (provider-neutral — close over win for IPC emission)
+      const scenarioTool: LLMToolDefinition = {
+        name: 'set_scenario',
         description:
           'Set the slide scenario (outline) for the presentation workspace panel. ' +
           'Each slide must have a keyMessage (the "so what" / key takeaway), a layout hint, and optionally an icon hint. ' +
@@ -591,15 +599,15 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         },
         handler: async (args: ScenarioPayload) => {
           win.webContents.send('chat:scenario', args);
-          // Fire-and-forget: persist layout input for later use without blocking the LLM
           computeLayoutSpecs(args.slides).catch((err) => {
             console.log('[chat] Failed to compute layout specs for storyboard (non-blocking):', err);
           });
           return { success: true, message: `Scenario "${args.title}" set with ${args.slides.length} slides.` };
         },
-      });
+      };
 
-      const updateSlideTool = defineTool('update_slide', {
+      const updateSlideTool: LLMToolDefinition = {
+        name: 'update_slide',
         description: 'Update a single slide in the existing scenario. Use when the user asks to change a specific slide. You may also update imageQuery to change the image search keywords used for that slide.',
         parameters: {
           type: 'object' as const,
@@ -619,7 +627,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           win.webContents.send('chat:slide-update', args);
           return { success: true, message: `Slide ${args.number} updated.` };
         },
-      });
+      };
 
       // ---------- PPTX layout infrastructure tools ----------
 
@@ -634,7 +642,8 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         return resolveBundledPath('scripts', 'layout', basename);
       };
 
-      const patchLayoutInfrastructureTool = defineTool('patch_layout_infrastructure', {
+      const patchLayoutInfrastructureTool: LLMToolDefinition = {
+        name: 'patch_layout_infrastructure',
         description:
           'Read or patch the layout infrastructure files (layout_specs.py or layout_validator.py). ' +
           'Use this when layout validation errors occur and the layout spec coordinates or validator thresholds need adjustment. ' +
@@ -698,9 +707,10 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
 
           return { success: false, error: `Unknown action "${args.action}". Use "read" or "patch".` };
         },
-      });
+      };
 
-      const rerunPptxTool = defineTool('rerun_pptx', {
+      const rerunPptxTool: LLMToolDefinition = {
+        name: 'rerun_pptx',
         description:
           'Re-execute the last generated python-pptx code after patching layout infrastructure files. ' +
           'This re-runs the previously written generated-source.py with the same theme and title. ' +
@@ -742,9 +752,10 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
             return { success: false, error: formatExecutionFailure(err) };
           }
         },
-      });
+      };
 
-      const suggestFrameworkTool = defineTool('suggest_framework', {
+      const suggestFrameworkTool: LLMToolDefinition = {
+        name: 'suggest_framework',
         description:
           'Present available business frameworks to the user for selection. ' +
           'The user defines the framework — do not auto-select one. ' +
@@ -764,16 +775,15 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           win.webContents.send('chat:framework-suggested', args);
           return { success: true, message: `Framework "${args.primary}" suggested.` };
         },
-      });
+      };
 
       const buildSessionConfig = (
-        opts: Partial<SessionConfig>,
         skillDirectories: string[],
         mode: SessionMode,
         workflow: WorkflowConfig | null,
         frameworkAlreadySet: boolean,
         workspaceAbsPath: string,
-      ): SessionConfig => {
+      ): LLMSessionConfig => {
         const workflowDirective = workflow?.agentDirective ?? '';
         const storyFrameworkInstruction = frameworkAlreadySet
           ? 'IMPORTANT: The user has already chosen a business framework — it is shown in the Current Workspace section. Apply it directly. Do NOT ask the user to choose a framework again or list framework options.'
@@ -790,47 +800,40 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         });
 
         return {
-          ...opts,
           tools: mode === 'pptx'
             ? [patchLayoutInfrastructureTool, rerunPptxTool]
             : frameworkAlreadySet
               ? [scenarioTool, updateSlideTool]
               : [scenarioTool, updateSlideTool, suggestFrameworkTool],
           skillDirectories,
-          systemMessage: {
-            mode: 'append' as const,
-            content: mode === 'pptx' ? pptxSystemMessage : storySystemMessage,
-          },
-          onPermissionRequest: approveAll,
+          systemMessage: mode === 'pptx' ? pptxSystemMessage : storySystemMessage,
+          model: process.env.MODEL_NAME || undefined,
+          streaming: true,
+          reasoningEffort: (process.env.REASONING_EFFORT as 'low' | 'medium' | 'high') || undefined,
         };
       };
 
-      const wireSession = (s: typeof session) => {
-        s!.on('assistant.reasoning_delta', (event) => {
-          const delta = event.data?.deltaContent ?? '';
-          if (delta) sendToWindow(win, 'chat:stream', { thinking: delta });
-        });
-        s!.on('assistant.message_delta', (event) => {
-          const delta = event.data?.deltaContent ?? '';
-          if (delta) sendToWindow(win, 'chat:stream', { content: delta });
-        });
-        s!.on('session.error', (event) => {
-          const msg = event.data?.message ?? 'Unknown error';
-          failRequest(msg);
-        });
-      };
-
       try {
-        const copilot = await getCopilotClient();
-        const sessionOpts = await getSessionOptions({ streaming: true });
+        const provider = getActiveProvider();
         const workflow = resolveWorkflow(message, workspace);
         const sessionMode: SessionMode = resolveSessionMode(message, workspace);
         const skillDirectories = await getSkillDirectories(sessionMode);
 
         const frameworkAlreadySet = !!workspace.framework;
         const wsDir = await readWorkspaceDir();
-        session = await copilot.createSession(buildSessionConfig(sessionOpts, skillDirectories, sessionMode, workflow, frameworkAlreadySet, wsDir));
-        wireSession(session);
+        const sessionConfig = buildSessionConfig(skillDirectories, sessionMode, workflow, frameworkAlreadySet, wsDir);
+
+        const onDelta = (delta: LLMStreamDelta) => {
+          if (delta.type === 'content') {
+            sendToWindow(win, 'chat:stream', { content: delta.text });
+          } else if (delta.type === 'thinking') {
+            sendToWindow(win, 'chat:stream', { thinking: delta.text });
+          } else if (delta.type === 'error') {
+            failRequest(delta.message);
+          }
+        };
+
+        session = await provider.createSession(sessionConfig, onDelta);
 
         const timeoutPromise = new Promise<never>((_, reject) => {
           timeoutHandle = setTimeout(() => {
@@ -842,7 +845,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         });
 
         await Promise.race([
-          session.sendAndWait({ prompt }, 600_000),
+          session.sendAndWait(prompt, 600_000),
           timeoutPromise,
         ]);
 

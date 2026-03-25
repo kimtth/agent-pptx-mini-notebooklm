@@ -3,10 +3,10 @@ import path from 'path';
 import { createHash } from 'crypto';
 import { promisify } from 'util';
 import { execFile } from 'child_process';
-import type { DataFile, ScrapeResult, SourceArtifact } from '../../src/domain/ports/ipc';
-import { readWorkspaceDir } from './workspace-utils.ts';
-import { resolveBundledPath } from './workspace-utils.ts';
-import { resolvePythonExecutable } from './python-runtime.ts';
+import type { DataFile, ScrapeResult, SourceArtifact } from '../../../src/domain/ports/ipc';
+import { readWorkspaceDir } from '../project/workspace-utils.ts';
+import { resolveBundledPath } from '../project/workspace-utils.ts';
+import { resolvePythonExecutable } from '../pptx/python-runtime.ts';
 
 const execFileAsync = promisify(execFile);
 const MAX_SUMMARY_LEN = 1800;

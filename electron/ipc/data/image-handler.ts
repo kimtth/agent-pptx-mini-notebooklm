@@ -5,9 +5,9 @@ import path from 'path'
 import { createHash } from 'crypto'
 import { promisify } from 'util'
 import { load } from 'cheerio'
-import { readWorkspaceDir, resolveBundledPath } from './workspace-utils.ts'
-import { ensurePythonModule, pythonSetupHint, resolvePythonExecutable } from './python-runtime.ts'
-import type { ImageSearchCandidate, ImageSearchRequest, ImageSearchResult, ResolvedSlideImage } from '../../src/domain/ports/ipc'
+import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts'
+import { ensurePythonModule, pythonSetupHint, resolvePythonExecutable } from '../pptx/python-runtime.ts'
+import type { ImageSearchCandidate, ImageSearchRequest, ImageSearchResult, ResolvedSlideImage } from '../../../src/domain/ports/ipc'
 
 const execFileAsync = promisify(execFile)
 

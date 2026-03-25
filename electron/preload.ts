@@ -95,4 +95,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     load: () => ipcRenderer.invoke('project:load'),
       listWorkspaceFiles: () => ipcRenderer.invoke('project:listWorkspaceFiles'),
   },
+
+  notebooklm: {
+    authStatus: () => ipcRenderer.invoke('notebooklm:authStatus'),
+    list: () => ipcRenderer.invoke('notebooklm:list'),
+    generateInfographic: (notebookId: string, options?: { orientation?: string; detailLevel?: string }) =>
+      ipcRenderer.invoke('notebooklm:generateInfographic', notebookId, options),
+    generateSlideDeck: (notebookId: string, options?: { format?: string }) =>
+      ipcRenderer.invoke('notebooklm:generateSlideDeck', notebookId, options),
+    clearInfographics: () => ipcRenderer.invoke('notebooklm:clearInfographics'),
+    getInfographics: () => ipcRenderer.invoke('notebooklm:getInfographics'),
+  },
 });

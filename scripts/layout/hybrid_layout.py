@@ -33,14 +33,20 @@ JSON schema for ``--input`` (array of slide content objects)::
 
 from __future__ import annotations
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from layout_blueprint import LayoutBlueprint, ZoneRole, get_blueprint
 from layout_specs import LayoutSpec
+
+if TYPE_CHECKING:
+    from font_text_measure import TextMeasureRequest
 
 
 # ---------------------------------------------------------------------------
@@ -136,14 +142,54 @@ def _column_width(blueprint: LayoutBlueprint, content_w: float) -> float | None:
 # Main orchestrator
 # ---------------------------------------------------------------------------
 
+def _get_measure_backend() -> tuple[type, callable]:
+    """Select the best available text-measurement backend.
+
+    Returns ``(TextMeasureRequest_class, measure_text_heights_func)``.
+
+    Priority:
+    1. PowerPoint COM (Windows + PowerPoint installed) — gold standard
+    2. Pillow font metrics (cross-platform) — good accuracy
+    3. Heuristic estimator (always available) — last resort
+    """
+    # 1. Try COM (Windows only)
+    if sys.platform == 'win32':
+        try:
+            from com_text_measure import TextMeasureRequest, measure_text_heights
+            return TextMeasureRequest, measure_text_heights
+        except (ImportError, OSError):
+            pass
+
+    # 2. Try Pillow font-metrics backend
+    try:
+        from font_text_measure import TextMeasureRequest, measure_text_heights
+        return TextMeasureRequest, measure_text_heights
+    except ImportError:
+        pass
+
+    # 3. Heuristic fallback — synthesise a compatible measure function
+    from font_text_measure import TextMeasureRequest
+    from layout_specs import estimate_text_height_in
+
+    def _heuristic_measure(requests: list) -> list[float]:
+        return [
+            estimate_text_height_in(
+                r.text, r.width_in, r.font_size_pt,
+            )
+            for r in requests
+        ]
+
+    return TextMeasureRequest, _heuristic_measure
+
+
 def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
     """Compute content-adaptive layout specs for all slides.
 
-    Opens PowerPoint COM once, measures all text zones, then runs the
-    constraint solver for each slide.  Returns a list of ``LayoutSpec``
-    in the same order as *slides*.
+    Automatically selects the best measurement backend:
+    COM (Windows + PowerPoint) → Pillow font metrics → heuristic fallback.
+    Returns a list of ``LayoutSpec`` in the same order as *slides*.
     """
-    from com_text_measure import TextMeasureRequest, measure_text_heights
+    TextMeasureRequest, measure_text_heights = _get_measure_backend()
     from constraint_solver import solve_layout
 
     # Step 1: Load blueprints

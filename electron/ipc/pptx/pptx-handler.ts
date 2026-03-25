@@ -1,14 +1,14 @@
-import { ipcMain, dialog, app, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow } from 'electron'
 import fs from 'fs/promises'
-import { existsSync, readdirSync } from 'fs'
+import { existsSync } from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import type { ThemeTokens } from '../../src/domain/entities/palette'
-import type { TemplateMeta } from '../../src/domain/entities/slide-work'
-import { DEFAULT_THEME_C } from '../../src/domain/theme/default-theme'
+import type { ThemeTokens } from '../../../src/domain/entities/palette'
+import type { TemplateMeta } from '../../../src/domain/entities/slide-work'
+import { DEFAULT_THEME_C } from '../../../src/domain/theme/default-theme'
 import { ensurePythonModule, pythonSetupHint, resolvePythonExecutable } from './python-runtime.ts'
-import { readWorkspaceDir, resolveBundledPath } from './workspace-utils.ts'
+import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts'
 
 const execFileAsync = promisify(execFile)
 const GENERATED_CODE_EXECUTION_ATTEMPTS = 2
@@ -399,6 +399,17 @@ export async function executeGeneratedPythonCodeToFile(
   }
   const templateMetaJson = opts?.templateMeta ? JSON.stringify(opts.templateMeta) : ''
 
+  // Read NotebookLM infographic manifest (if present, these will be appended as slides)
+  const infographicManifestPath = path.join(workspaceDir, 'previews', 'notebooklm-infographics.json')
+  let notebookLMInfographicsJson = ''
+  try {
+    const raw = await fs.readFile(infographicManifestPath, 'utf-8')
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      notebookLMInfographicsJson = JSON.stringify(parsed)
+    }
+  } catch { /* no manifest or empty — skip */ }
+
   const args = [runnerScriptPath, sourcePath, outputPath]
   if (opts?.renderDir) {
     args.push('--render-dir', opts.renderDir)
@@ -426,6 +437,7 @@ export async function executeGeneratedPythonCodeToFile(
             ...(slideAssetsJson.trim() ? { PPTX_SLIDE_ASSETS_JSON: slideAssetsJson } : {}),
             ...(templatePath ? { PPTX_TEMPLATE_PATH: templatePath } : {}),
             ...(templateMetaJson ? { PPTX_TEMPLATE_META_JSON: templateMetaJson } : {}),
+            ...(notebookLMInfographicsJson ? { PPTX_NOTEBOOKLM_INFOGRAPHICS: notebookLMInfographicsJson } : {}),
             WORKSPACE_DIR: workspaceDir,
             PPTX_LAYOUT_SPECS_JSON: layoutSpecsJson,
           },
