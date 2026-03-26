@@ -47,7 +47,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   theme: {
     generatePalette: (seeds: string[]) => ipcRenderer.invoke('theme:generatePalette', seeds),
-    autoAssign: (colors: unknown[]) => ipcRenderer.invoke('theme:autoAssign', colors),
+    autoAssign: (colors: unknown[], seeds?: string[]) => ipcRenderer.invoke('theme:autoAssign', colors, seeds ?? []),
     exportThmx: (tokens: unknown) => ipcRenderer.invoke('theme:exportThmx', tokens),
   },
 
@@ -98,7 +98,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   notebooklm: {
     authStatus: () => ipcRenderer.invoke('notebooklm:authStatus'),
+    setupAuth: () => ipcRenderer.invoke('notebooklm:setupAuth'),
     list: () => ipcRenderer.invoke('notebooklm:list'),
+    createNotebook: (title: string) => ipcRenderer.invoke('notebooklm:createNotebook', title),
+    uploadSources: (notebookId: string, sources: { files?: Array<{ path: string; mime?: string }>; texts?: Array<{ title: string; content: string }>; urls?: string[] }) =>
+      ipcRenderer.invoke('notebooklm:uploadSources', notebookId, sources),
     generateInfographic: (notebookId: string, options?: { orientation?: string; detailLevel?: string }) =>
       ipcRenderer.invoke('notebooklm:generateInfographic', notebookId, options),
     generateSlideDeck: (notebookId: string, options?: { format?: string }) =>

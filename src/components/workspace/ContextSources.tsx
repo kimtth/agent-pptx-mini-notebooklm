@@ -150,7 +150,7 @@ export function ContextSources() {
 
         {files.length === 0 ? (
           <p className="px-4 py-4 text-xs" style={{ color: 'var(--text-muted)' }}>
-            No files loaded. Add CSV, DOCX, MD, or TXT files.
+            No files loaded. Add CSV, DOCX, MD, PDF, or TXT files.
           </p>
         ) : (
           files.map((f, index) => (

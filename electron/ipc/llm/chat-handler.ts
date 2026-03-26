@@ -35,7 +35,8 @@ import { executeGeneratedPythonCodeToFile, formatExecutionFailure, computeLayout
 import { buildManagedSystemPrompt } from './system-prompts.ts';
 import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts';
 
-const CHAT_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
+const CHAT_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
+const CHAT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 
 type ActiveChatRequest = {
   cancel: (reason?: string) => void;
@@ -384,7 +385,7 @@ async function buildPrompt(
     if (workspace.theme.colors.length > 0) {
       parts.push(`Palette colors: ${workspace.theme.colors.slice(0, 20).map((color) => `${color.name} ${color.hex}`).join(' | ')}`);
     }
-    parts.push('Use the OOXML slot hex values as color constants in python-pptx code when generating slides. Readability is mandatory: use theme colors first, and when text sits on any colored or image background, call ensure_contrast(fg_hex, bg_hex). If style conflicts with readability, readability wins.');
+    parts.push('CRITICAL: The palette colors above are the ONLY color source for this deck. Use OOXML slot and palette hex values exclusively in python-pptx code. Do NOT use any hardcoded hex colors from the design style spec — those are overridden by this palette. Readability is mandatory: when text sits on any colored or image background, call ensure_contrast(fg_hex, bg_hex). If style conflicts with readability, readability wins.');
     parts.push('');
   }
 
@@ -414,8 +415,17 @@ async function buildPrompt(
     parts.push('Ensure contrast safety and readability when applying the design style — avoid mid-tone on mid-tone, and add overlay panels behind text over images.');
     const styleBlock = await readDesignStyleBlock(workspace.designStyle);
     if (styleBlock) {
+      // When a palette is active, strip hardcoded hex colors from the style spec
+      // so the LLM uses only palette colors for the design style's layout/composition.
+      const hasActivePalette = workspace.theme && workspace.theme.colors.length > 0;
+      const spec = hasActivePalette
+        ? styleBlock.replace(/#[0-9A-Fa-f]{6}/g, '(use palette)').replace(/@ \d+[–-]\d+% opacity/g, '@ low opacity')
+        : styleBlock;
       parts.push('### Style Spec\n');
-      parts.push(styleBlock);
+      if (hasActivePalette) {
+        parts.push('NOTE: A custom palette is active. Use ONLY the palette/theme colors from the Active Theme Palette section above. The hex values below have been replaced — apply only the layout, composition, and signature element rules from this style spec.');
+      }
+      parts.push(spec);
     } else {
       parts.push('If the pptx-design-styles skill is available, use it for style details.');
     }
@@ -515,11 +525,17 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
       let session: LLMSession | null = null;
       let requestSettled = false;
       let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+      let lastActivityTime = Date.now();
 
       const clearRequestTimeout = () => {
         if (!timeoutHandle) return;
         clearTimeout(timeoutHandle);
         timeoutHandle = null;
+      };
+
+      /** Reset inactivity timer — call whenever the LLM streams or a tool executes */
+      const resetInactivityTimeout = () => {
+        lastActivityTime = Date.now();
       };
 
       const completeRequest = () => {
@@ -824,6 +840,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         const sessionConfig = buildSessionConfig(skillDirectories, sessionMode, workflow, frameworkAlreadySet, wsDir);
 
         const onDelta = (delta: LLMStreamDelta) => {
+          resetInactivityTimeout();
           if (delta.type === 'content') {
             sendToWindow(win, 'chat:stream', { content: delta.text });
           } else if (delta.type === 'thinking') {
@@ -836,16 +853,25 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         session = await provider.createSession(sessionConfig, onDelta);
 
         const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutHandle = setTimeout(() => {
-            if (session) {
-              void session.disconnect().catch(() => { });
+          const startTime = Date.now();
+          const check = () => {
+            const elapsed = Date.now() - startTime;
+            const idle = Date.now() - lastActivityTime;
+            if (elapsed >= CHAT_REQUEST_TIMEOUT_MS) {
+              if (session) void session.disconnect().catch(() => { });
+              reject(new Error(`Generation timed out after ${Math.round(CHAT_REQUEST_TIMEOUT_MS / 60000)} minutes. Try a simpler prompt or run the request again.`));
+            } else if (idle >= CHAT_INACTIVITY_TIMEOUT_MS) {
+              if (session) void session.disconnect().catch(() => { });
+              reject(new Error(`Generation stalled — no activity for ${Math.round(CHAT_INACTIVITY_TIMEOUT_MS / 60000)} minutes. The LLM may be unresponsive. Try again.`));
+            } else {
+              timeoutHandle = setTimeout(check, 30_000);
             }
-            reject(new Error(`Generation timed out after ${Math.round(CHAT_REQUEST_TIMEOUT_MS / 60000)} minutes. Try a simpler prompt or run the request again.`));
-          }, CHAT_REQUEST_TIMEOUT_MS);
+          };
+          timeoutHandle = setTimeout(check, 30_000);
         });
 
         await Promise.race([
-          session.sendAndWait(prompt, 600_000),
+          session.sendAndWait(prompt, CHAT_REQUEST_TIMEOUT_MS),
           timeoutPromise,
         ]);
 

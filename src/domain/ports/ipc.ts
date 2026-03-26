@@ -105,7 +105,7 @@ export interface IpcChatAPI {
 
 export interface IpcThemeAPI {
   generatePalette(seeds: string[]): Promise<PaletteColor[]>;
-  autoAssign(colors: PaletteColor[]): Promise<ThemeSlots>;
+  autoAssign(colors: PaletteColor[], seeds?: string[]): Promise<ThemeSlots>;
   exportThmx(tokens: ThemeTokens): Promise<{ success: boolean; path?: string; error?: string }>;
 }
 
@@ -161,11 +161,39 @@ export interface NotebookLMArtifactResult {
   success: boolean;
   path?: string;
   error?: string;
+  message?: string;
+}
+
+export interface NotebookLMAuthStatus {
+  authenticated: boolean;
+  notebookCount?: number;
+  error?: string;
+  errorType?: string;
+  suggestion?: string;
+  loginCommand?: string;
+}
+
+export interface NotebookLMCreateResult {
+  success: boolean;
+  notebookId?: string;
+  title?: string;
+  error?: string;
+}
+
+export interface NotebookLMUploadResult {
+  success: boolean;
+  uploaded: Array<{ type: string; path?: string; title?: string; url?: string; sourceId: string }>;
+  errors: Array<{ path?: string; title?: string; url?: string; error: string }>;
+  uploadedCount: number;
+  errorCount: number;
 }
 
 export interface IpcNotebookLMAPI {
-  authStatus(): Promise<{ authenticated: boolean; notebookCount?: number; error?: string }>;
+  authStatus(): Promise<NotebookLMAuthStatus>;
+  setupAuth(): Promise<NotebookLMArtifactResult>;
   list(): Promise<{ notebooks: NotebookLMNotebook[] }>;
+  createNotebook(title: string): Promise<NotebookLMCreateResult>;
+  uploadSources(notebookId: string, sources: { files?: Array<{ path: string; mime?: string }>; texts?: Array<{ title: string; content: string }>; urls?: string[] }): Promise<NotebookLMUploadResult>;
   generateInfographic(notebookId: string, options?: { orientation?: string; detailLevel?: string }): Promise<NotebookLMArtifactResult>;
   generateSlideDeck(notebookId: string, options?: { format?: string }): Promise<NotebookLMArtifactResult>;
   clearInfographics(): Promise<{ success: boolean }>;
@@ -191,6 +219,10 @@ export interface PptAppProject {
   dataSources?: {
     files: DataFile[];
     urls: Array<{ url: string; status: string; result?: ScrapeResult }>;
+  };
+  notebookLM?: {
+    enabled: boolean;
+    infographicPaths: string[];
   };
 }
 

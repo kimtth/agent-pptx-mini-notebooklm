@@ -18,10 +18,7 @@ Requirements:
 - Node.js with `pnpm`
 - `uv` and Python 3.13+
 - credentials for at least one supported model provider
-- Microsoft PowerPoint on Windows — required for local preview images; layout measurement falls back in order:
-  - **COM** (PowerPoint on Windows) — WYSIWYG: renders a real textbox and reads back the exact shape height *(highest accuracy)*
-  - **Pillow font-metrics** — cross-platform: simulates word-wrap via TrueType glyph metrics; accurate but not pixel-perfect *(~90–95% accuracy)*
-  - **Auto-size** — last resort: sets `TEXT_TO_FIT_SHAPE` on shapes and lets PowerPoint shrink text at open time; no pre-measured height *(lowest accuracy — text may be visibly scaled down)*
+- Microsoft PowerPoint on Windows (Optional, but recommended) — required for local preview images; layout measurement falls back in order: See [the details](#text-height-measurement)
 
 Install dependencies:
 
@@ -43,7 +40,7 @@ Before running the app, decide which provider you want to use in Settings:
 - Azure OpenAI
 - Claude
 
-Recommended option for most users: **GitHub Copilot with GitHub-hosted models**. It has the simplest setup in this app and is the most tested path.
+**Recommended option** for most users: **GitHub Copilot with GitHub-hosted models**. It has the simplest setup in this app and is the most tested path.
 
 Run the development server:
 
@@ -113,7 +110,7 @@ pptx-handler.ts
   │       ↓
   │     hybrid_layout.py               Orchestrator (CLI entry point)
   │       ├─ layout_blueprint.py       Load declarative zone definitions
-  │       ├─ com_text_measure.py       Measure text heights via PowerPoint COM
+  │       ├─ com_text_measure.py       Measure text heights (COM → Pillow → auto-size fallback)
   │       └─ constraint_solver.py      Solve zone positions with kiwisolver
   │             └─ layout_specs.py     Emit LayoutSpec / RectSpec dataclasses
   │       ↓
@@ -132,16 +129,22 @@ pptx-handler.ts
 |--------|------|
 | `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point |
 | `layout_blueprint.py` | Declarative zone definitions for 14 layout types |
-| `com_text_measure.py` | PowerPoint COM AutoFit text height measurement (Windows) |
+| `com_text_measure.py` | Text height measurement with three-tier fallback: COM (Windows + PowerPoint) → Pillow font-metrics (cross-platform) → auto-size |
 | `constraint_solver.py` | Kiwisolver (Cassowary) constraint solver → `LayoutSpec` |
 | `layout_specs.py` | `LayoutSpec` / `RectSpec` dataclasses and `flow_layout_spec()` cascade helper |
 | `layout_validator.py` | Post-generation validation (overlap, bounds, text overflow) |
 
-Pre-computed specs are injected as `PRECOMPUTED_LAYOUT_SPECS` into the generated code namespace. Requires `kiwisolver` and `pywin32` (Windows + PowerPoint).
+Pre-computed specs are injected as `PRECOMPUTED_LAYOUT_SPECS` into the generated code namespace. Requires `kiwisolver`; `pywin32` and PowerPoint are optional — text height measurement falls back through COM → Pillow → auto-size.
 
 Hybrid layout artifacts are stored in the active workspace under `previews/`:
 - `layout-input.json` — the storyboard-derived `SlideContent[]` payload written immediately when `set_scenario` runs and refreshed again before layout computation
 - `layout-specs.json` — the computed `LayoutSpec[]` output written by `hybrid_layout.py`
+
+##### Text height measurement
+
+- **COM** (PowerPoint on Windows) — WYSIWYG: renders a real textbox and reads back the exact shape height *(highest accuracy)*
+- **Pillow font-metrics** — cross-platform: simulates word-wrap via TrueType glyph metrics; accurate but not pixel-perfect *(~90–95% accuracy)*
+- **Auto-size** — last resort: sets `TEXT_TO_FIT_SHAPE` on shapes and lets PowerPoint shrink text at open time; no pre-measured height *(lowest accuracy — text may be visibly scaled down)*
 
 ## Persistent Storage
 
@@ -185,6 +188,8 @@ The app can generate infographic images and slide decks from [Google NotebookLM]
 Requirements:
 
 - `notebooklm-py` installed in the project `.venv` (declared in `pyproject.toml`)
-- one-time NotebookLM sign-in completed on this computer
+- one-time `notebooklm-py` library login completed in the project environment
+
+Browser sign-in at `https://notebooklm.google/` is not sufficient by itself. The app checks the `notebooklm-py` library's stored session, so use the in-app **Open NotebookLM Login** action or run `python -m notebooklm login` from the project `.venv`, complete the browser sign-in, then press ENTER in that terminal to save the session.
 
 In the slide panel, toggle **NotebookLM Infographic** to select a notebook and generate an infographic PNG saved to the workspace `images/` folder.

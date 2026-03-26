@@ -5,10 +5,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useSlidesStore } from '../../stores/slides-store'
 import { usePaletteStore } from '../../stores/palette-store'
+import { useDataSourcesStore } from '../../stores/data-sources-store'
+import { useNotebookLMStore } from '../../stores/notebooklm-store'
 import { DESIGN_STYLE_OPTIONS, getDesignStyleMeta } from '../../domain/design-styles'
 import { FRAMEWORK_OPTIONS, getFrameworkMeta } from '../../domain/frameworks'
 import type { SlideItem } from '../../domain/entities/slide-work'
-import type { NotebookLMNotebook } from '../../domain/ports/ipc'
+import type { NotebookLMAuthStatus } from '../../domain/ports/ipc'
 import { ImagePickerModal } from './ImagePickerModal.tsx'
 import { toLocalImageUrl } from '../../application/local-image-url.ts'
 
@@ -87,6 +89,11 @@ export function SlideNavigator() {
             onChange={(e) => {
               const next = e.target.value
               setDesignStyle(next ? next as Parameters<typeof setDesignStyle>[0] : null)
+              // Sync style tone to palette store so BG/TEXT tokens flip correctly
+              const meta = next ? getDesignStyleMeta(next as Parameters<typeof setDesignStyle>[0]) : null
+              const { setStyleTone, commitTokens } = usePaletteStore.getState()
+              setStyleTone(meta?.tone ?? null)
+              commitTokens()
             }}
             className="h-8 border px-2 text-xs outline-none"
             style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
@@ -94,7 +101,7 @@ export function SlideNavigator() {
             <option value="">Select a brand style</option>
             {DESIGN_STYLE_OPTIONS.map((style) => (
               <option key={style.value} value={style.value}>
-                {style.label}
+                {style.tone === 'dark' ? '🌙 ' : style.tone === 'light' ? '☀️ ' : ''}{style.label}
               </option>
             ))}
           </select>
@@ -354,69 +361,145 @@ function SlideListItem({
 }
 
 function NotebookLMSection() {
-  const [enabled, setEnabled] = useState(false)
-  const [authOk, setAuthOk] = useState<boolean | null>(null)
-  const [notebooks, setNotebooks] = useState<NotebookLMNotebook[]>([])
-  const [selectedNotebook, setSelectedNotebook] = useState<string>('')
-  const [generating, setGenerating] = useState(false)
-  const [result, setResult] = useState<{ success: boolean; path?: string; error?: string } | null>(null)
-  const [infographicPaths, setInfographicPaths] = useState<string[]>([])
+  const { work } = useSlidesStore()
+  const { files, urls } = useDataSourcesStore()
+  const { enabled, infographicPaths, setEnabled, setInfographicPaths } = useNotebookLMStore()
+  const [authStatus, setAuthStatus] = useState<NotebookLMAuthStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [authBusy, setAuthBusy] = useState(false)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [authMessage, setAuthMessage] = useState<string | null>(null)
+
+  const authOk = authStatus?.authenticated ?? null
+  const hasContent = files.length > 0 || urls.length > 0 || work.slides.length > 0
 
   const checkAuth = useCallback(async () => {
     try {
       const status = await window.electronAPI.notebooklm.authStatus()
-      setAuthOk(status.authenticated)
-      if (status.authenticated) {
-        const res = await window.electronAPI.notebooklm.list()
-        setNotebooks(res.notebooks)
-        if (res.notebooks.length > 0 && !selectedNotebook) {
-          setSelectedNotebook(res.notebooks[0].id)
-        }
-      }
-    } catch {
-      setAuthOk(false)
+      setAuthStatus(status)
+      if (status.authenticated) setAuthMessage(null)
+    } catch (error) {
+      setAuthStatus({
+        authenticated: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        suggestion: 'Retry connection after completing NotebookLM library login.',
+      } as NotebookLMAuthStatus)
     }
-  }, [selectedNotebook])
+  }, [])
 
-  // Load existing infographic manifest when toggled on
   useEffect(() => {
     if (enabled) {
-      if (authOk === null) checkAuth()
+      checkAuth()
       window.electronAPI.notebooklm.getInfographics().then(setInfographicPaths).catch(() => {})
     }
-  }, [enabled, authOk, checkAuth])
+    // Only re-run when enabled changes, not on every authOk update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled])
 
   async function handleToggle() {
     const next = !enabled
     setEnabled(next)
     if (!next) {
-      // Clear the manifest so infographics are not included in next PPTX generation
       await window.electronAPI.notebooklm.clearInfographics().catch(() => {})
       setInfographicPaths([])
+      setStatusMessage(null)
     }
   }
 
-  async function handleGenerate() {
-    if (!selectedNotebook) return
-    setGenerating(true)
-    setResult(null)
+  /** End-to-end: create notebook → upload sources → generate infographic  */
+  async function handleGenerateEndToEnd() {
+    setBusy(true)
+    setStatusMessage(null)
     try {
-      const res = await window.electronAPI.notebooklm.generateInfographic(selectedNotebook)
-      setResult(res)
+      // 1. Find or create the fixed 'pptx-slide-agent' notebook
+      setStatusMessage('Preparing notebook…')
+      const created = await window.electronAPI.notebooklm.createNotebook('pptx-slide-agent')
+      if (!created.success || !created.notebookId) {
+        setStatusMessage(`Failed to create notebook: ${created.error ?? 'unknown error'}`)
+        return
+      }
+      const notebookId = created.notebookId
+
+      // 2. Upload workspace contents
+      setStatusMessage('Uploading sources…')
+
+      const fileSources = files
+        .filter((f) => f.path)
+        .map((f) => ({ path: f.path }))
+
+      const textSources: Array<{ title: string; content: string }> = []
+
+      // Add slide content as a text source
+      if (work.slides.length > 0) {
+        const slideText = work.slides.map((s) =>
+          `## Slide ${s.number}: ${s.title}\n${s.keyMessage}\n${s.bullets.map((b) => `- ${b}`).join('\n')}`,
+        ).join('\n\n')
+        textSources.push({ title: `${work.title || 'Presentation'} — Slide Content`, content: slideText })
+      }
+
+      // Add scraped URL text content
+      const urlTexts = urls
+        .filter((u) => u.status === 'ok' && u.result?.text)
+        .map((u) => ({ title: u.result?.title ?? u.url, content: u.result!.text }))
+      textSources.push(...urlTexts)
+
+      // Add file text content that can't be uploaded as files (txt/md inline)
+      const inlineTextFiles = files
+        .filter((f) => (f.type === 'txt' || f.type === 'md') && f.text)
+        .map((f) => ({ title: f.name, content: f.text! }))
+      textSources.push(...inlineTextFiles)
+
+      if (fileSources.length > 0 || textSources.length > 0) {
+        const upload = await window.electronAPI.notebooklm.uploadSources(notebookId, {
+          files: fileSources,
+          texts: textSources,
+        })
+        if (upload.errorCount > 0 && upload.uploadedCount === 0) {
+          setStatusMessage(`Upload failed: ${upload.errors.map((e) => e.error).join(', ')}`)
+          return
+        }
+        setStatusMessage(`Uploaded ${upload.uploadedCount} source${upload.uploadedCount !== 1 ? 's' : ''}. Generating infographic…`)
+      } else {
+        setStatusMessage('No sources to upload. Generating infographic from empty notebook…')
+      }
+
+      // 3. Generate infographic
+      const res = await window.electronAPI.notebooklm.generateInfographic(notebookId)
       if (res.success && res.path) {
         setInfographicPaths((prev) => prev.includes(res.path!) ? prev : [...prev, res.path!])
+        setStatusMessage(`Infographic saved — ${res.path.split(/[\\/]/).pop()}`)
+      } else {
+        setStatusMessage(`Infographic generation failed: ${res.error ?? 'unknown error'}`)
       }
     } catch (e) {
-      setResult({ success: false, error: e instanceof Error ? e.message : 'Unknown error' })
+      setStatusMessage(`Error: ${e instanceof Error ? e.message : 'Unknown error'}`)
     } finally {
-      setGenerating(false)
+      setBusy(false)
+    }
+  }
+
+  async function handleSetupAuth() {
+    setAuthBusy(true)
+    setAuthMessage(null)
+    if (typeof window.electronAPI?.notebooklm?.setupAuth !== 'function') {
+      setAuthMessage('Please restart the app to enable this button. Or run: python -m notebooklm login in a terminal.')
+      setAuthBusy(false)
+      return
+    }
+    try {
+      const setup = await window.electronAPI.notebooklm.setupAuth()
+      setAuthMessage(setup.message ?? (setup.success ? 'NotebookLM login opened.' : setup.error ?? 'NotebookLM setup failed.'))
+    } catch (error) {
+      setAuthMessage(error instanceof Error ? error.message : 'NotebookLM setup failed.')
+    } finally {
+      setAuthBusy(false)
     }
   }
 
   async function handleClearInfographics() {
     await window.electronAPI.notebooklm.clearInfographics().catch(() => {})
     setInfographicPaths([])
-    setResult(null)
+    setStatusMessage(null)
   }
 
   return (
@@ -449,40 +532,68 @@ function NotebookLMSection() {
             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Checking authentication…</p>
           )}
           {authOk === false && (
-            <p className="text-[11px]" style={{ color: 'var(--danger, #ef4444)' }}>
-              NotebookLM is not connected yet. Sign in at https://notebooklm.google/ on this computer, then come back and try again.
-            </p>
+            <>
+              <p className="text-[11px] leading-4" style={{ color: 'var(--danger, #ef4444)' }}>
+                NotebookLM is not connected yet.
+              </p>
+              {authStatus?.error && (
+                <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                  {authStatus.errorType ? `${authStatus.errorType}: ` : ''}{authStatus.error}
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={authBusy}
+                  onClick={handleSetupAuth}
+                  className="h-8 px-3 text-xs font-semibold transition-colors"
+                  style={{ background: 'var(--accent)', color: '#fff', opacity: authBusy ? 0.6 : 1 }}
+                >
+                  {authBusy ? 'Opening Login…' : 'Open NotebookLM Login'}
+                </button>
+                <button
+                  type="button"
+                  onClick={checkAuth}
+                  className="h-8 px-3 text-xs font-semibold border transition-colors"
+                  style={{ borderColor: 'var(--panel-border)', color: 'var(--text-primary)' }}
+                >
+                  Retry
+                </button>
+              </div>
+              <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                {authMessage ?? authStatus?.suggestion ?? 'Sign in via the login flow, then retry.'}
+              </p>
+            </>
           )}
           {authOk && (
             <>
-              <select
-                value={selectedNotebook}
-                onChange={(e) => setSelectedNotebook(e.target.value)}
-                className="h-8 border px-2 text-xs outline-none"
-                style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
-              >
-                {notebooks.length === 0 && <option value="">No notebooks found</option>}
-                {notebooks.map((nb) => (
-                  <option key={nb.id} value={nb.id}>{nb.title}</option>
-                ))}
-              </select>
               <button
-                disabled={generating || !selectedNotebook}
-                onClick={handleGenerate}
+                disabled={busy || !hasContent}
+                onClick={handleGenerateEndToEnd}
                 className="h-8 px-3 text-xs font-semibold transition-colors"
-                style={{ background: 'var(--accent)', color: '#fff', opacity: generating ? 0.6 : 1 }}
+                style={{ background: 'var(--accent)', color: '#fff', opacity: busy ? 0.6 : 1 }}
               >
-                {generating ? 'Generating…' : 'Generate Infographic'}
+                {busy ? (statusMessage ?? 'Working…') : 'Generate Infographic'}
               </button>
-              {result && (
-                <p className="text-[11px]" style={{ color: result.success ? 'var(--text-secondary)' : 'var(--danger, #ef4444)' }}>
-                  {result.success ? `Saved to ${result.path?.split(/[\\/]/).pop()}` : result.error}
+              {!hasContent && (
+                <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                  Add files or URLs in the Context tab, or create slides first.
+                </p>
+              )}
+              {!busy && statusMessage && (
+                <p
+                  className="text-[11px] leading-4"
+                  style={{ color: statusMessage.startsWith('Error') || statusMessage.startsWith('Failed') || statusMessage.includes('failed')
+                    ? 'var(--danger, #ef4444)'
+                    : 'var(--text-secondary)' }}
+                >
+                  {statusMessage}
                 </p>
               )}
               {infographicPaths.length > 0 && (
                 <div className="flex items-center justify-between">
                   <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
-                    {infographicPaths.length} infographic{infographicPaths.length !== 1 ? 's' : ''} will be appended to the generated PPTX.
+                    {infographicPaths.length} infographic{infographicPaths.length !== 1 ? 's' : ''} will be appended to the PPTX.
                   </p>
                   <button
                     type="button"
@@ -497,7 +608,7 @@ function NotebookLMSection() {
             </>
           )}
           <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
-            Generate an infographic from a NotebookLM notebook. When enabled, generated infographics will be automatically appended as slides in the PPTX output.
+            Creates a notebook from workspace contents, generates an infographic, and appends it to the PPTX output.
           </p>
         </div>
       )}

@@ -89,11 +89,12 @@ When a design style specifies colors (backgrounds, accents, text) that conflict 
 ## Core Production Principles
 
 - **Always use together with the pptx skill** for actual file generation
-- **Strictly follow** each style's background, font, and layout specifications
+- **Theme colors always win.** When `PPTX_THEME` is active, map every style color role to the nearest theme slot (`BG`, `TEXT`, `DARK`, `LIGHT`, `ACCENT1`–`ACCENT6`, etc.). Never use literal hex values from style specs when a theme is active — the style defines *mood, structure, and technique*; the theme defines *actual colors*.
+- **Readability is mandatory.** Always call `ensure_contrast(fg_hex, bg_hex)` when placing text on any colored surface (slide background, panel, card, image overlay). Never produce dark text on a dark background or light text on a light background.
 - Every slide must contain **at least one visual element** (shape, icon, color block)
 - **Never use text-only slides** — express design through color, form, and space
 - Repeat each style's **signature element** consistently across all slides
 - Match **font pairing** exactly as specified — typography drives 50% of the style impression
-- Use **exact HEX values** from `references/styles.md` — approximate colors break the aesthetic
+- `references/styles.md` uses **theme token names** (`DARK`, `ACCENT1`, etc.) — not hardcoded HEX. Always resolve them via `PPTX_THEME` at runtime.
 
 For detailed color, font, and layout specs per style → **[references/styles.md](references/styles.md)**

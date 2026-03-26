@@ -9,6 +9,7 @@ import { useSlidesStore } from './slides-store';
 import { useChatStore } from './chat-store';
 import { usePaletteStore } from './palette-store';
 import { useDataSourcesStore } from './data-sources-store';
+import { useNotebookLMStore } from './notebooklm-store';
 import { DEFAULT_ICONIFY_COLLECTION } from '../domain/icons/iconify';
 
 function normalizeLoadedSelectedImages(slide: PptAppProject['slidesWork']['slides'][number]) {
@@ -114,6 +115,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const { messages } = useChatStore.getState();
     const { seeds, colors, slots, tokens, themeName, selectedIconCollection } = usePaletteStore.getState();
     const { files, urls } = useDataSourcesStore.getState();
+    const { enabled: nlmEnabled, infographicPaths } = useNotebookLMStore.getState();
     const { workspaceDir } = get();
 
     return {
@@ -123,8 +125,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       title: work.title || 'Untitled',
       slidesWork: work,
       chatMessages: messages,
-      palette: { seeds, colors, slots, tokens, themeName, selectedIconCollection },
+      palette: { seeds, colors, slots, tokens, themeName, selectedIconCollection, styleTone: usePaletteStore.getState().styleTone },
       dataSources: { files, urls },
+      notebookLM: { enabled: nlmEnabled, infographicPaths },
     };
   },
 
@@ -164,12 +167,19 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       tokens: data.palette.tokens,
       themeName: data.palette.themeName,
       selectedIconCollection: data.palette.selectedIconCollection ?? DEFAULT_ICONIFY_COLLECTION,
+      styleTone: (data.palette as Record<string, unknown>).styleTone as 'dark' | 'light' | null ?? null,
     });
 
     // Restore data sources store
     useDataSourcesStore.setState({
       files: data.dataSources?.files ?? [],
       urls: (data.dataSources?.urls ?? []) as import('./data-sources-store').UrlEntry[],
+    });
+
+    // Restore NotebookLM store
+    useNotebookLMStore.setState({
+      enabled: data.notebookLM?.enabled ?? false,
+      infographicPaths: data.notebookLM?.infographicPaths ?? [],
     });
 
     set({

@@ -56,7 +56,7 @@ function hexToHsl(hex: string): { h: number; s: number; l: number } {
 // Auto-assign 12 OOXML theme slots (ported from oppadu)
 // ---------------------------------------------------------------------------
 
-export function autoAssignThemeColors(colors: PaletteColor[]): ThemeSlots {
+export function autoAssignThemeColors(colors: PaletteColor[], seeds: string[] = []): ThemeSlots {
   if (colors.length === 0) {
     return DEFAULT_THEME_SLOTS;
   }
@@ -411,8 +411,8 @@ export function registerThemeHandlers(): void {
     }
   });
 
-  ipcMain.handle('theme:autoAssign', async (_event, colors: PaletteColor[]) => {
-    return autoAssignThemeColors(colors);
+  ipcMain.handle('theme:autoAssign', async (_event, colors: PaletteColor[], seeds: string[] = []) => {
+    return autoAssignThemeColors(colors, seeds);
   });
 
   ipcMain.handle('theme:exportThmx', async (_event, tokens: ThemeTokens) => {
