@@ -13,7 +13,7 @@ import { createAssistantMessage } from '../../application/chat-use-case'
 
 export function CenterArea() {
   const { work } = useSlidesStore()
-  const { tokens, selectedIconCollection } = usePaletteStore()
+  const { tokens } = usePaletteStore()
   const { addMessage } = useChatStore()
   const { workspaceDir } = useProjectStore()
   const [selected, setSelected] = useState(0)
@@ -81,25 +81,28 @@ export function CenterArea() {
   }
 
   const exportPptx = async () => {
-    if (!work.pptxCode) return
     setExporting(true)
     setExportError(null)
     try {
       const result = await window.electronAPI.pptx.generate(
-        work.pptxCode,
+        work.pptxCode ?? '',
         tokens,
         work.title || 'presentation',
-        selectedIconCollection,
-        work.slides,
-        work.templateMeta,
+        undefined,
+        undefined,
+        undefined,
       )
 
       if (result.success) {
-        addMessage(createAssistantMessage(`PPTX generation complete.${result.path ? ` Saved to ${result.path}.` : ''}`))
+        addMessage(createAssistantMessage(`PPTX exported.${result.path ? ` Saved to ${result.path}.` : ''}`))
       } else if (result.error !== 'Cancelled') {
         setExportError(result.error ?? 'Failed to export PPTX')
-        addMessage(createAssistantMessage(`PPTX generation failed: ${result.error ?? 'Unknown error'}`))
+        addMessage(createAssistantMessage(`PPTX export failed: ${result.error ?? 'Unknown error'}`))
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to export PPTX'
+      setExportError(message)
+      addMessage(createAssistantMessage(`PPTX export failed: ${message}`))
     } finally {
       setExporting(false)
     }
@@ -126,7 +129,7 @@ export function CenterArea() {
           )}
         </span>
         <div className="flex items-center gap-2">
-          {work.pptxCode && (
+          {(work.pptxCode || previewImages.length > 0) && (
             <button
               onClick={() => void refreshPreview()}
               disabled={rendering}
@@ -147,7 +150,7 @@ export function CenterArea() {
               .thmx
             </button>
           )}
-          {work.pptxCode && (
+          {(work.pptxCode || previewImages.length > 0) && (
             <button
               onClick={exportPptx}
               disabled={exporting}

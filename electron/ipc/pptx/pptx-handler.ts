@@ -520,34 +520,18 @@ export function registerPptxHandlers(): void {
   ipcMain.handle('pptx:generate', async (_event, code: string, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], templateMeta?: TemplateMeta | null) => {
     try {
       const win = BrowserWindow.fromWebContents(_event.sender)
-      if (!code || typeof code !== 'string' || code.trim().length === 0) {
-        return { success: false, error: 'code must not be empty' }
-      }
-      if (!isLikelyPythonPptxCode(code)) {
-        return { success: false, error: 'Only agent-generated python-pptx code is supported' }
-      }
-
       const workspaceDir = await readWorkspaceDir()
       const previewRoot = path.join(workspaceDir, 'previews')
-      await fs.mkdir(previewRoot, { recursive: true })
-      const outputPath = path.join(previewRoot, 'presentation-preview.pptx')
+      const previewPptxPath = await findMostRecentPptx(previewRoot)
 
-      try {
-        const artifactRefresh = await refreshPreviewArtifacts(slides, iconCollection ?? 'all')
-        if (!artifactRefresh.success) {
-          return { success: false, error: artifactRefresh.error ?? 'Failed to refresh preview artifacts.' }
+      if (!previewPptxPath) {
+        return {
+          success: false,
+          error: 'No preview PPTX was found in the workspace previews folder. Generate a preview first.',
         }
-
-        await executeGeneratedPythonCodeToFile(code, themeTokens, title, outputPath, {
-          iconCollection,
-          templateMeta,
-          layoutSpecsJson: artifactRefresh.layoutSpecsJson,
-        })
-        return await savePresentationFile(outputPath, title, win)
-      } catch (err) {
-        // Keep workDir for debugging — generated-source.py + error context
-        throw err
       }
+
+      return await savePresentationFile(previewPptxPath, title, win)
     } catch (err) {
       return { success: false, error: formatExecutionFailure(err) }
     }

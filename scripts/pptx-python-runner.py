@@ -469,6 +469,9 @@ def _is_icon_asset(path: str) -> bool:
 
 
 def safe_add_picture(shapes, image_path: str | None, left, top, width=None, height=None):
+    # Guard: LLMs sometimes pass a Slide object instead of slide.shapes
+    if hasattr(shapes, 'shapes') and not hasattr(shapes, 'add_picture'):
+        shapes = shapes.shapes
     resolved = safe_image_path(image_path)
     if not resolved:
         return None
@@ -541,10 +544,30 @@ def contrast_ratio(fg_hex: str, bg_hex: str) -> float:
     return (lighter + 0.05) / (darker + 0.05)
 
 
-def ensure_contrast(fg_hex: str, bg_hex: str, *, min_ratio: float = 4.5) -> str:
-    """Return *fg_hex* if contrast is sufficient, else a dark or light alternative.
+def _shift_lightness(hex_color: str, toward_dark: bool) -> list[str]:
+    """Return up to 8 candidates by shifting only the L channel of *hex_color*
+    in 10 % increments toward 0 (dark) or 1 (light), preserving hue/saturation."""
+    r, g, b = _hex_to_rgb(hex_color)
+    # Convert to HLS (Python colorsys uses HLS, not HSL)
+    import colorsys
+    h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255) # noqa: E741
+    candidates: list[str] = []
+    step = 0.10
+    for i in range(1, 9):
+        new_l = l - step * i if toward_dark else l + step * i
+        new_l = max(0.0, min(1.0, new_l))
+        nr, ng, nb = colorsys.hls_to_rgb(h, new_l, s)
+        candidates.append(f'{int(round(nr * 255)):02X}{int(round(ng * 255)):02X}{int(round(nb * 255)):02X}')
+    return candidates
 
-    Use this when placing text on a panel whose fill color is known.
+
+def ensure_contrast(fg_hex: str, bg_hex: str, *, min_ratio: float = 4.5) -> str:
+    """Return *fg_hex* if contrast is sufficient, else a lightness-adjusted variant.
+
+    Shifts only the L channel of *fg_hex* toward the appropriate extreme in 10 %
+    increments before falling back to the generic dark/light fallback, so hue and
+    saturation of accent colors are preserved where possible.
+
     ``min_ratio`` defaults to WCAG AA (4.5) for normal text; use 3.0 for large text.
     """
     fg_hex = fg_hex.lstrip('#')
@@ -552,7 +575,11 @@ def ensure_contrast(fg_hex: str, bg_hex: str, *, min_ratio: float = 4.5) -> str:
     if contrast_ratio(fg_hex, bg_hex) >= min_ratio:
         return fg_hex
     bg_lum = _luminance_hex(bg_hex)
-    return '2D2D2D' if bg_lum > 0.4 else 'F0F0F0'
+    toward_dark = bg_lum > 0.4
+    for candidate in _shift_lightness(fg_hex, toward_dark):
+        if contrast_ratio(candidate, bg_hex) >= min_ratio:
+            return candidate
+    return '2D2D2D' if toward_dark else 'F0F0F0'
 
 
 # ---------------------------------------------------------------------------
@@ -1017,6 +1044,17 @@ def _com_fix_layout(output_path: Path) -> int:
     return total_fixes
 
 
+def _get_slide_bg_hex(slide) -> str | None:
+    """Return the solid background colour hex (no '#') of a slide, or None."""
+    try:
+        bg_fill = slide.background.fill
+        if bg_fill.type is not None and int(bg_fill.type) == 1:  # MSO_FILL.SOLID
+            return str(bg_fill.fore_color.rgb)
+    except Exception:
+        pass
+    return None
+
+
 def _get_solid_fill_hex(shape) -> str | None:
     """Return the raw solid fill hex (no '#') of a shape, or None."""
     try:
@@ -1089,12 +1127,15 @@ def _get_run_color_hex(run, para) -> str | None:
 
 
 def _fix_low_contrast_text(output_path: Path) -> int:
-    """Fix text with insufficient contrast against its shape's fill.
+    """Fix text with insufficient contrast against its shape's fill or the slide background.
 
-    For shapes with a solid fill (glass panels, cards, etc.), checks every
-    text run's color against the raw fill color.  When contrast is below
-    WCAG AA for large text (3.0:1), replaces the text color and reduces
-    fill transparency so the panel provides a consistent readable background.
+    For each text-bearing shape, checks every text run's color against:
+    1. The shape's own solid fill, or
+    2. The slide background colour (fallback when shape has no fill).
+
+    When contrast is below WCAG AA (4.0:1), replaces the text colour with a
+    lightness-adjusted variant.  For shapes with their own fill, also caps
+    transparency so the panel provides a consistent readable background.
     """
     prs = Presentation(str(output_path))
     fixes = 0
@@ -1102,16 +1143,19 @@ def _fix_low_contrast_text(output_path: Path) -> int:
     MAX_TRANSPARENCY = 0.45  # cap so panel is visually present
 
     for slide in prs.slides:
+        slide_bg_hex = _get_slide_bg_hex(slide)
+
         for shape in slide.shapes:
             if not shape.has_text_frame:
                 continue
 
-            fill_hex = _get_solid_fill_hex(shape)
-            if fill_hex is None:
+            shape_fill_hex = _get_solid_fill_hex(shape)
+            effective_bg = shape_fill_hex or slide_bg_hex
+            if effective_bg is None:
                 continue
 
-            fill_lum = _luminance_hex(fill_hex)
-            transparency = _get_fill_transparency(shape)
+            fill_lum = _luminance_hex(effective_bg)
+            transparency = _get_fill_transparency(shape) if shape_fill_hex else 0.0
 
             # Collect runs that fail contrast
             bad_runs: list[tuple] = []
@@ -1120,7 +1164,7 @@ def _fix_low_contrast_text(output_path: Path) -> int:
                     fg_hex = _get_run_color_hex(run, para)
                     if fg_hex is None:
                         continue
-                    ratio = contrast_ratio(fg_hex, fill_hex)
+                    ratio = contrast_ratio(fg_hex, effective_bg)
                     if ratio < MIN_RATIO:
                         bad_runs.append((run, fg_hex))
 
@@ -1131,13 +1175,13 @@ def _fix_low_contrast_text(output_path: Path) -> int:
             is_light_fill = fill_lum > 0.4
 
             for run, old_hex in bad_runs:
-                new_hex = '2D2D2D' if is_light_fill else 'FFFFFF'
+                new_hex = ensure_contrast(old_hex, effective_bg, min_ratio=MIN_RATIO)
                 run.font.color.rgb = RGBColor.from_string(new_hex)
                 fixes += 1
 
-            # If fill is light and highly transparent, reduce transparency
-            # so the panel provides a consistent background for dark text.
-            if is_light_fill and transparency > MAX_TRANSPARENCY:
+            # If shape has its own light fill and highly transparent, reduce
+            # transparency so the panel provides a consistent background.
+            if shape_fill_hex and is_light_fill and transparency > MAX_TRANSPARENCY:
                 set_fill_transparency(shape, MAX_TRANSPARENCY)
                 fixes += 1
 
@@ -1146,8 +1190,109 @@ def _fix_low_contrast_text(output_path: Path) -> int:
     return fixes
 
 
+def _enforce_attached_images(output_path: Path) -> int:
+    """Ensure every slide includes its attached/approved images.
+
+    For each slide, read the approved image paths from SLIDE_ASSETS.
+    If an image is expected but not present among the slide's picture shapes,
+    auto-insert it into the lower-right quadrant using safe_add_picture().
+    Returns the number of images injected.
+    """
+    if not SLIDE_ASSETS:
+        return 0
+
+    prs = Presentation(str(output_path))
+    slides = list(prs.slides)
+    injected = 0
+
+    for slide_idx, slide in enumerate(slides):
+        expected_paths = slide_image_paths(slide_idx)
+        if not expected_paths:
+            continue
+
+        # Resolve expected paths to canonical forms
+        expected_resolved: list[tuple[str, str]] = []  # (original, resolved)
+        for p in expected_paths:
+            resolved = safe_image_path(p)
+            if resolved:
+                expected_resolved.append((p, os.path.normcase(os.path.normpath(resolved))))
+
+        if not expected_resolved:
+            continue
+
+        # Collect canonical paths of images already placed on the slide
+        existing_images: set[str] = set()
+        for shape in slide.shapes:
+            if shape.shape_type == 13:  # MSO_SHAPE_TYPE.PICTURE
+                # Match by checking if the image blob matches any expected file
+                try:
+                    shape_blob = shape.image.blob
+                    for _, resolved_path in expected_resolved:
+                        try:
+                            with open(resolved_path, 'rb') as f:
+                                if f.read() == shape_blob:
+                                    existing_images.add(resolved_path)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+        # Find missing images
+        missing = [(orig, res) for orig, res in expected_resolved if res not in existing_images]
+        if not missing:
+            continue
+
+        # Auto-insert missing images into the slide
+        slide_w = prs.slide_width
+        slide_h = prs.slide_height
+        num_missing = len(missing)
+
+        for i, (orig_path, resolved_path) in enumerate(missing):
+            # Place in the right half of the slide, vertically distributed
+            img_width = int(slide_w * 0.40)
+            img_height = int(slide_h * 0.40)
+            if num_missing > 1:
+                img_height = int(slide_h * 0.35)
+
+            left = int(slide_w * 0.55)
+            # Distribute vertically with even spacing
+            total_img_h = num_missing * img_height
+            gap = (slide_h - total_img_h) // (num_missing + 1) if num_missing > 0 else 0
+            gap = max(gap, int(slide_h * 0.02))
+            top = gap + i * (img_height + gap)
+
+            # Clamp to slide bounds
+            if top + img_height > slide_h:
+                img_height = max(int(slide_h * 0.15), slide_h - top - int(slide_h * 0.02))
+            if left + img_width > slide_w:
+                img_width = slide_w - left - int(slide_w * 0.02)
+
+            try:
+                pic = safe_add_picture(slide.shapes, resolved_path, left, top, img_width, img_height)
+                if pic:
+                    injected += 1
+                    print(
+                        f'[image-enforce] Slide {slide_idx + 1}: injected missing image {os.path.basename(orig_path)}',
+                        file=sys.stderr,
+                    )
+            except Exception as exc:
+                print(
+                    f'[image-enforce] Slide {slide_idx + 1}: failed to inject {os.path.basename(orig_path)}: {exc}',
+                    file=sys.stderr,
+                )
+
+    if injected > 0:
+        prs.save(str(output_path))
+    return injected
+
+
 def validate_and_fix_output(output_path: Path, *, run_com_layout_fix: bool = True) -> None:
-    """Run optional COM layout fix, contrast fix, then validation on the generated PPTX."""
+    """Run image enforcement, optional COM layout fix, contrast fix, then validation on the generated PPTX."""
+
+    # Step 0: Enforce attached images — inject any that the LLM code missed
+    image_injects = _enforce_attached_images(output_path)
+    if image_injects > 0:
+        print(f'[image-enforce] Injected {image_injects} missing image(s) into slides.', file=sys.stderr)
 
     # Step 1: COM-based text overflow fix (measure + resize)
     if run_com_layout_fix:

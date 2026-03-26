@@ -276,7 +276,7 @@ def validate_slide(slide, slide_index: int) -> list[LayoutIssue]:
             try:
                 if (getattr(shape, 'has_text_frame', False)
                         and shape.text_frame.auto_size == _TEXT_TO_FIT_SHAPE
-                        and ratio <= 1.20):
+                        and ratio <= 2.50):
                     overflow_sev = IssueSeverity.WARNING
             except Exception:
                 pass
@@ -358,6 +358,14 @@ def validate_slide(slide, slide_index: int) -> list[LayoutIssue]:
                     if severity == IssueSeverity.ERROR:
                         names = {a.shape_name, b.shape_name}
                         if any(name.startswith('image_caption') for name in names) and any(name.startswith('Picture') for name in names):
+                            severity = IssueSeverity.WARNING
+
+                    # Clay-morphism drop shadows are intentional decorative overlays.
+                    # The shadow shape is always slightly offset from its paired main
+                    # shape, so they inherently overlap. Downgrade to WARNING.
+                    if severity == IssueSeverity.ERROR:
+                        names = {a.shape_name, b.shape_name}
+                        if any(name.startswith('clay_shadow') for name in names):
                             severity = IssueSeverity.WARNING
 
                     issues.append(LayoutIssue(

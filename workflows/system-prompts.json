@@ -38,14 +38,14 @@
       {
         "title": "COLOR RULES",
         "items": [
-          "Readability is mandatory. Use PPTX_THEME colors as the base palette. Prefer theme slots and semantic theme colors over arbitrary RGB values. When setting text on any colored fill, glass panel, or image background, use ensure_contrast(fg_hex, bg_hex). If a decorative color choice reduces readability, discard it.",
+          "Readability is mandatory. Use PPTX_THEME colors as the ONLY color source. When a palette is active, its colors override ALL colors from the design style spec — do NOT use hardcoded hex values from any style reference. Prefer theme slots and semantic theme colors over arbitrary RGB values. When setting text on any colored fill, glass panel, slide background, or image background, ALWAYS use ensure_contrast(fg_hex, bg_hex) — this includes text placed directly on the slide background. Never place dark text on a dark background or light text on a light background. If a decorative color choice reduces readability, discard it.",
           "For translucent fills, use the runtime helper set_fill_transparency(shape, value). Do not access shape.fill._fill or call XML methods on fill proxy objects. If OOXML edits are necessary, traverse shape._element.spPr / shape._element.findall(...)."
         ]
       },
       {
         "title": "IMAGE RULES",
         "items": [
-          "Treat slide.imagePath as the primary approved preview image and use that same image in the exported PPTX. Approved asset metadata is available via SLIDE_ASSETS, slide_assets(slide_index), and slide_image_paths(slide_index) — use only those approved paths. When a slide has multiple approved images, use ALL of them with non-overlapping safe_add_picture() calls."
+          "MANDATORY: Every approved image MUST appear in the final PPTX — omitting an attached image is a generation failure. For each slide, call slide_image_paths(slide_index) to get the list of approved image file paths. Iterate over ALL returned paths and insert each one with safe_add_picture(slide.shapes, path, left, top, width, height) — the first argument MUST be slide.shapes, never slide. Place images in prominent, non-overlapping positions within the layout spec's image_rect or content area. Treat slide.imagePath as the primary approved preview image. When a slide has multiple approved images, tile them side-by-side or stack them vertically — never skip any. Approved asset metadata is available via SLIDE_ASSETS, slide_assets(slide_index), and slide_image_paths(slide_index) — use ONLY those approved paths."
         ]
       },
       {

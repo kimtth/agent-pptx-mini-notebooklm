@@ -2,12 +2,59 @@
 
 > **Font policy:** Fonts are resolved at runtime — `Calibri` for Latin text, `resolve_font()` for CJK/non-Latin scripts (auto-selects the correct Noto Sans variant). Do NOT specify font families in generated code; the runtime handles font selection automatically.
 
+## ⚠️ Theme Priority & Contrast Rules
+
+> **These rules override every individual style spec below.**
+
+1. **`PPTX_THEME` is the sole colour source.** Every style below uses theme token names (`DARK`, `ACCENT1`, etc.) — resolve them via `PPTX_THEME` at runtime. Map each style colour role to the corresponding theme slot:
+   | Style role | Theme slot (preferred → fallback) |
+   |---|---|
+   | Background | `BG` → `DARK` (dark styles) / `LIGHT` (light styles) |
+   | Title text | `TEXT` → `LIGHT` (dark bg) / `DARK` (light bg) |
+   | Body text | `TEXT` → `LIGHT2` (dark bg) / `DARK2` (light bg) |
+   | Accent / highlight | `ACCENT1` → `PRIMARY` |
+   | Secondary accent | `ACCENT2` |
+   | Muted / caption | `ACCENT4` → `LIGHT2` |
+   | Panel / card fill | `DARK2` (dark styles) / `LIGHT2` (light styles) |
+   | Border / ornament | `ACCENT1` → `ACCENT3` |
+
+2. **Contrast is mandatory.** Always call `ensure_contrast(fg_hex, bg_hex)` for every text colour assignment. This applies to:
+   - Text on slide background
+   - Text on panel / card fills
+   - Text on image overlays
+   - Text on any coloured shape
+
+3. **Never produce dark text on a dark background** or light text on a light background. If a style's default palette creates this conflict with the active theme, invert the text colour or use `ensure_contrast()` to fix it.
+
+4. **Style = mood + structure + technique. Theme = actual colours.** Follow each style's layout rules, signature elements, and design techniques faithfully — but always draw colours from the theme.
+
+---
+
 Each style is documented with:
-- **Background** — slide background color / gradient
-- **Colors** — primary, secondary, accent with HEX values
-- **Layout** — slide composition approach
-- **Signature Elements** — must-have design details for authenticity
-- **Avoid** — common mistakes that break the style
+- **Background** — slide background using theme tokens (`DARK`, `BG`, etc.)
+- **Color Mapping** — role → theme token table (always resolved via `PPTX_THEME` at runtime)
+- **Layout** — slide composition approach (always follow)
+- **Signature Elements** — must-have design details for authenticity (always follow)
+- **Avoid** — common mistakes that break the style (always follow)
+
+---
+
+## Theme Token Legend
+
+All colors in this guide reference `PPTX_THEME` tokens — **never hardcoded hex values**. The actual colors are resolved from the active workspace palette at runtime.
+
+| Token | Semantic Role |
+|-------|---------------|
+| `DARK` | Primary dark tone (backgrounds for dark styles, text for light styles) |
+| `DARK2` | Secondary dark (slightly lighter than DARK) |
+| `LIGHT` / `WHITE` / `BG` | Light tone (backgrounds for light styles, text for dark styles) |
+| `LIGHT2` / `BORDER` | Secondary light (off-white, dividers, subtle borders) |
+| `TEXT` | Primary text color (alias for DARK) |
+| `ACCENT1` | Primary accent — use for the style's dominant accent |
+| `ACCENT2` | Secondary accent — use for supporting color |
+| `ACCENT3`–`ACCENT6` | Additional accents — distribute across visual elements |
+
+**Rule**: The style defines *mood, structure, and visual technique*. The theme defines *actual colors*. Map each style's color role to the closest-matching theme token.
 
 ---
 
@@ -17,17 +64,19 @@ Each style is documented with:
 **Best For**: SaaS, app launches, AI product decks
 
 ### Background
-- Deep 3-color gradient: `#1A1A4E → #6B21A8 → #1E3A5F`
-- Or deep single-tone blue: `#0F0F2D`
+- Deep dark gradient using `DARK` as the base
+- Multi-stop gradient: `DARK` → `DARK2` → accent-tinted variant
+- Or deep single-tone: `DARK`
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Glass card fill | White translucent | `#FFFFFF` @ 15–20% opacity |
-| Glass card border | White translucent | `#FFFFFF` @ 25% opacity |
-| Title text | White | `#FFFFFF` |
-| Body text | Soft white | `#E0E0F0` |
-| Accent | Cyan or violet | `#67E8F9` or `#A78BFA` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Glass card fill | `WHITE` | 15–20% opacity |
+| Glass card border | `WHITE` | 25% opacity |
+| Title text | `WHITE` | — |
+| Body text | `LIGHT2` | — |
+| Accent | `ACCENT1` or `ACCENT3` | glow blobs, highlights |
 
 ### Layout
 - **Card-based**: use frosted-glass rectangles as content containers
@@ -53,17 +102,18 @@ Each style is documented with:
 **Best For**: Startup pitches, marketing campaigns, creative agencies
 
 ### Background
-- High-saturation solid: Yellow `#F5F500`, Lime `#CCFF00`, Hot pink `#FF2D55`
-- Or pure white `#FFFFFF`
+- High-saturation solid using `ACCENT1` as the dominant fill
+- Or pure `WHITE` for inverted version
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Primary yellow/lime | `#F5F500` or `#CCFF00` |
-| Card fill | White or black | `#FFFFFF` / `#000000` |
-| Border & shadow | Pure black | `#000000` |
-| Accent | Red or blue | `#FF3B30` / `#0000FF` |
-| Text | Black | `#000000` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `ACCENT1` | high-saturation primary fill |
+| Card fill | `WHITE` or `DARK` | — |
+| Border & shadow | `DARK` | pure black, hard offset |
+| Accent | `ACCENT2` or `ACCENT6` | — |
+| Text | `DARK` | — |
 
 ### Layout
 - **Thick black borders** on all elements (2–4pt solid black)
@@ -88,17 +138,18 @@ Each style is documented with:
 **Best For**: Feature comparisons, product overviews, data summaries
 
 ### Background
-- Near-white: `#F8F8F2` or `#F0F0F0`
+- Near-white using `BG` as the base
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Off-white | `#F8F8F2` |
-| Cell 1 (dark) | Deep navy | `#1A1A2E` |
-| Cell 2 (accent 1) | Bright yellow | `#E8FF3B` |
-| Cell 3 (accent 2) | Coral red | `#FF6B6B` |
-| Cell 4 (accent 3) | Teal | `#4ECDC4` |
-| Cell 5 (warm) | Warm yellow | `#FFE66D` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `BG` | off-white base |
+| Cell 1 (dark) | `DARK` | anchor cell with light text |
+| Cell 2 (accent 1) | `ACCENT1` | — |
+| Cell 3 (accent 2) | `ACCENT2` | — |
+| Cell 4 (accent 3) | `ACCENT3` | — |
+| Cell 5 (warm) | `ACCENT4` | — |
 
 ### Layout
 - CSS Grid-style layout: cells of different sizes spanning columns/rows
@@ -124,17 +175,17 @@ Each style is documented with:
 **Best For**: Education, historical research, book presentations, university talks
 
 ### Background
-- Deep warm dark brown: `#1A1208`
-- Or `#0E0A05` for maximum drama
+- Deep warm dark using `DARK` as the base
+- Or darker variant of `DARK` for maximum drama
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Deep warm brown | `#1A1208` |
-| Title text | Antique gold | `#C9A84C` |
-| Body text | Warm parchment | `#D4BF9A` |
-| Border / ornament | Dark gold | `#3D2E10` |
-| Accent | Muted gold | `#8A7340` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Title text | `ACCENT1` | gold tone from theme |
+| Body text | `LIGHT2` | warm parchment feel |
+| Border / ornament | `ACCENT2` | — |
+| Accent | `ACCENT3` | muted supporting tone |
 
 ### Layout
 - Centered title with wide letter-spacing (6–10pt)
@@ -159,16 +210,17 @@ Each style is documented with:
 
 ### Background
 - Multi-point radial gradient blend (4–6 colors overlapping)
-- Example: `#FF6EC7` + `#7B61FF` + `#00D4FF` + `#FFB347` bleeding into each other
+- Blend of `ACCENT1` + `ACCENT2` + `ACCENT3` + `ACCENT4` bleeding into each other
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Mesh node 1 | Hot pink | `#FF6EC7` |
-| Mesh node 2 | Violet | `#7B61FF` |
-| Mesh node 3 | Cyan | `#00D4FF` |
-| Mesh node 4 | Warm orange | `#FFB347` |
-| Text | Pure white | `#FFFFFF` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Mesh node 1 | `ACCENT1` | radial gradient source |
+| Mesh node 2 | `ACCENT2` | radial gradient source |
+| Mesh node 3 | `ACCENT3` | radial gradient source |
+| Mesh node 4 | `ACCENT4` | radial gradient source |
+| Text | `WHITE` | — |
 
 ### Layout
 - Full-bleed gradient as background
@@ -194,16 +246,17 @@ Each style is documented with:
 **Best For**: Product launches, education, children's content, app UI decks
 
 ### Background
-- Warm pastel gradient: `#FFECD2 → #FCB69F` or `#E0F7FA → #B2EBF2`
+- Warm pastel gradient using `LIGHT2` as the base (warm tone from theme)
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Warm peach gradient | `#FFECD2` → `#FCB69F` |
-| Clay element 1 | Soft teal | `#A8EDEA` |
-| Clay element 2 | Blush pink | `#FED6E3` |
-| Clay element 3 | Warm yellow | `#FFEAA7` |
-| Shadow | Color-matched shadow | element color @ 50%, offset 8–12pt down |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `LIGHT2` | warm pastel gradient |
+| Clay element 1 | `ACCENT1` | — |
+| Clay element 2 | `ACCENT2` | — |
+| Clay element 3 | `ACCENT3` | — |
+| Shadow | color-matched | element color @ 50% opacity, offset 8–12pt down |
 
 ### Layout
 - **3D rounded shapes** as primary containers (radius 20–32pt equivalent)
@@ -229,17 +282,18 @@ Each style is documented with:
 **Best For**: Consulting, finance, government, institutional presentations
 
 ### Background
-- Pure white: `#FFFFFF`
-- Or off-white: `#FAFAFA`
+- Pure `BG` base
+- Or subtle off-white variant of `BG`
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | White | `#FFFFFF` |
-| Primary text | Near-black | `#111111` |
-| Accent bar | Signal red | `#E8000D` |
-| Secondary text | Dark grey | `#444444` |
-| Divider line | Light grey | `#DDDDDD` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `BG` | — |
+| Primary text | `TEXT` | near-black |
+| Accent bar | `ACCENT1` | signal color, vertical bar |
+| Secondary text | `DARK2` | — |
+| Divider line | `BORDER` | — |
 
 ### Layout
 - Strict **5-column or 12-column grid** — every element snaps to columns
@@ -265,17 +319,18 @@ Each style is documented with:
 **Best For**: AI products, cybersecurity, deep tech, innovation summits
 
 ### Background
-- Near-black deep space: `#050510` or `#020208`
+- Near-black deep space using `DARK` as the base
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Deep space black | `#050510` |
-| Glow 1 | Neon green | `#00FF88` |
-| Glow 2 | Electric violet | `#7B00FF` |
-| Glow 3 | Cyan | `#00B4FF` |
-| Title gradient | Green → cyan → violet | multi-stop |
-| Body text | Soft white | `#D0D0F0` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | deep space base |
+| Glow 1 | `ACCENT1` | blurred neon blob |
+| Glow 2 | `ACCENT3` | blurred neon blob |
+| Glow 3 | `ACCENT5` | blurred neon blob |
+| Title gradient | `ACCENT1` → `ACCENT5` → `ACCENT3` | multi-stop gradient text |
+| Body text | `LIGHT2` | — |
 
 ### Layout
 - Large blurred glow blobs (filter blur 30–50pt) in background corners
@@ -301,17 +356,17 @@ Each style is documented with:
 **Best For**: Events, lifestyle marketing, fashion, creative campaigns
 
 ### Background
-- Navy blue: `#000080`
-- Or electric blue: `#0020C2`
+- Dark base using `DARK`
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Navy | `#000080` |
-| Rainbow stripe | Full spectrum | gradient: `#FF0080 → #FFFF00 → #00FF00 → #00FFFF → #0000FF → #FF00FF` |
-| Title text | White | `#FFFFFF` |
-| Title glow | Cyan + magenta shadow | `#00FFFF` / `#FF00FF` |
-| Star accent | Yellow | `#FFFF00` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | — |
+| Rainbow stripe | `ACCENT1` → `ACCENT2` → `ACCENT3` → `ACCENT4` → `ACCENT5` → `ACCENT6` | full spectrum gradient |
+| Title text | `WHITE` | — |
+| Title glow | `ACCENT1` + `ACCENT3` | dual color shadow |
+| Star accent | `ACCENT4` | — |
 
 ### Layout
 - **Rainbow stripe bars** top and bottom (6–8pt height)
@@ -337,16 +392,17 @@ Each style is documented with:
 **Best For**: Wellness, lifestyle, non-profit, sustainable brands
 
 ### Background
-- Warm cream: `#F4F1EC` or `#F0EDE8`
+- Warm light base using `BG`
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Warm cream | `#F4F1EC` |
-| Organic shape | Warm grey | `#D9CFC4` |
-| Primary text | Dark warm brown | `#3D3530` |
-| Secondary text | Taupe | `#8A7A6A` |
-| Accent dot | Deep brown | `#3D3530` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `BG` | warm cream |
+| Organic shape | `BORDER` | warm grey from theme |
+| Primary text | `TEXT` | — |
+| Secondary text | `DARK2` | — |
+| Accent dot | `TEXT` | — |
 
 ### Layout
 - **Generous whitespace** — at least 40% of slide is empty
@@ -372,16 +428,17 @@ Each style is documented with:
 **Best For**: Brand statements, manifestos, headline announcements
 
 ### Background
-- Off-white linen: `#F0EDE8`
-- Or pure black: `#0A0A0A` (inverted version)
+- Light base using `BG`
+- Or `DARK` for inverted version
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Off-white | `#F0EDE8` |
-| Primary type | Near-black | `#1A1A1A` |
-| Accent word | Signal red | `#E63030` |
-| Footnote | Light grey | `#AAAAAA` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `BG` (or `DARK` for inverted) | — |
+| Primary type | `TEXT` | near-black |
+| Accent word | `ACCENT1` | single highlight color |
+| Footnote | `BORDER` | light grey |
 
 ### Layout
 - **Type fills the slide** — no illustrations or photos
@@ -407,17 +464,18 @@ Each style is documented with:
 **Best For**: Strategy decks, before/after, compare/contrast slides
 
 ### Background
-- Left half: vivid orange-red `#FF4500`
-- Right half: deep navy `#1A1A2E`
+- Left half: `ACCENT1` (vivid accent)
+- Right half: `DARK` (deep dark)
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Left panel | Orange-red | `#FF4500` |
-| Right panel | Deep navy | `#1A1A2E` |
-| Divider | White | `#FFFFFF` |
-| Left text | White | `#FFFFFF` |
-| Right text | Matches left panel color | `#FF4500` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Left panel | `ACCENT1` | — |
+| Right panel | `DARK` | — |
+| Divider | `WHITE` | 2–4pt vertical line |
+| Left text | `WHITE` | — |
+| Right text | `ACCENT1` | mirrors left panel color |
 
 ### Layout
 - Strict **50/50 vertical split** with white divider line (2–4pt)
@@ -443,17 +501,18 @@ Each style is documented with:
 **Best For**: Luxury brands, portfolio, art direction, high-end consulting
 
 ### Background
-- Near-white: `#FAFAFA`
-- Or jet black: `#0A0A0A` (dark variant)
+- Near-white using `BG`
+- Or `DARK` for dark variant
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Near-white | `#FAFAFA` |
-| Heavy type | Near-black | `#1A1A1A` |
-| Thin rule/border | Light grey | `#E0E0E0` |
-| Medium element | Mid grey | `#888888` |
-| Footnote | Pale grey | `#CCCCCC` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `BG` | — |
+| Heavy type | `TEXT` | near-black |
+| Thin rule/border | `BORDER` | — |
+| Medium element | `DARK2` | — |
+| Footnote | `LIGHT2` | — |
 
 ### Layout
 - Single thin circle outline centered (decorative, not functional)
@@ -479,17 +538,18 @@ Each style is documented with:
 **Best For**: Gaming, AI infrastructure, security, data engineering decks
 
 ### Background
-- Near-black: `#0D0D0D`
+- Near-black using `DARK`
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Near-black | `#0D0D0D` |
-| Grid lines | Neon cyan | `#00FFC8` @ 6% opacity |
-| Outline text | Transparent fill | stroke `#00FFC8`, 1.5pt |
-| Glow | Neon cyan | `#00FFC8` @ 50% blur glow |
-| Corner marks | Neon cyan | `#00FFC8` @ 60% |
-| Subtext | Neon cyan | `#00FFC8` @ 50% |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | — |
+| Grid lines | `ACCENT1` | 6% opacity |
+| Outline text | `ACCENT1` | stroke 1.5pt, transparent fill |
+| Glow | `ACCENT1` | 50% blur glow |
+| Corner marks | `ACCENT1` | 60% opacity |
+| Subtext | `ACCENT1` | 50% opacity |
 
 ### Layout
 - Subtle dot-grid or line-grid background (6% opacity)
@@ -515,16 +575,17 @@ Each style is documented with:
 **Best For**: Annual reports, brand stories, long-form content decks
 
 ### Background
-- White `#FFFFFF` with dark block
+- `BG` base with dark block accent
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background (main) | White | `#FFFFFF` |
-| Dark block | Near-black | `#1A1A1A` |
-| Title | Near-black | `#1A1A1A` |
-| Rule line | Signal red | `#E63030` |
-| Caption | Light grey | `#BBBBBB` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background (main) | `BG` | — |
+| Dark block | `DARK` | — |
+| Title | `TEXT` | — |
+| Rule line | `ACCENT1` | thin horizontal rule |
+| Caption | `BORDER` | — |
 
 ### Layout
 - **Asymmetric two-zone layout**: left 55% white with text, right 45% dark block
@@ -551,16 +612,17 @@ Each style is documented with:
 **Best For**: Healthcare, beauty, education startups, consumer apps
 
 ### Background
-- Soft tricolor gradient: `#FCE4F3 → #E8F4FF → #F0FCE4`
+- Soft tricolor gradient: blend of `ACCENT1` + `ACCENT3` + `ACCENT5` (lightened/pastel variants)
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Soft tricolor gradient | pink → blue → mint |
-| Card fill | White semi-transparent | `#FFFFFF` @ 70% |
-| Card border | White | `#FFFFFF` @ 90% |
-| Dot accent 1 | Blush pink | `#F9C6E8` |
-| Dot accent 2 | Sky blue | `#C6E8F9` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `ACCENT1` + `ACCENT3` + `ACCENT5` | soft pastel gradient |
+| Card fill | `WHITE` | 70% opacity |
+| Card border | `WHITE` | 90% opacity |
+| Dot accent 1 | `ACCENT1` | — |
+| Dot accent 2 | `ACCENT3` | — |
 
 ### Layout
 - Floating frosted-white cards on gradient background
@@ -586,15 +648,16 @@ Each style is documented with:
 **Best For**: Entertainment, music festivals, events, nightlife brands
 
 ### Background
-- Deep purple-black: `#0A0014`
+- Deep dark using `DARK`
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Deep purple-black | `#0A0014` |
-| Sunset semicircle | Orange → hot pink | `#FF6B35 → #FF0080` |
-| Title gradient | Orange → pink → purple | `#FF6B35 → #FF0080 → #9B00FF` |
-| Grid lines | Hot pink transparent | `#FF0080` @ 15–40% |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | — |
+| Sunset semicircle | `ACCENT6` → `ACCENT1` | gradient shape |
+| Title gradient | `ACCENT6` → `ACCENT1` → `ACCENT3` | multi-stop gradient text |
+| Grid lines | `ACCENT1` | 15–40% opacity |
 
 ### Layout
 - **Horizon semicircle** (sunset) in lower-center third
@@ -620,16 +683,17 @@ Each style is documented with:
 **Best For**: Eco brands, food/beverage, craft studios, wellness
 
 ### Background
-- Craft paper warm off-white: `#FDF6EE`
+- Warm light base using `BG` (craft paper feel)
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Warm craft paper | `#FDF6EE` |
-| Dashed circle (outer) | Light tan | `#C8A882` |
-| Solid circle (inner) | Medium brown | `#A87850` |
-| Title text | Dark warm brown | `#6B4C2A` |
-| Leaf/flora accents | Natural greens | emoji or illustration |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `BG` | warm craft paper |
+| Dashed circle | `BORDER` | — |
+| Solid circle | `ACCENT2` | — |
+| Title text | `TEXT` | — |
+| Leaf/flora accents | `ACCENT3` | emoji or illustration |
 
 ### Layout
 - **Nested circles**: outer dashed + inner solid, slightly off-center or rotated
@@ -655,16 +719,17 @@ Each style is documented with:
 **Best For**: IT architecture, data flow, system diagrams, infrastructure
 
 ### Background
-- Dark navy: `#1E1E2E`
+- Dark base using `DARK`
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Dark navy | `#1E1E2E` |
-| Top face | Mid violet | `#7C6FFF` |
-| Left face | Dark violet | `#4A3FCC` |
-| Right face | Medium violet | `#6254E8` |
-| Top face 2 (highlight) | Light violet | `#A594FF` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | — |
+| Top face | `ACCENT1` | — |
+| Left face | `ACCENT2` | darker shade |
+| Right face | `ACCENT1` blended with `ACCENT2` | medium shade |
+| Highlight face | `ACCENT3` | lighter accent |
 
 ### Layout
 - Isometric (30° angle) 3D block shapes — two or three stacked cubes
@@ -690,16 +755,16 @@ Each style is documented with:
 **Best For**: Creative agencies, music/art portfolios, subculture brands
 
 ### Background
-- Dark purple gradient: `#1A0533 → #2D0057 → #570038`
+- Dark gradient using `DARK` as the base
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Deep purple | `#1A0533 → #570038` |
-| Sun gradient | Orange → pink → violet | `#FF9F43 → #FF6B9D → #C44DFF` |
-| Grid lines | Pink transparent | `#FF64C8` @ 40% |
-| Gradient text | Orange → pink → violet | same as sun |
-| Ghost title | White very low opacity | `#FFFFFF` @ 8% |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | gradient |
+| Sun gradient | `ACCENT6` → `ACCENT1` → `ACCENT3` | multi-stop gradient shape |
+| Grid lines | `ACCENT1` | 40% opacity |
+| Ghost title | `WHITE` | 8% opacity |
 
 ### Layout
 - **Perspective grid** in lower 60% (horizontal + vertical lines converging)
@@ -725,16 +790,17 @@ Each style is documented with:
 **Best For**: Luxury brands, gala events, premium annual reports, high-end hospitality
 
 ### Background
-- Deep black-brown: `#0E0A05`
+- Deep dark using `DARK`
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Deep black-brown | `#0E0A05` |
-| Border / ornament | Antique gold | `#B8960C` |
-| Title text | Rich gold | `#D4AA2A` |
-| Subtitle | Muted gold | `#8A7020` |
-| Diamond accent | Bright gold | `#B8960C` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | — |
+| Border / ornament | `ACCENT1` | gold from theme |
+| Title text | `ACCENT1` | gold from theme |
+| Subtitle | `ACCENT2` | muted supporting tone |
+| Diamond accent | `ACCENT1` | — |
 
 ### Layout
 - **Double inset gold border** frame (outer full, inner slightly inset)
@@ -762,16 +828,17 @@ Each style is documented with:
 **Best For**: Media companies, research institutes, content industry decks
 
 ### Background
-- Aged paper off-white: `#F2EFE8`
+- Light base using `BG` (aged paper feel)
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Aged paper | `#F2EFE8` |
-| Masthead bar | Deep warm black | `#1A1208` |
-| Masthead text | Off-white | `#F2EFE8` |
-| Body text | Dark warm brown | `#3A3020` |
-| Column divider | Deep warm black | `#1A1208` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `BG` | — |
+| Masthead bar | `DARK` | full-width block |
+| Masthead text | `BG` | reversed out |
+| Body text | `TEXT` | — |
+| Column divider | `DARK` | — |
 
 ### Layout
 - **Dark masthead bar** full-width at top (newspaper nameplate)
@@ -798,18 +865,19 @@ Each style is documented with:
 **Best For**: Cultural institutions, museums, arts organizations, creative festivals
 
 ### Background
-- Near-black grid frame: `#0A0A12`
+- Near-black grid frame using `DARK` (grout color)
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Near-black (grout) | `#0A0A12` |
-| Cell 1 | Deep royal blue | `#1A3A6E` |
-| Cell 2 | Crimson | `#E63030` |
-| Cell 3 | Golden yellow | `#F5D020` |
-| Cell 4 | Forest green | `#2A6E1A` |
-| Cell 5 | Deep purple | `#6E1A4E` |
-| Overlay | Dark translucent | `#000000` @ 30% |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background (grout) | `DARK` | — |
+| Cell 1 | `ACCENT1` | — |
+| Cell 2 | `ACCENT2` | — |
+| Cell 3 | `ACCENT3` | — |
+| Cell 4 | `ACCENT4` | — |
+| Cell 5 | `ACCENT5` | — |
+| Overlay | `DARK` | 30% opacity |
 
 ### Layout
 - **6×4 (or similar) mosaic grid** covering full slide — 2pt dark gap between cells
@@ -835,17 +903,18 @@ Each style is documented with:
 **Best For**: Biotech, environmental tech, innovation labs, wellness brands
 
 ### Background
-- Deep ocean gradient: `#0F2027 → #203A43 → #2C5364`
+- Deep dark gradient using `DARK` as the base
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Deep ocean | `#0F2027 → #2C5364` |
-| Blob 1 | Teal glow | `#00D2BE` @ 35% |
-| Blob 2 | Electric blue | `#0078FF` @ 30% |
-| Blob 3 | Violet | `#7800FF` @ 25% |
-| Title | White / near-white | `#F0FFFE` |
-| Glow | Teal | `#00D2BE` radial glow |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | gradient |
+| Blob 1 | `ACCENT1` | 35% opacity |
+| Blob 2 | `ACCENT3` | 30% opacity |
+| Blob 3 | `ACCENT5` | 25% opacity |
+| Title | `WHITE` | — |
+| Glow | `ACCENT1` | radial glow |
 
 ### Layout
 - 3 large blurred blob shapes positioned asymmetrically (corners + center)
@@ -871,17 +940,18 @@ Each style is documented with:
 **Best For**: Fashion brands, lifestyle products, retail, youth marketing
 
 ### Background
-- Warm off-white: `#FFF5E0`
+- Warm light base using `BG`
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Warm off-white | `#FFF5E0` |
-| Triangle accent | Crimson red | `#E8344A` |
-| Circle outline | Royal blue | `#1E90FF` |
-| Zigzag bar | Crimson red | `#E8344A` |
-| Dot accent | Mint green | `#22BB88` |
-| Star/triangle 2 | Golden yellow | `#FFD700` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `BG` | warm off-white |
+| Triangle accent | `ACCENT1` | — |
+| Circle outline | `ACCENT3` | — |
+| Zigzag bar | `ACCENT1` | — |
+| Dot accent | `ACCENT4` | — |
+| Star/triangle 2 | `ACCENT2` | — |
 
 ### Layout
 - **Scattered geometric shapes** (triangles, circles, dots, zigzags) across slide
@@ -907,17 +977,18 @@ Each style is documented with:
 **Best For**: Environmental brands, adventure/outdoor, sustainable luxury, conservation
 
 ### Background
-- Radial dark gradient: `#0D2B14` center → `#060E08` edges
+- Radial dark gradient using `DARK` (center lighter, edges darker)
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Deep forest black | `#060E08` |
-| Tree silhouettes | Dark forest green | `#0A3D1A` → `#0D4D20` |
-| Moon | Pale sage glow | `#E8F4D0` → `#B8CC80` |
-| Stars | Pale green-white | `#D4F0B0` |
-| Mist glow | Soft mint | `#B4FFC8` @ 4% |
-| Title text | Sage-white italic | `rgba(200,255,180,0.85)` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | radial gradient |
+| Tree silhouettes | `DARK2` | layered variants at 3+ depths |
+| Moon | `LIGHT2` | soft radial glow |
+| Stars | `LIGHT2` | — |
+| Mist | `ACCENT4` | 4% opacity |
+| Title text | `LIGHT2` | italic serif |
 
 ### Layout
 - **Tree silhouettes** rising from bottom — triangular/fir shapes, 3+ overlapping depths
@@ -945,17 +1016,18 @@ Each style is documented with:
 **Best For**: Architecture, urban planning, engineering, spatial design firms
 
 ### Background
-- Blueprint blue: `#0D2240`
+- Dark base using `DARK` (blueprint tone)
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Blueprint navy | `#0D2240` |
-| Fine grid | Cyan-white | `#64B4FF` @ 12% |
-| Major grid | Cyan-white | `#64B4FF` @ 22% |
-| Shape lines | Blueprint line | `#64C8FF` @ 60% |
-| Dimension text | Blueprint text | `#64C8FF` @ 60% |
-| Title | Blueprint white | `#96DCFF` @ 80% |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | — |
+| Fine grid | `ACCENT1` | 12% opacity |
+| Major grid | `ACCENT1` | 22% opacity |
+| Shape lines | `ACCENT1` | 60% opacity |
+| Dimension text | `ACCENT1` | 60% opacity |
+| Title | `ACCENT1` | 80% opacity |
 
 ### Layout
 - **Fine grid** (20pt) + **major grid** (60pt) layered
@@ -982,17 +1054,17 @@ Each style is documented with:
 **Best For**: Advertising agencies, fashion brands, music promotions, editorial
 
 ### Background
-- Warm antique cream: `#E8DDD0` with diagonal pattern overlay
+- Light base using `BG` with diagonal pattern overlay
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Antique cream | `#E8DDD0` |
-| Block 1 | Bold red | `#E83030` |
-| Block 2 | Near-black | `#1A1A1A` |
-| Block 3 | Acid yellow | `#F5D020` |
-| Text on red | White | `#FFFFFF` |
-| Text on black | White | `#FFFFFF` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `BG` | — |
+| Block 1 | `ACCENT1` | — |
+| Block 2 | `DARK` | — |
+| Block 3 | `ACCENT2` | — |
+| Text on colored blocks | `WHITE` | — |
 
 ### Layout
 - **Overlapping color blocks** (3 blocks, each slightly rotated ±2–5°)
@@ -1020,17 +1092,18 @@ Each style is documented with:
 **Best For**: Defense tech, AI research, quantum, advanced data engineering
 
 ### Background
-- Deep space black: `#03050D`
+- Deep dark using `DARK` (deep space base)
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Deep space | `#03050D` |
-| Ring outlines | Cyan | `#00C8FF` @ 25–60% (vary by ring) |
-| Scan line | Cyan | `#00C8FF` @ 50% |
-| Bar elements | Cyan gradient | `transparent → #00C8FF → transparent` |
-| Text | Cyan | `#00C8FF` @ 70% |
-| Center dot | Bright cyan | `#00C8FF` |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `DARK` | — |
+| Ring outlines | `ACCENT1` | 25–60% opacity (vary by ring) |
+| Scan line | `ACCENT1` | 50% opacity |
+| Bar elements | `ACCENT1` | gradient: transparent → solid → transparent |
+| Text | `ACCENT1` | 70% opacity |
+| Center dot | `ACCENT1` | — |
 
 ### Layout
 - **3 concentric rings** (full circles, varying opacity increasing inward)
@@ -1058,17 +1131,18 @@ Each style is documented with:
 **Best For**: Independent publishers, music labels, art zines, boutique studios
 
 ### Background
-- Aged paper: `#F7F2E8`
+- Light base using `BG` (aged paper feel)
 
-### Colors
-| Role | Color | HEX |
-|------|-------|-----|
-| Background | Aged paper | `#F7F2E8` |
-| Circle 1 (C) | Riso red | `#E8344A` |
-| Circle 2 (M) | Riso blue | `#0D5C9E` |
-| Circle 3 (Y) | Riso yellow | `#F5D020` |
-| Overlap zones | Multiply blend | auto (red+blue=purple, red+yellow=orange, blue+yellow=green) |
-| Ghost title | Red-tint offset | `#E8344A` @ 25%, shifted 3px |
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Background | `BG` | aged paper |
+| Circle 1 | `ACCENT1` | — |
+| Circle 2 | `ACCENT3` | — |
+| Circle 3 | `ACCENT2` | — |
+| Overlap zones | multiply blend | auto from circle overlaps |
+| Ghost title | `ACCENT1` | 25% opacity, shifted 3px |
 
 ### Layout
 - **Three overlapping circles** (CMYK primary colors) in center third
@@ -1086,3 +1160,5 @@ Each style is documented with:
 - Digital-looking crisp shapes
 - Dark backgrounds
 - Screen-blend mode (must be multiply for authentic CMYK overlap)
+
+---

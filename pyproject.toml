@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "icrawler>=0.6.10",
-    "markitdown[docx]>=0.1.5",
+    "markitdown[docx,pdf]>=0.1.5",
     "pillow>=12.1.1",
     "pywin32>=311; sys_platform == 'win32'",
     "python-pptx>=1.0.2",
@@ -15,7 +15,7 @@ dependencies = [
     "kiwisolver>=1.5.0",
     "matplotlib>=3.10.8",
     "seaborn>=0.13.2",
-    "notebooklm-py>=0.3.4",
+    "notebooklm-py[browser]>=0.3.4",
 ]
 
 [tool.ruff]

@@ -5,7 +5,13 @@
 
 import type { PaletteColor, ThemeSlots, ThemeTokens } from '../domain/entities/palette';
 
-export function buildThemeTokens(name: string, slots: ThemeSlots, colors: PaletteColor[]): ThemeTokens {
+export function buildThemeTokens(
+  name: string,
+  slots: ThemeSlots,
+  colors: PaletteColor[],
+  styleTone?: 'dark' | 'light' | null,
+): ThemeTokens {
+  const isDark = styleTone === 'dark';
   const C: ThemeTokens['C'] = {
     DARK: slots.dk1,
     DARK2: slots.dk2,
@@ -21,10 +27,10 @@ export function buildThemeTokens(name: string, slots: ThemeSlots, colors: Palett
     USED_LINK: slots.folHlink,
     PRIMARY: slots.accent1,
     SECONDARY: slots.accent2,
-    BG: slots.lt1,
-    TEXT: slots.dk1,
+    BG: isDark ? slots.dk1 : slots.lt1,
+    TEXT: isDark ? slots.lt1 : slots.dk1,
     WHITE: slots.lt1,
-    BORDER: slots.lt2,
+    BORDER: isDark ? slots.dk2 : slots.lt2,
   };
   return { name, slots, colors, C };
 }

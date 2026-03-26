@@ -41,7 +41,7 @@ export function PalettePanel() {
       const generated = await window.electronAPI.theme.generatePalette(seeds)
       if (generated.length === 0) throw new Error('No colors returned')
       setColors(generated)
-      const autoSlots = await window.electronAPI.theme.autoAssign(generated)
+      const autoSlots = await window.electronAPI.theme.autoAssign(generated, seeds)
       setSlots(autoSlots)
       commitTokens()
     } catch (err) {

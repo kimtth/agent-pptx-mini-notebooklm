@@ -18,6 +18,8 @@ interface PaletteStore {
   themeName: string;
   selectedIconCollection: IconifyCollectionId;
   isGenerating: boolean;
+  /** Tone of the active design style — used to flip BG/TEXT in theme tokens */
+  styleTone: 'dark' | 'light' | null;
 
   setSeeds(seeds: string[]): void;
   setColors(colors: PaletteColor[]): void;
@@ -25,6 +27,7 @@ interface PaletteStore {
   setThemeName(name: string): void;
   setSelectedIconCollection(collection: IconifyCollectionId): void;
   setGenerating(v: boolean): void;
+  setStyleTone(tone: 'dark' | 'light' | null): void;
   /** Called after slots + colors are set — builds fully typed ThemeTokens */
   commitTokens(): void;
 }
@@ -38,6 +41,7 @@ export const usePaletteStore = create<PaletteStore>()(persist(
   themeName: 'My Theme',
   selectedIconCollection: DEFAULT_ICONIFY_COLLECTION,
   isGenerating: false,
+  styleTone: null,
 
   setSeeds: (seeds) => set({ seeds }),
   setColors: (colors) => set({ colors }),
@@ -45,11 +49,12 @@ export const usePaletteStore = create<PaletteStore>()(persist(
   setThemeName: (name) => set({ themeName: name }),
   setSelectedIconCollection: (selectedIconCollection) => set({ selectedIconCollection }),
   setGenerating: (v) => set({ isGenerating: v }),
+  setStyleTone: (tone) => set({ styleTone: tone }),
 
   commitTokens() {
-    const { themeName, slots, colors } = get();
+    const { themeName, slots, colors, styleTone } = get();
     if (!slots) return;
-    const tokens = buildThemeTokens(themeName, slots, colors);
+    const tokens = buildThemeTokens(themeName, slots, colors, styleTone);
     set({ tokens });
   },
 }),
@@ -63,6 +68,7 @@ export const usePaletteStore = create<PaletteStore>()(persist(
       tokens: state.tokens,
       themeName: state.themeName,
       selectedIconCollection: state.selectedIconCollection,
+      styleTone: state.styleTone,
     }),
   },
 ));
