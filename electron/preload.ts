@@ -43,6 +43,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('chat:done', handler);
       return () => ipcRenderer.removeListener('chat:done', handler);
     },
+    onChunkProgress(cb: (progress: { chunkIndex: number; totalChunks: number; status: string; slideRange: string }) => void) {
+      const handler = (_: unknown, progress: { chunkIndex: number; totalChunks: number; status: string; slideRange: string }) => cb(progress);
+      ipcRenderer.on('chat:chunk-progress', handler);
+      return () => ipcRenderer.removeListener('chat:chunk-progress', handler);
+    },
+    onChunkedPptxReady(cb: (payload: { code: string }) => void) {
+      const handler = (_: unknown, payload: { code: string }) => cb(payload);
+      ipcRenderer.on('chat:chunked-pptx-ready', handler);
+      return () => ipcRenderer.removeListener('chat:chunked-pptx-ready', handler);
+    },
   },
 
   theme: {

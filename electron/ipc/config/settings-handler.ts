@@ -20,6 +20,7 @@ export const SETTINGS_KEYS = [
   'ANTHROPIC_API_KEY',
   'MODEL_NAME',
   'REASONING_EFFORT',
+  'PPTX_CHUNK_SIZE',
 ] as const;
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];

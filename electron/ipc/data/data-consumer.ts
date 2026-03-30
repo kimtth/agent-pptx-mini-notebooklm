@@ -7,6 +7,7 @@ import type { DataFile, ScrapeResult, SourceArtifact } from '../../../src/domain
 import { readWorkspaceDir } from '../project/workspace-utils.ts';
 import { resolveBundledPath } from '../project/workspace-utils.ts';
 import { resolvePythonExecutable } from '../pptx/python-runtime.ts';
+import { buildRaptorTree } from './raptor-handler.ts';
 
 const execFileAsync = promisify(execFile);
 const MAX_SUMMARY_LEN = 1800;
@@ -81,10 +82,27 @@ async function writeArtifacts(sourceId: string, title: string, markdown: string,
   const dir = await ensureArtifactsDir();
   const baseName = `${slugify(title || sourceId)}-${hashValue(sourceId)}`;
   const markdownPath = path.join(dir, `${baseName}.source.md`);
-  const summaryPath = path.join(dir, `${baseName}.summary.md`);
   await fs.writeFile(markdownPath, markdown, 'utf-8');
-  await fs.writeFile(summaryPath, summaryText, 'utf-8');
-  return { markdownPath, summaryPath, summaryText };
+
+  const artifact: SourceArtifact = { markdownPath, summaryText };
+
+  // Build RAPTOR tree for retrieval-augmented generation
+  if (markdown.length >= 500) {
+    try {
+      const raptorStart = Date.now();
+      const structuredPath = path.join(dir, `${baseName}.structured-summary.json`);
+      const result = await buildRaptorTree(markdownPath, structuredPath, title);
+      const raptorMs = Date.now() - raptorStart;
+      console.log(`[perf] RAPTOR tree built in ${(raptorMs / 1000).toFixed(1)}s (${result.sections} nodes)`);
+      if (result.ok) {
+        artifact.structuredSummaryPath = structuredPath;
+      }
+    } catch (err) {
+      console.warn('[data-consumer] RAPTOR tree build failed (non-fatal):', err);
+    }
+  }
+
+  return artifact;
 }
 
 async function consumeSource(

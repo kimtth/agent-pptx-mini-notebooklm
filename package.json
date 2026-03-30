@@ -12,9 +12,10 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "dist": "pnpm setup:python-env && electron-vite build && pnpm exec electron-builder",
-    "dist:skip-venv": "pnpm verify:python-env && electron-vite build && pnpm exec electron-builder",
+    "dist": "pnpm setup:python-env && pnpm setup:models && electron-vite build && pnpm exec electron-builder",
+    "dist:skip-venv": "pnpm verify:python-env && pnpm setup:models && electron-vite build && pnpm exec electron-builder",
     "setup:python-env": "node scripts/setup-python.mjs",
+    "setup:models": "node scripts/download-model.mjs",
     "verify:python-env": "node scripts/verify-python-env.mjs",
     "test:connections": "node scripts/test-connections.mjs"
   },

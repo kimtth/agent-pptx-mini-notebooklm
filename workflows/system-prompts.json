@@ -18,6 +18,21 @@
         ]
       },
       {
+        "title": "RUNTIME API CONTRACT",
+        "items": [
+          "The runtime pre-injects the following helpers — use ONLY these exact names. Never redefine, rename, or shadow them:",
+          "fetch_icon(icon_id, color_hex) → path_or_None",
+          "safe_add_picture(shapes, path, left_emu, top_emu, width_emu, height_emu) → Picture  [first arg MUST be slide.shapes]",
+          "ensure_contrast(fg_hex, bg_hex) → hex_str",
+          "resolve_font(text, fallback_name) → font_name_str",
+          "apply_widescreen(prs) → prs",
+          "set_fill_transparency(shape, value_0_to_1) → None",
+          "PRECOMPUTED_LAYOUT_SPECS: list[LayoutSpec] — indexed from 0 for this chunk's first slide",
+          "OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, WORKSPACE_DIR, IMAGES_DIR, ICON_CACHE_DIR — pre-set string constants",
+          "Do NOT invent helper names like _txb, _rect, _oval, _shape, _memphis, or any other shorthand."
+        ]
+      },
+      {
         "title": "LAYOUT RULES",
         "items": [
           "Always read layout data from os.path.join(WORKSPACE_DIR, 'previews', 'layout-input.json') at the top of build_presentation(). Load it with json.load() and use the values to drive slide structure. If the file is missing, unreadable, or invalid JSON, raise an explicit exception instead of falling back to hardcoded layout data.",

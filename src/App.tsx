@@ -24,6 +24,7 @@ export default function App() {
   const workspaceDir = useProjectStore((s) => s.workspaceDir)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const autoRetryCount = useRef(0)
+  const chunkedPptxReady = useRef(false)
 
   const retryWithBuildError = (errMsg: string) => {
     if (autoRetryCount.current >= MAX_AUTO_RETRIES) {
@@ -88,6 +89,23 @@ export default function App() {
       api.chat.onFrameworkSuggested((payload) => {
         useSlidesStore.getState().setFramework(payload.primary as FrameworkType)
       }),
+      api.chat.onChunkProgress(() => {
+        // Progress updates are shown via chat:stream; no extra action needed.
+      }),
+      api.chat.onChunkedPptxReady(({ code }) => {
+        // Chunked execution produced the merged PPTX and attempted preview rendering.
+        // Set the flag so onDone skips re-execution via pptx:renderPreview.
+        chunkedPptxReady.current = true
+        useSlidesStore.getState().setPptxCode(code)
+        useSlidesStore.getState().setPptxBuildError(null)
+        autoRetryCount.current = 0
+        window.dispatchEvent(new CustomEvent('pptx-preview-ready'))
+        useChatStore.getState().addMessage(
+          createAssistantMessage('✅ Deck generated! Preview images are ready.'),
+        )
+        useSlidesStore.getState().setStreaming(false)
+        useSlidesStore.getState().setPptxBusy(false)
+      }),
       api.chat.onDone(() => {
         // Flush buffered deltas first, then capture the complete content
         useChatStore.getState().flushAssistantMessage()
@@ -95,6 +113,14 @@ export default function App() {
         const pendingContent = lastMessage?.role === 'assistant' ? lastMessage.content : ''
 
         requestAnimationFrame(() => {
+          // Chunked generation already produced the merged PPTX and previews.
+          // The onChunkedPptxReady handler took care of everything — skip
+          // re-execution which would overwrite the merged result.
+          if (chunkedPptxReady.current) {
+            chunkedPptxReady.current = false
+            return
+          }
+
           const hasCodeBlock = /```(?:python|py)?\s*[\s\S]*?```/i.test(pendingContent)
           const code = extractPptxCodeBlock(pendingContent)
 

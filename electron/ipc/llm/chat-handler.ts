@@ -31,9 +31,14 @@ import type { DataFile, ScrapeResult } from '../../../src/domain/ports/ipc';
 import { getIconifyCollectionById } from '../../../src/domain/icons/iconify';
 import type { IconifyCollectionId } from '../../../src/domain/icons/iconify';
 import { formatWorkflowForPrompt, getWorkflowConfig, type WorkflowConfig } from '../../../src/domain/workflows/workflow-config';
-import { executeGeneratedPythonCodeToFile, formatExecutionFailure, computeLayoutSpecs, persistLayoutInputToWorkspace, persistSlideAssetsToWorkspace } from '../pptx/pptx-handler.ts';
+import { executeGeneratedPythonCodeToFile, executeChunkedPptxGeneration, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace } from '../pptx/pptx-handler.ts';
+import type { ChunkResult, PptxCompletionReport } from '../pptx/pptx-handler.ts';
 import { buildManagedSystemPrompt } from './system-prompts.ts';
 import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts';
+import { chunkSlides } from './slide-chunker.ts';
+import type { SlideGroup } from './slide-chunker.ts';
+import { retrieveContext, hasRaptorTree } from '../data/raptor-handler.ts';
+import type { RetrievedSection } from '../data/raptor-handler.ts';
 
 const CHAT_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
 const CHAT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
@@ -43,6 +48,15 @@ type ActiveChatRequest = {
 };
 
 let activeChatRequest: ActiveChatRequest | null = null;
+
+/** Extract python-pptx code from a fenced code block in LLM output. */
+function extractPptxCodeBlock(content: string): string | null {
+  const blocks = [...content.matchAll(/```([^\r\n`]*)[ \t]*\r?\n([\s\S]*?)```/g)]
+    .filter((m) => { const i = (m[1] ?? '').trim().toLowerCase(); return !i || i === 'python' || i === 'py'; });
+  const preferred = blocks.find((m) => { const l = (m[1] ?? '').trim().toLowerCase(); return l === 'python' || l === 'py'; })
+    ?? blocks.find((m) => /from\s+pptx\s+import|import\s+pptx|Presentation\(/i.test(m[2] ?? ''));
+  return preferred?.[2]?.trim() || null;
+}
 
 // ---------------------------------------------------------------------------
 // Prompt builder
@@ -63,6 +77,7 @@ interface WorkspaceContext {
   iconProvider: 'iconify';
   iconCollection: IconifyCollectionId;
   availableIcons: string[];
+  chunkSize?: number;
 }
 
 type SessionMode = 'story' | 'pptx';
@@ -201,9 +216,77 @@ async function readDesignStyleBlock(styleName: string): Promise<string | null> {
   return null;
 }
 
-async function formatFileSource(ds: DataFile): Promise<string[]> {
+/**
+ * Check if a structured summary file has a RAPTOR tree.
+ * Returns the parsed JSON or null.
+ */
+async function readStructuredSummaryMeta(artifact: { structuredSummaryPath?: string } | undefined): Promise<{ path: string; hasRaptor: boolean; globalSummary?: { mainTheme?: string } } | null> {
+  if (!artifact?.structuredSummaryPath) return null;
+  try {
+    const raw = await fs.readFile(artifact.structuredSummaryPath, 'utf-8');
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      path: artifact.structuredSummaryPath,
+      hasRaptor: hasRaptorTree(parsed),
+      globalSummary: (parsed.globalSummary ?? undefined) as { mainTheme?: string } | undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Format retrieved RAPTOR sections into concise prompt context.
+ */
+function formatRetrievedContext(sections: RetrievedSection[], documentTitle: string): string {
+  const parts: string[] = [];
+  parts.push(`### Relevant Context from: ${documentTitle}\n`);
+  for (const sec of sections) {
+    parts.push(`#### ${sec.heading}`);
+    // Cap each section text to keep prompt tight
+    const text = sec.text.length > 1500 ? sec.text.slice(0, 1500) + '...' : sec.text;
+    parts.push(text);
+    if (sec.clusterContext.length > 0) {
+      parts.push(`_Topics: ${sec.clusterContext.slice(0, 2).join('; ')}_`);
+    }
+    parts.push('');
+  }
+  return parts.join('\n');
+}
+
+async function formatFileSource(ds: DataFile, slideQueries?: string[]): Promise<string[]> {
   const parts = [`- **${ds.name}** (${ds.type.toUpperCase()}): ${ds.summary}`];
   if (ds.consumed) {
+    const meta = await readStructuredSummaryMeta(ds.consumed);
+
+    // RAPTOR retrieval path: if tree available and we have slide queries, retrieve targeted context
+    if (meta?.hasRaptor && slideQueries && slideQueries.length > 0) {
+      try {
+        const retrieved = await retrieveContext(meta.path, slideQueries, 8);
+        if (retrieved.length > 0) {
+          parts.push(formatRetrievedContext(retrieved, ds.name));
+          return parts;
+        }
+      } catch (err) {
+        console.warn('[chat] RAPTOR retrieval failed, falling back:', err);
+      }
+    }
+
+    // RAPTOR global summary path: for storyboard (no slide queries yet)
+    if (meta?.hasRaptor && meta.globalSummary?.mainTheme) {
+      try {
+        // Broad retrieval with document title as query
+        const retrieved = await retrieveContext(meta.path, [ds.name, meta.globalSummary.mainTheme], 12);
+        if (retrieved.length > 0) {
+          parts.push(formatRetrievedContext(retrieved, ds.name));
+          return parts;
+        }
+      } catch (err) {
+        console.warn('[chat] RAPTOR broad retrieval failed, falling back:', err);
+      }
+    }
+
+    // Fallback: raw markdown (truncated)
     parts.push(`  Parsed source file: ${ds.consumed.markdownPath}`);
     const markdown = await readArtifactMarkdown(ds.consumed, 20_000);
     if (markdown) {
@@ -212,7 +295,6 @@ async function formatFileSource(ds: DataFile): Promise<string[]> {
       parts.push(markdown);
       parts.push('```');
     } else {
-      parts.push(`  Summary file: ${ds.consumed.summaryPath}`);
       parts.push(ds.consumed.summaryText);
     }
     return parts;
@@ -229,13 +311,41 @@ async function formatFileSource(ds: DataFile): Promise<string[]> {
   return parts;
 }
 
-async function formatUrlSource(entry: WorkspaceContext['urlSources'][number]): Promise<string[]> {
+async function formatUrlSource(entry: WorkspaceContext['urlSources'][number], slideQueries?: string[]): Promise<string[]> {
   const parts = [`- **${entry.url}** (${entry.status})`];
   if (entry.result?.error) {
     parts.push(`  Error: ${entry.result.error}`);
     return parts;
   }
   if (entry.result?.consumed) {
+    const meta = await readStructuredSummaryMeta(entry.result.consumed);
+
+    // RAPTOR retrieval path
+    if (meta?.hasRaptor && slideQueries && slideQueries.length > 0) {
+      try {
+        const retrieved = await retrieveContext(meta.path, slideQueries, 8);
+        if (retrieved.length > 0) {
+          parts.push(formatRetrievedContext(retrieved, entry.url));
+          return parts;
+        }
+      } catch (err) {
+        console.warn('[chat] RAPTOR retrieval failed for URL, falling back:', err);
+      }
+    }
+
+    if (meta?.hasRaptor && meta.globalSummary?.mainTheme) {
+      try {
+        const retrieved = await retrieveContext(meta.path, [entry.url, meta.globalSummary.mainTheme], 12);
+        if (retrieved.length > 0) {
+          parts.push(formatRetrievedContext(retrieved, entry.url));
+          return parts;
+        }
+      } catch (err) {
+        console.warn('[chat] RAPTOR broad retrieval failed for URL, falling back:', err);
+      }
+    }
+
+    // Fallback: raw markdown
     parts.push(`  Parsed source file: ${entry.result.consumed.markdownPath}`);
     const markdown = await readArtifactMarkdown(entry.result.consumed, 20_000);
     if (markdown) {
@@ -244,7 +354,6 @@ async function formatUrlSource(entry: WorkspaceContext['urlSources'][number]): P
       parts.push(markdown);
       parts.push('```');
     } else {
-      parts.push(`  Summary file: ${entry.result.consumed.summaryPath}`);
       parts.push(entry.result.consumed.summaryText);
     }
     return parts;
@@ -359,11 +468,15 @@ async function buildPrompt(
     parts.push('');
   }
 
-  // Data sources
+  // Data sources — extract slide queries for RAPTOR retrieval
+  const slideQueries = workspace.slides.length > 0
+    ? workspace.slides.map(s => `${s.title} ${s.keyMessage}`.trim()).filter(q => q.length > 0)
+    : undefined;
+
   if (workspace.dataSources.length > 0) {
     parts.push('## Available File Data Sources\n');
     for (const ds of workspace.dataSources) {
-      parts.push(...await formatFileSource(ds));
+      parts.push(...await formatFileSource(ds, slideQueries));
     }
     parts.push('');
   }
@@ -371,7 +484,7 @@ async function buildPrompt(
   if (workspace.urlSources.length > 0) {
     parts.push('## Available URL Sources\n');
     for (const entry of workspace.urlSources) {
-      parts.push(...await formatUrlSource(entry));
+      parts.push(...await formatUrlSource(entry, slideQueries));
     }
     parts.push('');
   }
@@ -454,6 +567,130 @@ function sendToWindow(win: BrowserWindow, channel: string, ...args: unknown[]): 
 }
 
 // ---------------------------------------------------------------------------
+// Chunked LLM generation helpers
+// ---------------------------------------------------------------------------
+
+const MAX_CHUNK_RETRIES = 2; // 3 total attempts per chunk
+
+/**
+ * Build a prompt scoped to a single chunk's slides.
+ * Re-uses buildPrompt with a modified workspace containing only the chunk's slides,
+ * then appends chunk-specific instructions.
+ */
+async function buildChunkPrompt(
+  message: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  workspace: WorkspaceContext,
+  group: SlideGroup,
+): Promise<string> {
+  const chunkWorkspace: WorkspaceContext = {
+    ...workspace,
+    slides: group.slides.map((slide, i) => ({ ...slide, number: i + 1 })),
+  };
+  const prompt = await buildPrompt(message, history, chunkWorkspace, 'pptx');
+  const originalRange = group.slideIndices.map((i) => i + 1).join(', ');
+
+  const runtimeApiReminder = [
+    '## Runtime API — Use ONLY These Names',
+    'The following helpers are pre-injected by the runtime. Do NOT define, rename, or shadow them:',
+    '- fetch_icon(icon_id, color_hex) → path_or_None',
+    '- safe_add_picture(shapes, path, left_emu, top_emu, width_emu, height_emu)  [first arg = slide.shapes]',
+    '- ensure_contrast(fg_hex, bg_hex) → hex_str',
+    '- resolve_font(text, fallback) → font_name',
+    '- apply_widescreen(prs) → prs',
+    '- set_fill_transparency(shape, value)',
+    '- PRECOMPUTED_LAYOUT_SPECS, OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, WORKSPACE_DIR, IMAGES_DIR',
+    'Do NOT invent helpers such as _txb, _rect, _oval, _shape, or any other shorthand.',
+  ].join('\n');
+
+  return prompt
+    + `\n\n${runtimeApiReminder}`
+    + `\n\n## Chunk Generation Instruction\n`
+    + `Generate python-pptx code for slides ${originalRange} ONLY (in the original deck order).\n`
+    + `PRECOMPUTED_LAYOUT_SPECS is indexed from 0 for your first slide (contains ${group.slides.length} entries).\n`
+    + `layout-input.json and slide-assets.json contain only your slides.\n`
+    + `The code must be a complete, self-contained python-pptx script starting from Presentation().`;
+}
+
+/**
+ * Run parallel LLM sessions for each chunk, collecting generated code.
+ * Each chunk retries up to MAX_CHUNK_RETRIES times on failure.
+ */
+async function generatePptxChunked(
+  groups: SlideGroup[],
+  message: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  workspace: WorkspaceContext,
+  sessionConfig: LLMSessionConfig,
+  win: BrowserWindow,
+): Promise<ChunkResult[]> {
+  const totalChunks = groups.length;
+  const provider = getActiveProvider();
+
+  const chunkPromises = groups.map(async (group): Promise<ChunkResult> => {
+    const { chunkIndex, slideIndices } = group;
+    const slideRange = `${slideIndices[0] + 1}-${slideIndices[slideIndices.length - 1] + 1}`;
+
+    sendToWindow(win, 'chat:chunk-progress', { chunkIndex, totalChunks, status: 'generating', slideRange });
+    sendToWindow(win, 'chat:stream', { content: `\n[Chunk ${chunkIndex + 1}/${totalChunks}] Generating slides ${slideRange}...\n` });
+
+    const promptStart = Date.now();
+    const prompt = await buildChunkPrompt(message, history, workspace, group);
+    const promptMs = Date.now() - promptStart;
+    console.log(`[perf] Chunk ${chunkIndex + 1} prompt built in ${promptMs}ms (${(prompt.length / 1024).toFixed(1)} KB)`);
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
+      let accumulated = '';
+      const chunkDelta = (delta: LLMStreamDelta) => {
+        if (delta.type === 'content') accumulated += delta.text;
+      };
+
+      let chunkSession: LLMSession | null = null;
+      try {
+        chunkSession = await provider.createSession(sessionConfig, chunkDelta);
+        await chunkSession.sendAndWait(prompt, CHAT_REQUEST_TIMEOUT_MS);
+
+        const code = extractPptxCodeBlock(accumulated);
+        if (!code) throw new Error(`Chunk ${chunkIndex}: LLM response did not contain valid python-pptx code.`);
+
+        return { chunkIndex, code, slideIndices };
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt < MAX_CHUNK_RETRIES) {
+          sendToWindow(win, 'chat:stream', { content: `\n[Chunk ${chunkIndex + 1}] Retry ${attempt + 1}/${MAX_CHUNK_RETRIES}...\n` });
+        }
+      } finally {
+        if (chunkSession) await chunkSession.disconnect().catch(() => {});
+      }
+    }
+
+    throw lastError!;
+  });
+
+  const chunkGenStart = Date.now();
+  const settled = await Promise.allSettled(chunkPromises);
+  const chunkGenMs = Date.now() - chunkGenStart;
+  console.log(`[perf] All ${totalChunks} chunks completed in ${(chunkGenMs / 1000).toFixed(1)}s`);
+  const results: ChunkResult[] = [];
+  const errors: string[] = [];
+
+  for (let i = 0; i < settled.length; i++) {
+    const r = settled[i];
+    if (r.status === 'fulfilled') {
+      results.push(r.value);
+    } else {
+      const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      const g = groups[i];
+      errors.push(`Chunk ${g.chunkIndex} (slides ${g.slideIndices[0] + 1}-${g.slideIndices[g.slideIndices.length - 1] + 1}): ${msg}`);
+    }
+  }
+
+  if (errors.length > 0) throw new Error(`Chunked LLM generation failed:\n${errors.join('\n')}`);
+  return results.sort((a, b) => a.chunkIndex - b.chunkIndex);
+}
+
+// ---------------------------------------------------------------------------
 // IPC handler registration
 // ---------------------------------------------------------------------------
 
@@ -494,12 +731,13 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
       }
 
       const mode = resolveSessionMode(message, workspace);
-      const prompt = await buildPrompt(message, history, workspace, mode);
+      let prompt = await buildPrompt(message, history, workspace, mode);
 
       // Pre-compute content-adaptive layout specs for PPTX generation workflows.
       // Uses PowerPoint COM AutoFit + kiwisolver constraint solver to produce
       // pixel-perfect coordinates injected into the Python runner env.
       let layoutSpecsJson: string | undefined;
+      let slideAssetsJson: string | undefined;
       let layoutSpecsPromise: Promise<void> | null = null;
       let slideAssetsPromise: Promise<void> | null = null;
       const workflow = resolveWorkflow(message, workspace);
@@ -513,7 +751,9 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           });
         slideAssetsPromise = persistSlideAssetsToWorkspace(workspace.slides, workspace.iconCollection)
           .then((result) => {
-            if (!result.success) {
+            if (result.success && result.slideAssetsJson) {
+              slideAssetsJson = result.slideAssetsJson;
+            } else {
               console.log('[chat] Slide asset persistence failed (non-blocking):', result.error);
             }
           })
@@ -758,12 +998,17 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
             // Remove old output so we get fresh validation
             await fs.unlink(outputPath).catch(() => { });
 
-            await executeGeneratedPythonCodeToFile(code, theme, title, outputPath, {
+            const report = await executeGeneratedPythonCodeToFile(code, theme, title, outputPath, {
               iconCollection: workspace.iconCollection,
               layoutSpecsJson,
             });
 
-            return { success: true, message: 'PPTX re-generated successfully. Layout validation passed.' };
+            return {
+              success: true,
+              message: `PPTX re-generated successfully (${report.slideCount} slides). Layout validation passed.`,
+              slideCount: report.slideCount,
+              warnings: report.warnings,
+            };
           } catch (err) {
             return { success: false, error: formatExecutionFailure(err) };
           }
@@ -839,6 +1084,88 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         const wsDir = await readWorkspaceDir();
         const sessionConfig = buildSessionConfig(skillDirectories, sessionMode, workflow, frameworkAlreadySet, wsDir);
 
+        // ---- Chunked PPTX generation path ----
+        const chunkSize = parseInt(process.env.PPTX_CHUNK_SIZE || '0', 10);
+        if (sessionMode === 'pptx' && chunkSize > 0 && workspace.slides.length > chunkSize && !workspace.pptxBuildError) {
+          if (layoutSpecsPromise) await layoutSpecsPromise;
+          if (slideAssetsPromise) await slideAssetsPromise;
+
+          const groups = chunkSlides(workspace.slides, chunkSize);
+          sendToWindow(win, 'chat:stream', {
+            content: `\n🔀 Splitting ${workspace.slides.length} slides into ${groups.length} chunks for parallel generation...\n`,
+          });
+
+          const chunkResults = await generatePptxChunked(
+            groups, message, history, workspace, sessionConfig, win,
+          );
+
+          sendToWindow(win, 'chat:stream', { content: '\n⚙️ Executing chunks and merging...\n' });
+
+          const previewRoot = path.join(wsDir, 'previews');
+          const outputPath = path.join(previewRoot, 'presentation-preview.pptx');
+          await fs.mkdir(previewRoot, { recursive: true });
+          await fs.unlink(outputPath).catch(() => {});
+
+          try {
+            const chunkReport = await executeChunkedPptxGeneration(chunkResults, workspace.theme, workspace.title, outputPath, {
+              iconCollection: workspace.iconCollection,
+              layoutSpecsJson,
+              slideAssetsJson,
+              templateMeta: workspace.templateMeta,
+              onProgress: (progress) => sendToWindow(win, 'chat:chunk-progress', progress),
+            });
+
+            sendToWindow(win, 'chat:stream', {
+              content: `\n✅ Verified: ${chunkReport.slideCount} slides, ${((chunkReport.fileSizeBytes ?? 0) / 1024).toFixed(0)} KB`
+                + (chunkReport.warnings.length > 0 ? `\n⚠️ ${chunkReport.warnings.join('; ')}` : '') + '\n',
+            });
+
+            // Notify the renderer that the chunked PPTX is already generated and
+            // merged.  The onDone handler must NOT re-execute via pptx:renderPreview
+            // because the stitched code contains multiple build_presentation() calls
+            // that would each overwrite the output, leaving only the last chunk.
+            const stitchedCode = chunkResults
+              .map((c) => c.code)
+              .join('\n\n');
+            sendToWindow(win, 'chat:chunked-pptx-ready', { code: stitchedCode });
+
+            // Stream the stitched code for display in the chat history
+            sendToWindow(win, 'chat:stream', { content: '\n\n```python\n' + stitchedCode + '\n```\n' });
+            completeRequest();
+            return;
+          } catch (chunkExecErr) {
+            // Chunk execution failed — fall through to LLM auto-fix session.
+            // generated-source.py was already written by executeChunkedPptxGeneration
+            // so rerun_pptx and the retry prompt can reference the failing code.
+            const errMsg = chunkExecErr instanceof Error ? chunkExecErr.message : String(chunkExecErr);
+            sendToWindow(win, 'chat:stream', {
+              content: `\n⚠️ Chunked PPTX execution failed: ${errMsg}\n\n🔧 Attempting auto-fix via LLM...\n`,
+            });
+
+            // Read the failing generated-source.py so the LLM can make a surgical fix
+            let failingCode = '';
+            try {
+              failingCode = await fs.readFile(path.join(previewRoot, 'generated-source.py'), 'utf-8');
+            } catch { /* may not exist if generation itself failed */ }
+
+            // Augment the prompt with error context so the single-shot LLM can fix it
+            const autoFixParts = [
+              '\n\n## Last PPTX Build Failure\n',
+              'The previous generated python-pptx code failed to run. Apply a MINIMAL, targeted fix — only change the lines that caused the error. Output the full file but keep all working code unchanged. Do NOT redesign or regenerate slides that were not part of the failure.',
+              errMsg,
+            ];
+            if (failingCode.trim()) {
+              autoFixParts.push('\n### Previously Generated Code (fix only the broken parts)\n');
+              autoFixParts.push('```python');
+              autoFixParts.push(failingCode);
+              autoFixParts.push('```');
+            }
+            prompt = prompt + autoFixParts.join('\n');
+            // Fall through to single-shot LLM path below for auto-fix
+          }
+        }
+
+        // ---- Single-shot path (unchanged) ----
         const onDelta = (delta: LLMStreamDelta) => {
           resetInactivityTimeout();
           if (delta.type === 'content') {

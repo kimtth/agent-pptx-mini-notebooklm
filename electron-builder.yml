@@ -17,6 +17,8 @@ extraResources:
     to: skills
   - from: workflows
     to: workflows
+  - from: resources/models
+    to: resources/models
 asar: true
 asarUnpack:
   - node_modules/@github/copilot-*-*/**
