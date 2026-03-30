@@ -6,13 +6,16 @@ import { useChatStore } from '../../stores/chat-store'
 import { useSlidesStore } from '../../stores/slides-store'
 import { usePaletteStore } from '../../stores/palette-store'
 import { useDataSourcesStore } from '../../stores/data-sources-store'
-import { createUserMessage, historyToIpc } from '../../application/chat-use-case'
+import { createUserMessage, historyToIpc, stripPythonCodeForDisplay } from '../../application/chat-use-case'
 import { getAvailableIconChoices } from '../../domain/icons/iconify'
 import { getWorkflowConfig, type WorkflowId } from '../../domain/workflows/workflow-config'
 
 /** Completed assistant messages: full markdown, auto-collapse if >10 lines */
 function AssistantMarkdownMessage({ content }: { content: string }) {
-  const lineCount = content.split(/\r?\n/).length
+  const stripped = stripPythonCodeForDisplay(content)
+  const codeHidden = !stripped && content.trim().length > 0
+  const displayContent = codeHidden ? '' : stripped
+  const lineCount = displayContent.split(/\r?\n/).length
   const isLong = lineCount > 10
   const [expanded, setExpanded] = useState(!isLong)
 
@@ -40,7 +43,14 @@ function AssistantMarkdownMessage({ content }: { content: string }) {
       )}
       {expanded && (
         <div className="px-4 py-3">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          {codeHidden ? (
+            <p className="flex items-center gap-2 text-xs italic" style={{ color: 'var(--text-muted)' }}>
+              <FileCode2 size={14} />
+              <span>Python code generated — building PPTX…</span>
+            </p>
+          ) : (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
+          )}
         </div>
       )}
     </div>
@@ -108,7 +118,21 @@ function StreamingBubble({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElem
           {pendingThinking.slice(-600)}
         </div>
       )}
-      {pendingContent && <StreamingTextMessage content={pendingContent} />}
+      {pendingContent && (() => {
+        const stripped = stripPythonCodeForDisplay(pendingContent, true)
+        if (!stripped && pendingContent.trim().length > 0) {
+          return (
+            <div
+              className="flex items-center gap-2 px-4 py-3 text-xs italic border"
+              style={{ color: 'var(--text-muted)', background: 'var(--surface)', borderColor: 'var(--panel-border)' }}
+            >
+              <FileCode2 size={14} />
+              <span>Generating Python code…</span>
+            </div>
+          )
+        }
+        return stripped ? <StreamingTextMessage content={stripped} /> : null
+      })()}
     </div>
   )
 }
@@ -117,6 +141,8 @@ export function ChatPanel() {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const busyStartRef = useRef<number | null>(null)
+  const [elapsed, setElapsed] = useState<number | null>(null)
 
   const messages = useChatStore((s) => s.messages)
   const addMessage = useChatStore((s) => s.addMessage)
@@ -130,6 +156,21 @@ export function ChatPanel() {
   const { tokens, selectedIconCollection } = usePaletteStore()
   const { files: dataSources, urls: urlSources } = useDataSourcesStore()
   const busy = streaming || pptxBusy
+
+  // Track elapsed time: tick every 30s while busy, snapshot on completion
+  useEffect(() => {
+    if (busy) {
+      busyStartRef.current = Date.now()
+      setElapsed(0)
+      const id = setInterval(() => {
+        setElapsed(Math.round((Date.now() - busyStartRef.current!) / 1000))
+      }, 30_000)
+      return () => clearInterval(id)
+    } else if (busyStartRef.current !== null) {
+      setElapsed(Math.round((Date.now() - busyStartRef.current) / 1000))
+      busyStartRef.current = null
+    }
+  }, [busy])
 
   // Scroll for new completed messages
   useEffect(() => {
@@ -325,6 +366,11 @@ export function ChatPanel() {
             background: 'var(--input-bg)',
           }}
         />
+        {elapsed !== null && (
+          <div className="px-3 pt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+            {busy ? `⏱ ${elapsed}s elapsed…` : `⏱ Completed in ${elapsed}s`}
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
           <p className="min-w-0 text-xs" style={{ color: 'var(--text-muted)' }}>Enter ↵ send · Shift+Enter new line</p>
           <div className="flex max-w-full flex-wrap items-center justify-end gap-2">

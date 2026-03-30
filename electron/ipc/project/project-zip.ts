@@ -5,7 +5,7 @@
  *   manifest.json   — project JSON with relative image paths
  *   images/         — slide images (JPG/PNG/WebP)
  *   previews/       — rendered slide PNGs (if available)
- *   contents/       — data-source artifacts (.source.md, .summary.md)
+ *   contents/       — data-source artifacts (.source.md)
  *   template/       — custom PPTX template + extracted assets
  */
 
@@ -36,7 +36,6 @@ interface SlideItem {
 
 interface SourceArtifact {
   markdownPath: string;
-  summaryPath: string;
   summaryText: string;
 }
 
@@ -182,13 +181,11 @@ function rewritePathsToRelative(
     for (const f of clone.dataSources.files ?? []) {
       if (f.consumed) {
         f.consumed.markdownPath = path.relative(wsDir, f.consumed.markdownPath);
-        f.consumed.summaryPath = path.relative(wsDir, f.consumed.summaryPath);
       }
     }
     for (const u of clone.dataSources.urls ?? []) {
       if (u.result?.consumed) {
         u.result.consumed.markdownPath = path.relative(wsDir, u.result.consumed.markdownPath);
-        u.result.consumed.summaryPath = path.relative(wsDir, u.result.consumed.summaryPath);
       }
     }
   }
@@ -224,13 +221,11 @@ function rewritePathsToAbsolute(
     for (const f of project.dataSources.files ?? []) {
       if (f.consumed) {
         if (!path.isAbsolute(f.consumed.markdownPath)) f.consumed.markdownPath = path.join(workspaceDir, f.consumed.markdownPath);
-        if (!path.isAbsolute(f.consumed.summaryPath)) f.consumed.summaryPath = path.join(workspaceDir, f.consumed.summaryPath);
       }
     }
     for (const u of project.dataSources.urls ?? []) {
       if (u.result?.consumed) {
         if (!path.isAbsolute(u.result.consumed.markdownPath)) u.result.consumed.markdownPath = path.join(workspaceDir, u.result.consumed.markdownPath);
-        if (!path.isAbsolute(u.result.consumed.summaryPath)) u.result.consumed.summaryPath = path.join(workspaceDir, u.result.consumed.summaryPath);
       }
     }
   }
@@ -303,7 +298,14 @@ export async function saveProjectAsZip(
     try {
       const entries = await fs.readdir(previewsDir);
       for (const entry of entries) {
-        if (/\.(png|jpg|jpeg|webp|py|pptx)$/i.test(entry)) {
+        // Include preview PNGs and the final PPTX + combined source, but
+        // exclude intermediate chunk artifacts (generated-source-chunk-*.py
+        // and partial-*.pptx) which are kept for debugging only.
+        if (
+          /\.(png|jpg|jpeg|webp|py|pptx)$/i.test(entry) &&
+          !/^generated-source-chunk-\d+\.py$/i.test(entry) &&
+          !/^partial-\d+\.pptx$/i.test(entry)
+        ) {
           const absPreview = path.join(previewsDir, entry);
           archive.file(absPreview, { name: `previews/${entry}` });
         }

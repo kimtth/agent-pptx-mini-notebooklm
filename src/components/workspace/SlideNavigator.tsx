@@ -21,12 +21,13 @@ const LAYOUT_BADGE: Record<string, string> = {
 }
 
 export function SlideNavigator() {
-  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework, setTemplatePath, setTemplateMeta } = useSlidesStore()
+  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework, setTemplatePath, setTemplateMeta, reset } = useSlidesStore()
   const slides = work.slides
   const selectedFramework = getFrameworkMeta(work.framework)
   const selectedStyle = getDesignStyleMeta(work.designStyle)
   const isCustomTemplate = work.designStyle === 'Custom Template'
   const [templateLoading, setTemplateLoading] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--surface)' }}>
@@ -36,8 +37,38 @@ export function SlideNavigator() {
         style={{ color: 'var(--text-secondary)', borderColor: 'var(--panel-border)', background: 'var(--surface)' }}
       >
         <div className="flex items-center justify-between text-xs font-semibold">
-          <span>{slides.length} slide{slides.length !== 1 ? 's' : ''}</span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
+            <span>{slides.length}</span>
+            {slides.length > 0 && !confirmClear && (
+              <button
+                onClick={() => setConfirmClear(true)}
+                className="opacity-50 hover:opacity-100 transition-opacity"
+                style={{ color: 'var(--text-muted)' }}
+                title="Clear all slides"
+              >
+                Clear
+              </button>
+            )}
+            {confirmClear && (
+              <span className="flex items-center gap-1 text-[10px]">
+                <button
+                  onClick={() => { reset(); setConfirmClear(false) }}
+                  className="px-1.5 py-0.5 font-semibold border"
+                  style={{ color: '#ef4444', borderColor: '#ef4444', background: 'transparent' }}
+                >
+                  Clear all
+                </button>
+                <button
+                  onClick={() => setConfirmClear(false)}
+                  className="px-1.5 py-0.5 font-semibold border"
+                  style={{ color: 'var(--text-muted)', borderColor: 'var(--panel-border)', background: 'transparent' }}
+                >
+                  Cancel
+                </button>
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1 ml-4">
             {selectedStyle && (
               <span
                 className="px-2 py-0.5 text-[10px] font-semibold border"
@@ -466,8 +497,10 @@ function NotebookLMSection() {
       // 3. Generate infographic
       const res = await window.electronAPI.notebooklm.generateInfographic(notebookId)
       if (res.success && res.path) {
-        setInfographicPaths((prev) => prev.includes(res.path!) ? prev : [...prev, res.path!])
-        setStatusMessage(`Infographic saved — ${res.path.split(/[\\/]/).pop()}`)
+        const savedPath = res.path
+        const current = useNotebookLMStore.getState().infographicPaths
+        if (!current.includes(savedPath)) setInfographicPaths([...current, savedPath])
+        setStatusMessage(`Infographic saved — ${savedPath.split(/[\\/]/).pop()}`)
       } else {
         setStatusMessage(`Infographic generation failed: ${res.error ?? 'unknown error'}`)
       }

@@ -378,3 +378,5 @@ build-log.txt
 /samples/test
 /out
 .vscode
+# ONNX embedding model (downloaded at setup)
+resources/models/

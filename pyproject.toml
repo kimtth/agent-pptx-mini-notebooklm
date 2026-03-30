@@ -16,6 +16,9 @@ dependencies = [
     "matplotlib>=3.10.8",
     "seaborn>=0.13.2",
     "notebooklm-py[browser]>=0.3.4",
+    "numpy>=2.2.0",
+    "onnxruntime>=1.22.0",
+    "tokenizers>=0.21.0",
 ]
 
 [tool.ruff]

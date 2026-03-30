@@ -10,8 +10,9 @@ import type { WorkflowConfig } from '../workflows/workflow-config';
 
 export interface SourceArtifact {
   markdownPath: string;
-  summaryPath: string;
   summaryText: string;
+  /** Path to structured RAPTOR tree JSON (when available). */
+  structuredSummaryPath?: string;
 }
 
 export interface DataFile {
@@ -90,6 +91,7 @@ export interface IpcChatAPI {
       iconProvider: 'iconify';
       iconCollection: IconifyCollectionId;
       availableIcons: string[];
+      chunkSize?: number;
     },
   ): void;
 
@@ -99,6 +101,8 @@ export interface IpcChatAPI {
   onScenario(cb: (payload: ScenarioPayload) => void): () => void;
   onSlideUpdate(cb: (slide: SlideUpdatePayload) => void): () => void;
   onFrameworkSuggested(cb: (payload: { primary: string; reasoning: string }) => void): () => void;
+  onChunkProgress(cb: (progress: { chunkIndex: number; totalChunks: number; status: 'generating' | 'executing' | 'merging' | 'done' | 'error'; slideRange: string }) => void): () => void;
+  onChunkedPptxReady(cb: (payload: { code: string }) => void): () => void;
   onError(cb: (msg: string) => void): () => void;
   onDone(cb: () => void): () => void;
 }

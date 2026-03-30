@@ -97,6 +97,22 @@ https://python-pptx.readthedocs.io/
 
 PPTX generation runs through a bundled Python runner at [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py), which executes agent-generated `python-pptx` code with the runtime variables `OUTPUT_PATH`, `PPTX_TITLE`, and `PPTX_THEME`.
 
+### Embedding Model & RAPTOR Retrieval
+
+Long documents are indexed into a **RAPTOR tree** (Recursive Abstractive Processing for Tree-Organized Retrieval) for targeted per-chunk context injection during PPTX generation.
+
+| Component | Path | Role |
+|-----------|------|------|
+| `embed_service.py` | `scripts/raptor/` | Local embedding via [multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small) ONNX (384-dim, 100+ languages, INT8 quantized ~118 MB) |
+| `raptor_builder.py` | `scripts/raptor/` | Splits markdown → embeds sections → agglomerative clustering → hierarchical tree |
+| `raptor_retriever.py` | `scripts/raptor/` | Per-chunk cosine retrieval across all tree levels → top-K relevant sections |
+| `raptor-handler.ts` | `electron/ipc/data/` | TypeScript IPC wrapper calling Python scripts via `execFile` |
+| `download_model.py` | `scripts/raptor/` | Downloads model from HuggingFace (automated in `pnpm dist`) |
+
+**Pipeline:** At ingestion, `data-consumer.ts` calls `buildRaptorTree()` which writes a `.structured-summary.json` with the RAPTOR tree and embeddings. At generation time, `chat-handler.ts` calls `retrieveContext()` with slide-derived queries, injecting only the most relevant sections (~12 KB) instead of the full document (~123 KB) into each chunk prompt.
+
+Model files are stored at `resources/models/embed/` (git-ignored) and bundled into packaged builds via `electron-builder.yml`. Run `pnpm setup:models` to download manually, or let `pnpm dist` handle it automatically.
+
 ### Layout Engine
 
 Layout modules live in `scripts/layout/` and compute content-adaptive slide coordinates **before** the LLM generates `python-pptx` code.
@@ -110,7 +126,8 @@ pptx-handler.ts
   │       ↓
   │     hybrid_layout.py               Orchestrator (CLI entry point)
   │       ├─ layout_blueprint.py       Load declarative zone definitions
-  │       ├─ com_text_measure.py       Measure text heights (COM → Pillow → auto-size fallback)
+  │       ├─ com_text_measure.py       Measure text heights via PowerPoint COM (Windows only)
+  │       ├─ font_text_measure.py      Measure text heights via Pillow font metrics (cross-platform)
   │       └─ constraint_solver.py      Solve zone positions with kiwisolver
   │             └─ layout_specs.py     Emit LayoutSpec / RectSpec dataclasses
   │       ↓
@@ -127,9 +144,10 @@ pptx-handler.ts
 
 | Module | Role |
 |--------|------|
-| `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point |
+| `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point; selects measurement backend (COM → Pillow → heuristic) |
 | `layout_blueprint.py` | Declarative zone definitions for 14 layout types |
-| `com_text_measure.py` | Text height measurement with three-tier fallback: COM (Windows + PowerPoint) → Pillow font-metrics (cross-platform) → auto-size |
+| `com_text_measure.py` | Text height measurement via PowerPoint COM (Windows only, highest accuracy) |
+| `font_text_measure.py` | Text height measurement via Pillow font metrics (cross-platform, ~90–95% accuracy) |
 | `constraint_solver.py` | Kiwisolver (Cassowary) constraint solver → `LayoutSpec` |
 | `layout_specs.py` | `LayoutSpec` / `RectSpec` dataclasses and `flow_layout_spec()` cascade helper |
 | `layout_validator.py` | Post-generation validation (overlap, bounds, text overflow) |

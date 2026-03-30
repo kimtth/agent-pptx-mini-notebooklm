@@ -534,10 +534,17 @@ def fix_presentation(prs, issues: list[LayoutIssue]) -> int:
 
 def report_issues(issues: list[LayoutIssue]) -> str:
     """Format issues into a human-readable report."""
-    if not issues:
+    filtered = [i for i in issues if i.severity.value.lower() != 'info']
+    
+    if not filtered:
         return 'Layout validation passed — no issues found.'
-    lines = [f'Layout validation found {len(issues)} issue(s):']
-    for issue in issues:
-        prefix = {'error': 'ERROR', 'warning': 'WARN', 'info': 'INFO'}[issue.severity.value]
+    
+    lines = [f'Layout validation found {len(filtered)} issue(s):']
+    for issue in filtered:
+        severity = issue.severity.value.lower()
+        prefix = {'error': 'ERROR', 'warning': 'WARN'}[severity]
         lines.append(f'  [{prefix}] Slide {issue.slide_index + 1}: {issue.message}')
+    
     return '\n'.join(lines)
+
+

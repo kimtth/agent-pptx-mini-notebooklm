@@ -32,6 +32,7 @@ export interface WorkspaceContext {
   iconProvider: 'iconify';
   iconCollection: IconifyCollectionId;
   availableIcons: string[];
+  chunkSize?: number;
 }
 
 export function createUserMessage(content: string): ChatMessage {
@@ -67,4 +68,32 @@ export function extractPptxCodeBlock(content: string): string | null {
 
 function looksLikePythonPptxCode(code: string): boolean {
   return /from\s+pptx\s+import|import\s+pptx|Presentation\(|def\s+build_presentation\s*\(/i.test(code)
+}
+
+/**
+ * Strip Python / pptx fenced code blocks from content for chat display.
+ * The stored message is unchanged — only the rendered output is filtered.
+ * When `streaming` is true, any trailing unclosed python fence is also hidden.
+ */
+export function stripPythonCodeForDisplay(content: string, streaming = false): string {
+  // Replace complete ```python / ```py fenced code blocks
+  let result = content.replace(
+    /```(?:python|py)\s*\r?\n[\s\S]*?```/g,
+    '',
+  )
+
+  // Also strip unlabeled fenced blocks that look like python-pptx code
+  result = result.replace(
+    /```\s*\r?\n([\s\S]*?)```/g,
+    (_match, body: string) => looksLikePythonPptxCode(body) ? '' : _match,
+  )
+
+  // For streaming: hide trailing unclosed python code fence
+  if (streaming) {
+    result = result.replace(/```(?:python|py)\s*\r?\n[\s\S]*$/, '')
+  }
+
+  // Clean up excessive blank lines
+  result = result.replace(/\n{3,}/g, '\n\n')
+  return result.trim()
 }

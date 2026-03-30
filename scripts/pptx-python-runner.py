@@ -509,6 +509,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--render-dir', default=None)
     parser.add_argument('--workspace-dir', default=None,
                         help='Absolute path to the user workspace directory')
+    parser.add_argument('--chunk-mode', action='store_true',
+                        help='Run in chunk mode: skip post-processing (validation, preview, notebooklm)')
+    parser.add_argument('--post-process-only', action='store_true',
+                        help='Run only post-processing on an existing PPTX (validation, preview, notebooklm)')
     return parser.parse_args()
 
 
@@ -827,6 +831,42 @@ def finalize_output(output_path: Path, namespace: dict[str, object]) -> None:
 
     if not output_path.exists():
         raise RuntimeError('Generated python-pptx code completed without creating the PPTX output file.')
+
+
+def _build_completion_report(output_path: Path, *, warnings: list[str] | None = None) -> dict:
+    """Build a structured completion report for the TypeScript caller."""
+    report: dict = {
+        'status': 'error',
+        'outputPath': str(output_path),
+        'fileExists': False,
+        'slideCount': 0,
+        'fileSizeBytes': 0,
+        'warnings': warnings or [],
+    }
+
+    if not output_path.exists():
+        report['error'] = f'Output file not found: {output_path}'
+        return report
+
+    report['fileExists'] = True
+    report['fileSizeBytes'] = output_path.stat().st_size
+
+    if report['fileSizeBytes'] == 0:
+        report['error'] = 'Output file is empty (0 bytes)'
+        return report
+
+    try:
+        prs = Presentation(str(output_path))
+        report['slideCount'] = len(prs.slides)
+        if report['slideCount'] == 0:
+            report['status'] = 'warning'
+            report['warnings'].append('PPTX file contains 0 slides')
+        else:
+            report['status'] = 'success'
+    except Exception as exc:
+        report['error'] = f'Failed to open PPTX for verification: {exc}'
+
+    return report
 
 
 def _normalize_shape_text(value: str) -> str:
@@ -1488,27 +1528,43 @@ def main() -> int:
 
     print(f'[workspace] WORKSPACE_DIR={workspace_dir or "(not set)"}', file=sys.stderr)
 
-    if not generated_path.exists():
-        raise FileNotFoundError(f'Generated Python source file not found: {generated_path}')
+    # --post-process-only: skip code generation, jump straight to post-processing
+    if args.post_process_only:
+        print('[post-process-only] Running post-processing only on existing PPTX.', file=sys.stderr)
+        if not output_path.exists():
+            raise FileNotFoundError(f'PPTX file not found for post-processing: {output_path}')
+    else:
+        if not generated_path.exists():
+            raise FileNotFoundError(f'Generated Python source file not found: {generated_path}')
 
-    output_path = _unlock_or_rename(output_path)
-    namespace = build_namespace(generated_path, output_path, workspace_dir=workspace_dir)
+        output_path = _unlock_or_rename(output_path)
+        namespace = build_namespace(generated_path, output_path, workspace_dir=workspace_dir)
 
-    # Pre-download Noto Sans fonts for any non-Latin text in the generated code
-    try:
-        code_text = generated_path.read_text(encoding='utf-8')
-        ensure_noto_fonts(code_text, os.environ.get('WORKSPACE_DIR', ''))
-    except Exception as exc:  # noqa: BLE001
-        print(f'[font] Font pre-check failed (non-blocking): {exc}', file=sys.stderr)
+        # Pre-download Noto Sans fonts for any non-Latin text in the generated code
+        try:
+            code_text = generated_path.read_text(encoding='utf-8')
+            ensure_noto_fonts(code_text, os.environ.get('WORKSPACE_DIR', ''))
+        except Exception as exc:  # noqa: BLE001
+            print(f'[font] Font pre-check failed (non-blocking): {exc}', file=sys.stderr)
 
-    run_generated_code(generated_path, namespace)
-    finalize_output(output_path, namespace)
+        run_generated_code(generated_path, namespace)
+        finalize_output(output_path, namespace)
+
+        # In chunk mode, skip all post-processing (it runs on the merged PPTX later)
+        if args.chunk_mode:
+            print('[chunk-mode] Partial PPTX created — skipping post-processing.', file=sys.stderr)
+            report = _build_completion_report(output_path)
+            print(json.dumps(report))
+            return 0 if report['status'] in ('success', 'warning') else 1
 
     # Append NotebookLM infographic slides if the option is activated
+    post_warnings: list[str] = []
     try:
         append_notebooklm_infographics(output_path)
     except Exception as exc:  # noqa: BLE001
-        print(f'[notebooklm] Failed to append infographics (PPTX was generated): {exc}', file=sys.stderr)
+        msg = f'Failed to append infographics: {exc}'
+        post_warnings.append(msg)
+        print(f'[notebooklm] {msg}', file=sys.stderr)
 
     # Stamp the actual creation date (python-pptx's bundled default.pptx has a frozen 2013 date)
     try:
@@ -1519,21 +1575,29 @@ def main() -> int:
         _prs.core_properties.modified = _now
         _prs.save(str(output_path))
     except Exception as _exc:
-        print(f'[WARNING] Could not update core properties date: {_exc}', file=sys.stderr)
+        msg = f'Could not update core properties date: {_exc}'
+        post_warnings.append(msg)
+        print(f'[WARNING] {msg}', file=sys.stderr)
 
     try:
         skip_com_layout_fix = render_dir is not None and os.environ.get('PPTX_SKIP_COM_LAYOUT_FIX') == '1'
         validate_and_fix_output(output_path, run_com_layout_fix=not skip_com_layout_fix)
     except Exception as exc:  # noqa: BLE001
-        print(f'[layout-validator] Validation failed (PPTX was generated): {exc}', file=sys.stderr)
+        msg = f'Layout validation failed: {exc}'
+        post_warnings.append(msg)
+        print(f'[layout-validator] {msg}', file=sys.stderr)
 
     if render_dir is not None:
         try:
             render_preview_images(output_path, render_dir)
         except Exception as exc:  # noqa: BLE001
-            print(f'[WARNING] Preview rendering failed (PPTX was generated successfully): {exc}', file=sys.stderr)
+            msg = f'Preview rendering failed: {exc}'
+            post_warnings.append(msg)
+            print(f'[WARNING] {msg}', file=sys.stderr)
 
-    return 0
+    report = _build_completion_report(output_path, warnings=post_warnings)
+    print(json.dumps(report))
+    return 0 if report['status'] in ('success', 'warning') else 1
 
 
 if __name__ == '__main__':
