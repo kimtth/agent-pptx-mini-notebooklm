@@ -207,6 +207,7 @@ export function ChatPanel() {
       iconProvider: 'iconify',
       iconCollection: selectedIconCollection,
       availableIcons,
+      includeImagesInLayout: work.includeImagesInLayout,
     })
   }
 

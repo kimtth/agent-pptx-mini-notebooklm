@@ -458,17 +458,47 @@ The final generated Python code does not talk to the layout engine directly. Ins
 | `SLIDE_ASSETS`, `slide_assets()`, `slide_image_paths()` | Approved per-slide asset metadata and helpers for selected images |
 | `PPTX_ICON_COLLECTION` | Active icon collection identifier enforced by the runtime |
 
+### String Constants Injected at Runtime
+
+| Constant | Purpose |
+|----------|---------|
+| `OUTPUT_PATH` | Absolute path where the generated PPTX is written |
+| `PPTX_TITLE` | Presentation title string |
+| `PPTX_THEME` | Serialized theme palette JSON |
+| `WORKSPACE_DIR` | Absolute path to the active workspace directory |
+| `IMAGES_DIR` | Absolute path to `<workspace>/images/` |
+| `ICON_CACHE_DIR` | Absolute path to the local icon cache directory |
+| `TEMPLATE_PATH` | Path to the user-supplied custom PPTX template, or `None` when no template is active |
+
 ### Content / Asset Helpers Injected at Runtime
 
-| Helper | Purpose |
-|--------|---------|
-| `safe_add_picture()` | Adds images safely, preserving aspect ratio and handling icon scaling |
-| `safe_image_path()` | Validates and normalizes image paths |
-| `fetch_icon()` | Loads an icon from the local icon cache and rejects names outside the selected icon collection |
-| `resolve_font()` | Selects `Calibri` for Latin or the appropriate Noto Sans family for non-Latin text |
-| `ensure_noto_fonts()` | Downloads and installs missing Noto fonts on demand |
-| `estimate_text_height_in()` | Fallback text height heuristic used by generated code and validator |
-| `contrast_ratio()` / `ensure_contrast()` | Contrast helpers for choosing readable text colors on filled panels |
+| Helper | Signature | Purpose |
+|--------|-----------|---------|
+| `safe_add_picture()` | `(shapes, path, left_emu, top_emu, width_emu, height_emu) → Picture` | Adds images safely preserving aspect ratio and handling icon scaling. **First arg must be `slide.shapes`**, never `slide`. |
+| `safe_image_path()` | `(path) → str` | Validates and normalizes image paths |
+| `fetch_icon()` | `(icon_id, color_hex) → path_or_None` | Loads an icon from the local icon cache; rejects names outside the selected icon collection |
+| `resolve_font()` | `(text, fallback_name) → font_name_str` | Selects `Calibri` for Latin or the appropriate Noto Sans family for non-Latin text |
+| `ensure_noto_fonts()` | `() → None` | Downloads and installs missing Noto fonts on demand |
+| `estimate_text_height_in()` | `(text, width_in, font_size_pt) → float` | Fallback text height heuristic (CJK-aware) used by generated code and validator |
+| `contrast_ratio()` / `ensure_contrast()` | `ensure_contrast(fg_hex, bg_hex) → hex_str` | Contrast helpers for choosing readable text colors on filled panels |
+| `apply_widescreen()` | `(prs) → prs` | Forces 16:9 slide dimensions on the presentation object. Used both for blank decks (`apply_widescreen(Presentation())`) and custom templates (`apply_widescreen(Presentation(TEMPLATE_PATH))`). |
+| `set_fill_transparency()` | `(shape, value_0_to_1) → None` | Sets fill transparency without touching internal XML proxies directly |
+| `get_blank_layout()` | `(prs) → SlideLayout` | Finds the correct blank layout in a custom template; use instead of `prs.slide_layouts[6]` when `TEMPLATE_PATH` is set |
+
+### Chart Namespace Injected at Runtime
+
+The following names are pre-imported in the generated code namespace for chart slides:
+
+| Symbol | Source | Purpose |
+|--------|--------|---------|
+| `add_native_chart()` | runtime helper | Adds a standard business chart (bar, line, pie, etc.) inside `spec.content_rect` |
+| `add_chart_picture()` | runtime helper | Renders a complex chart via matplotlib/seaborn and inserts the resulting image |
+| `CategoryChartData` | `pptx.chart.data` | Data container for category-based charts |
+| `XyChartData` | `pptx.chart.data` | Data container for XY scatter charts |
+| `XL_CHART_TYPE` | `pptx.enum.chart` | Chart type enum |
+| `plt` | `matplotlib.pyplot` | Matplotlib pyplot module |
+| `sns` | `seaborn` | Seaborn module |
+| `np` | `numpy` | NumPy module |
 
 ### Asset-Grounding Rule
 

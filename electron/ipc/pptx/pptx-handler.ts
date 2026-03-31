@@ -282,6 +282,7 @@ function buildLayoutArtifactPaths(workspaceDir: string) {
     inputPath: path.join(layoutDir, 'layout-input.json'),
     outputPath: path.join(layoutDir, 'layout-specs.json'),
     slideAssetsPath: path.join(layoutDir, 'slide-assets.json'),
+    layoutMetaPath: path.join(layoutDir, 'layout-meta.json'),
   }
 }
 
@@ -340,6 +341,13 @@ export async function persistLayoutInputToWorkspace(
   } catch (err) {
     return { success: false, error: formatExecutionFailure(err) }
   }
+}
+
+export async function persistLayoutMeta(meta: { includeImagesInLayout?: boolean }): Promise<void> {
+  const workspaceDir = await readWorkspaceDir()
+  const { layoutDir, layoutMetaPath } = buildLayoutArtifactPaths(workspaceDir)
+  await fs.mkdir(layoutDir, { recursive: true })
+  await fs.writeFile(layoutMetaPath, JSON.stringify(meta, null, 2), 'utf-8')
 }
 
 export function buildSlideAssetMetadata(slides: SlideAssetSourceSlide[], iconCollection: string): SlideAssetMetadata[] {
@@ -461,7 +469,7 @@ export async function executeGeneratedPythonCodeToFile(
   theme: ThemeTokens | null,
   title: string,
   outputPath: string,
-  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null },
+  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; includeImagesInLayout?: boolean },
 ): Promise<PptxCompletionReport> {
   const workDir = path.dirname(outputPath)
   const sourcePath = path.join(workDir, 'generated-source.py')
@@ -547,6 +555,7 @@ export async function executeGeneratedPythonCodeToFile(
             ...(templatePath ? { PPTX_TEMPLATE_PATH: templatePath } : {}),
             ...(templateMetaJson ? { PPTX_TEMPLATE_META_JSON: templateMetaJson } : {}),
             ...(notebookLMInfographicsJson ? { PPTX_NOTEBOOKLM_INFOGRAPHICS: notebookLMInfographicsJson } : {}),
+            ...(opts?.includeImagesInLayout ? { PPTX_INCLUDE_IMAGES_IN_LAYOUT: '1' } : {}),
             WORKSPACE_DIR: workspaceDir,
             PPTX_LAYOUT_SPECS_JSON: layoutSpecsJson,
           },
@@ -586,6 +595,7 @@ export async function executeChunkedPptxGeneration(
     slideAssetsJson?: string
     templatePath?: string
     templateMeta?: TemplateMeta | null
+    includeImagesInLayout?: boolean
     onProgress?: (progress: { chunkIndex: number; totalChunks: number; status: string; slideRange: string }) => void
   },
 ): Promise<PptxCompletionReport> {
@@ -672,6 +682,7 @@ export async function executeChunkedPptxGeneration(
           ...(chunkSlideAssets.trim() ? { PPTX_SLIDE_ASSETS_JSON: chunkSlideAssets } : {}),
           ...(templatePath ? { PPTX_TEMPLATE_PATH: templatePath } : {}),
           ...(templateMetaJson ? { PPTX_TEMPLATE_META_JSON: templateMetaJson } : {}),
+          ...(opts.includeImagesInLayout ? { PPTX_INCLUDE_IMAGES_IN_LAYOUT: '1' } : {}),
           WORKSPACE_DIR: workspaceDir,
         },
       })

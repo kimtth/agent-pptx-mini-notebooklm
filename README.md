@@ -6,8 +6,6 @@ Electron desktop app for generating PowerPoint decks from chat, files, and URLs 
 
 ## Documentation Index
 
-- [Quick Start (English)](./QUICK_START.md)
-- [Quick Start (Japanese)](./QUICK_START_JP.md)
 - [Layout Engine Whitepaper](./LAYOUT_ENGINE.md)
 - [Sample PPTX English (Web Viewer)](https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2Fkimtth%2Fagent-cowork-pptx-creator%2Fmain%2Fsamples%2Fen%2Fpreviews%2Fpresentation-preview.pptx)
 
@@ -99,12 +97,12 @@ PPTX generation runs through a bundled Python runner at [scripts/pptx-python-run
 
 ### Embedding Model & RAPTOR Retrieval
 
-Long documents are indexed into a **RAPTOR tree** (Recursive Abstractive Processing for Tree-Organized Retrieval) for targeted per-chunk context injection during PPTX generation.
+Long documents are indexed into a **[RAPTOR](https://arxiv.org/abs/2401.18059) tree** (Recursive Abstractive Processing for Tree-Organized Retrieval) for targeted per-chunk context injection during PPTX generation.
 
 | Component | Path | Role |
 |-----------|------|------|
 | `embed_service.py` | `scripts/raptor/` | Local embedding via [multilingual-e5-small](https://huggingface.co/intfloat/multilingual-e5-small) ONNX (384-dim, 100+ languages, INT8 quantized ~118 MB) |
-| `raptor_builder.py` | `scripts/raptor/` | Splits markdown → embeds sections → agglomerative clustering → hierarchical tree |
+| `raptor_builder.py` | `scripts/raptor/` | Splits markdown → embeds sections → agglomerative clustering → hierarchical tree; uses a content-length-adaptive section threshold (`_heading_section_threshold()`: ~1 section per 3 KB, clamped 2–8) to decide when heading-based splitting is sufficient before falling back to semantic paragraph splitting |
 | `raptor_retriever.py` | `scripts/raptor/` | Per-chunk cosine retrieval across all tree levels → top-K relevant sections |
 | `raptor-handler.ts` | `electron/ipc/data/` | TypeScript IPC wrapper calling Python scripts via `execFile` |
 | `download_model.py` | `scripts/raptor/` | Downloads model from HuggingFace (automated in `pnpm dist`) |

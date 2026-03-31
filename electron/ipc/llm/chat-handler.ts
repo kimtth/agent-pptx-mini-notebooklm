@@ -31,7 +31,7 @@ import type { DataFile, ScrapeResult } from '../../../src/domain/ports/ipc';
 import { getIconifyCollectionById } from '../../../src/domain/icons/iconify';
 import type { IconifyCollectionId } from '../../../src/domain/icons/iconify';
 import { formatWorkflowForPrompt, getWorkflowConfig, type WorkflowConfig } from '../../../src/domain/workflows/workflow-config';
-import { executeGeneratedPythonCodeToFile, executeChunkedPptxGeneration, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace } from '../pptx/pptx-handler.ts';
+import { executeGeneratedPythonCodeToFile, executeChunkedPptxGeneration, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace, persistLayoutMeta } from '../pptx/pptx-handler.ts';
 import type { ChunkResult, PptxCompletionReport } from '../pptx/pptx-handler.ts';
 import { buildManagedSystemPrompt } from './system-prompts.ts';
 import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts';
@@ -40,7 +40,7 @@ import type { SlideGroup } from './slide-chunker.ts';
 import { retrieveContext, hasRaptorTree } from '../data/raptor-handler.ts';
 import type { RetrievedSection } from '../data/raptor-handler.ts';
 
-const CHAT_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
+const CHAT_REQUEST_TIMEOUT_MS = 120 * 60 * 1000;
 const CHAT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
 
 type ActiveChatRequest = {
@@ -77,6 +77,7 @@ interface WorkspaceContext {
   iconProvider: 'iconify';
   iconCollection: IconifyCollectionId;
   availableIcons: string[];
+  includeImagesInLayout?: boolean;
   chunkSize?: number;
 }
 
@@ -760,6 +761,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           .catch((err) => {
             console.log('[chat] Slide asset persistence failed (non-blocking):', err);
           });
+        persistLayoutMeta({ includeImagesInLayout: workspace.includeImagesInLayout ?? false }).catch(() => {});
       }
 
       let session: LLMSession | null = null;
@@ -1001,6 +1003,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
             const report = await executeGeneratedPythonCodeToFile(code, theme, title, outputPath, {
               iconCollection: workspace.iconCollection,
               layoutSpecsJson,
+              includeImagesInLayout: workspace.includeImagesInLayout,
             });
 
             return {
@@ -1112,6 +1115,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
               layoutSpecsJson,
               slideAssetsJson,
               templateMeta: workspace.templateMeta,
+              includeImagesInLayout: workspace.includeImagesInLayout,
               onProgress: (progress) => sendToWindow(win, 'chat:chunk-progress', progress),
             });
 

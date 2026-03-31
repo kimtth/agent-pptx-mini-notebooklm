@@ -69,6 +69,7 @@ export default function App() {
       iconProvider: 'iconify',
       iconCollection: selectedIconCollection,
       availableIcons,
+      includeImagesInLayout: work.includeImagesInLayout,
     })
   }
 

@@ -18,6 +18,8 @@ Usage:
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
 from enum import Enum
 
@@ -32,6 +34,26 @@ OVERLAP_TOLERANCE_EMU = Inches(0.05)
 
 # Auto-size constant (avoids import issues when MSO_AUTO_SIZE isn't available)
 _TEXT_TO_FIT_SHAPE = 2  # MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+
+
+def _should_include_images_in_layout() -> bool:
+    """Check whether Picture shapes should participate in collision detection.
+
+    Reads from PPTX_INCLUDE_IMAGES_IN_LAYOUT env var (set by pptx-handler),
+    or falls back to layout-meta.json in the workspace previews directory.
+    """
+    if os.environ.get('PPTX_INCLUDE_IMAGES_IN_LAYOUT', '') == '1':
+        return True
+    workspace = os.environ.get('WORKSPACE_DIR', '')
+    if workspace:
+        meta_path = os.path.join(workspace, 'previews', 'layout-meta.json')
+        try:
+            with open(meta_path, encoding='utf-8') as f:
+                meta = json.load(f)
+            return bool(meta.get('includeImagesInLayout', False))
+        except (OSError, json.JSONDecodeError, TypeError):
+            pass
+    return False
 
 
 class IssueSeverity(Enum):
@@ -192,6 +214,12 @@ def _is_decorative_glow(shape) -> bool:
     return True
 
 
+def _is_picture_shape(shape) -> bool:
+    """Check if a shape is a Picture (image) shape."""
+    from pptx.shapes.picture import Picture
+    return isinstance(shape, Picture)
+
+
 def _max_font_size_pt(shape, fallback: float = 18.0) -> float:
     if not getattr(shape, 'has_text_frame', False):
         return fallback
@@ -242,8 +270,15 @@ def _estimate_required_text_height_in(shape, box: ShapeBox) -> float | None:
     return required + margin_y_in + 0.04
 
 
-def validate_slide(slide, slide_index: int) -> list[LayoutIssue]:
-    """Validate a single slide for layout issues."""
+def validate_slide(slide, slide_index: int, *, include_images: bool | None = None) -> list[LayoutIssue]:
+    """Validate a single slide for layout issues.
+
+    When *include_images* is False, Picture shapes are excluded from collision
+    detection (treated as decorative content rather than layout objects).
+    """
+    if include_images is None:
+        include_images = _should_include_images_in_layout()
+
     issues: list[LayoutIssue] = []
     boxes: list[tuple[ShapeBox, object]] = []
 
@@ -253,6 +288,8 @@ def validate_slide(slide, slide_index: int) -> list[LayoutIssue]:
         if _is_decorative_frame(shape):
             continue
         if _is_decorative_glow(shape):
+            continue
+        if not include_images and _is_picture_shape(shape):
             continue
         name = getattr(shape, 'name', '') or ''
         if name.startswith('bg_blob'):
@@ -418,9 +455,10 @@ def validate_slide(slide, slide_index: int) -> list[LayoutIssue]:
 
 def validate_presentation(prs) -> list[LayoutIssue]:
     """Validate all slides in a presentation."""
+    include_images = _should_include_images_in_layout()
     issues: list[LayoutIssue] = []
     for idx, slide in enumerate(prs.slides):
-        issues.extend(validate_slide(slide, idx))
+        issues.extend(validate_slide(slide, idx, include_images=include_images))
     return issues
 
 

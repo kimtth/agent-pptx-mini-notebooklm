@@ -21,7 +21,7 @@ const LAYOUT_BADGE: Record<string, string> = {
 }
 
 export function SlideNavigator() {
-  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework, setTemplatePath, setTemplateMeta, reset } = useSlidesStore()
+  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework, setTemplatePath, setTemplateMeta, setIncludeImagesInLayout, reset } = useSlidesStore()
   const slides = work.slides
   const selectedFramework = getFrameworkMeta(work.framework)
   const selectedStyle = getDesignStyleMeta(work.designStyle)
@@ -204,6 +204,36 @@ export function SlideNavigator() {
               )}
             </div>
           )}
+        </div>
+
+        {/* Image layout toggle */}
+        <div
+          className="flex items-center justify-between mt-2 p-2 border"
+          style={{ borderColor: 'var(--panel-border)', background: 'var(--surface-hover)' }}
+        >
+          <div className="flex flex-col gap-0.5">
+            <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+              Images in Layout
+            </label>
+            <p className="text-[10px] leading-3.5" style={{ color: 'var(--text-muted)' }}>
+              {work.includeImagesInLayout
+                ? 'Images are treated as layout objects and included in collision detection.'
+                : 'Images are decorative content, excluded from layout collision detection.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={work.includeImagesInLayout}
+            onClick={() => setIncludeImagesInLayout(!work.includeImagesInLayout)}
+            className="flex-none relative inline-flex h-5 w-9 items-center rounded-full transition-colors ml-3"
+            style={{ background: work.includeImagesInLayout ? 'var(--accent)' : 'var(--surface)' }}
+          >
+            <span
+              className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
+              style={{ transform: work.includeImagesInLayout ? 'translateX(17px)' : 'translateX(3px)' }}
+            />
+          </button>
         </div>
       </div>
 

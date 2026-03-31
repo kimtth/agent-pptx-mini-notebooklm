@@ -103,6 +103,7 @@ export interface SlideWork {
   pptxCode: string | null;
   pptxBuildError: string | null;
   thinking: string | null;
+  includeImagesInLayout: boolean;
   isStreaming: boolean;
   isPptxBusy: boolean;
 }

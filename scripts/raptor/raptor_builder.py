@@ -36,7 +36,7 @@ import numpy as np
 
 # Sibling import
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from embed_service import cosine_similarity_matrix, embed  # noqa: E402
+from embed_service import embed
 
 # ---------------------------------------------------------------------------
 # Types
@@ -248,23 +248,30 @@ def _split_sections_by_char_budget(
     return sections
 
 
-# Threshold: heading-based splitting must produce at least this many sections
-# to be considered "good enough". Below this we fall back to semantic splitting.
-_HEADING_SECTION_THRESHOLD = 3
+def _heading_section_threshold(content_len: int) -> int:
+    """Compute how many heading-based sections are needed to trust that result.
+
+    Scales with document length: short documents need fewer sections, long ones
+    need proportionally more before heading-based splitting is considered
+    "good enough".  Roughly 1 section per 3 KB, clamped to [2, 8].
+    """
+    return max(2, min(8, content_len // 3000))
 
 
 def split_sections(markdown: str, min_chars: int = 100) -> list[dict]:
     """Hybrid section splitter: heading-based with semantic paragraph fallback.
 
     1. Try heading-based splitting (regex for #, numbered, ALL CAPS).
-    2. If that yields ≤2 sections (poor/no heading structure), use
-       paragraph-boundary + embedding-similarity splitting instead.
+    2. If that yields fewer sections than expected for the document length
+       (poor/no heading structure), use paragraph-boundary +
+       embedding-similarity splitting instead.
 
     Content is never modified — only split positions change.
     """
     heading_sections = _split_sections_by_headings(markdown, min_chars=min_chars)
 
-    if len(heading_sections) >= _HEADING_SECTION_THRESHOLD:
+    threshold = _heading_section_threshold(len(markdown))
+    if len(heading_sections) >= threshold:
         return heading_sections
 
     # Headings didn't produce enough structure — fall back to semantic splitting
@@ -274,7 +281,8 @@ def split_sections(markdown: str, min_chars: int = 100) -> list[dict]:
         return heading_sections or [{"heading": "Document", "text": markdown.strip(), "level": 1}]
 
     print(
-        f"[raptor] Heading-based split yielded only {len(heading_sections)} section(s); "
+        f"[raptor] Heading-based split yielded only {len(heading_sections)} section(s) "
+        f"(threshold={threshold} for {len(markdown):,} chars); "
         f"falling back to semantic paragraph splitting.",
         file=sys.stderr,
     )
