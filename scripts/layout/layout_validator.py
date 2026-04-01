@@ -215,9 +215,16 @@ def _is_decorative_glow(shape) -> bool:
 
 
 def _is_picture_shape(shape) -> bool:
-    """Check if a shape is a Picture (image) shape."""
+    """Check if a shape is a Picture (image) shape.
+
+    Uses both ``isinstance`` and ``shape_type == 13`` (MSO_SHAPE_TYPE.PICTURE)
+    so that placeholder-picture shapes and other image variants are caught.
+    """
     from pptx.shapes.picture import Picture
-    return isinstance(shape, Picture)
+    if isinstance(shape, Picture):
+        return True
+    shape_type = getattr(shape, 'shape_type', None)
+    return shape_type is not None and int(shape_type) == 13
 
 
 def _max_font_size_pt(shape, fallback: float = 18.0) -> float:

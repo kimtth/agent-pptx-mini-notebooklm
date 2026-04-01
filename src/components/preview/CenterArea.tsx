@@ -49,7 +49,19 @@ export function CenterArea() {
       } catch { /* ignore */ }
     }
 
-    const handlePreviewReady = () => { void loadCached() }
+    const handlePreviewReady = (e: Event) => {
+      const paths = (e as CustomEvent<{ imagePaths?: string[] }>).detail?.imagePaths
+      if (paths && paths.length > 0) {
+        // Use the image paths carried in the event directly — no extra disk read.
+        if (!cancelled) {
+          setPreviewImages(paths)
+          setPreviewCacheToken((current) => current + 1)
+        }
+      } else {
+        // Fallback for chunked path or manual refresh where paths aren't in the event.
+        void loadCached()
+      }
+    }
     window.addEventListener('pptx-preview-ready', handlePreviewReady)
 
     void loadCached()

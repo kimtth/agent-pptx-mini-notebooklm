@@ -380,3 +380,5 @@ build-log.txt
 .vscode
 # ONNX embedding model (downloaded at setup)
 resources/models/
+samples/test.7z
+AGENTS.md

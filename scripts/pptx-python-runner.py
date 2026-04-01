@@ -672,6 +672,51 @@ def add_native_chart(
     return graphic_frame
 
 
+class _enforce_save_path:
+    """Context manager that monkeypatches Presentation.save to always write to *canonical_path*.
+
+    This is the single enforcement point for the presentation-preview.pptx rule.
+    No matter what path generated code passes to prs.save(), the output is
+    redirected to the canonical path chosen by the runner.  On exit the
+    original method is restored so post-processing helpers are unaffected.
+    """
+
+    def __init__(self, canonical_path: Path) -> None:
+        self._canonical = canonical_path
+        self._orig_save = None
+
+    def __enter__(self):
+        import pptx.presentation as _pptx_mod
+        self._orig_save = _pptx_mod.Presentation.save
+        canonical = self._canonical
+
+        def _guarded_save(prs_self, file=None, *args, **kwargs):
+            target = str(canonical)
+            if file is not None and str(file) != target:
+                print(
+                    f'[runner] prs.save({str(file)!r}) redirected \u2192 {canonical.name}',
+                    file=sys.stderr,
+                )
+            self._orig_save(prs_self, target, *args, **kwargs)
+
+        _pptx_mod.Presentation.save = _guarded_save  # type: ignore[assignment]
+        return self
+
+    def __exit__(self, *exc):
+        import pptx.presentation as _pptx_mod
+        if self._orig_save is not None:
+            _pptx_mod.Presentation.save = self._orig_save  # type: ignore[assignment]
+        return False
+
+
+def _cleanup_rogue_pptx(directory: Path, canonical_name: str) -> None:
+    """Remove any PPTX files in *directory* that are not the canonical output."""
+    for entry in directory.iterdir():
+        if entry.is_file() and entry.suffix.lower() == '.pptx' and entry.name != canonical_name:
+            print(f'[runner] Removing rogue PPTX: {entry.name}', file=sys.stderr)
+            entry.unlink(missing_ok=True)
+
+
 def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: str = '') -> dict[str, object]:
     theme = _load_theme()
     title = os.environ.get('PPTX_TITLE', 'Presentation')
@@ -1230,20 +1275,19 @@ def _fix_low_contrast_text(output_path: Path) -> int:
     return fixes
 
 
-def _enforce_attached_images(output_path: Path) -> int:
-    """Ensure every slide includes its attached/approved images.
+def _check_missing_images(output_path: Path) -> list[str]:
+    """Detect slides where approved images are missing from the generated PPTX.
 
-    For each slide, read the approved image paths from SLIDE_ASSETS.
-    If an image is expected but not present among the slide's picture shapes,
-    auto-insert it into the lower-right quadrant using safe_add_picture().
-    Returns the number of images injected.
+    Returns a list of human-readable messages describing each missing image.
+    Does NOT inject images — positioning is the responsibility of the
+    LLM-generated code which has full layout context.
     """
     if not SLIDE_ASSETS:
-        return 0
+        return []
 
     prs = Presentation(str(output_path))
     slides = list(prs.slides)
-    injected = 0
+    details: list[str] = []
 
     for slide_idx, slide in enumerate(slides):
         expected_paths = slide_image_paths(slide_idx)
@@ -1264,7 +1308,6 @@ def _enforce_attached_images(output_path: Path) -> int:
         existing_images: set[str] = set()
         for shape in slide.shapes:
             if shape.shape_type == 13:  # MSO_SHAPE_TYPE.PICTURE
-                # Match by checking if the image blob matches any expected file
                 try:
                     shape_blob = shape.image.blob
                     for _, resolved_path in expected_resolved:
@@ -1277,62 +1320,35 @@ def _enforce_attached_images(output_path: Path) -> int:
                 except Exception:
                     pass
 
-        # Find missing images
-        missing = [(orig, res) for orig, res in expected_resolved if res not in existing_images]
-        if not missing:
-            continue
+        # Report missing images
+        for orig, res in expected_resolved:
+            if res not in existing_images:
+                basename = os.path.basename(orig)
+                msg = f'Slide {slide_idx + 1}: missing approved image {basename}'
+                details.append(msg)
+                print(f'[image-check] {msg}', file=sys.stderr)
 
-        # Auto-insert missing images into the slide
-        slide_w = prs.slide_width
-        slide_h = prs.slide_height
-        num_missing = len(missing)
-
-        for i, (orig_path, resolved_path) in enumerate(missing):
-            # Place in the right half of the slide, vertically distributed
-            img_width = int(slide_w * 0.40)
-            img_height = int(slide_h * 0.40)
-            if num_missing > 1:
-                img_height = int(slide_h * 0.35)
-
-            left = int(slide_w * 0.55)
-            # Distribute vertically with even spacing
-            total_img_h = num_missing * img_height
-            gap = (slide_h - total_img_h) // (num_missing + 1) if num_missing > 0 else 0
-            gap = max(gap, int(slide_h * 0.02))
-            top = gap + i * (img_height + gap)
-
-            # Clamp to slide bounds
-            if top + img_height > slide_h:
-                img_height = max(int(slide_h * 0.15), slide_h - top - int(slide_h * 0.02))
-            if left + img_width > slide_w:
-                img_width = slide_w - left - int(slide_w * 0.02)
-
-            try:
-                pic = safe_add_picture(slide.shapes, resolved_path, left, top, img_width, img_height)
-                if pic:
-                    injected += 1
-                    print(
-                        f'[image-enforce] Slide {slide_idx + 1}: injected missing image {os.path.basename(orig_path)}',
-                        file=sys.stderr,
-                    )
-            except Exception as exc:
-                print(
-                    f'[image-enforce] Slide {slide_idx + 1}: failed to inject {os.path.basename(orig_path)}: {exc}',
-                    file=sys.stderr,
-                )
-
-    if injected > 0:
-        prs.save(str(output_path))
-    return injected
+    return details
 
 
 def validate_and_fix_output(output_path: Path, *, run_com_layout_fix: bool = True) -> None:
-    """Run image enforcement, optional COM layout fix, contrast fix, then validation on the generated PPTX."""
+    """Run image enforcement, optional COM layout fix, contrast fix, then validation on the generated PPTX.
 
-    # Step 0: Enforce attached images — inject any that the LLM code missed
-    image_injects = _enforce_attached_images(output_path)
-    if image_injects > 0:
-        print(f'[image-enforce] Injected {image_injects} missing image(s) into slides.', file=sys.stderr)
+    Raises RuntimeError when images were omitted by the generated code.  The
+    error propagates to the TypeScript caller which marks the generation as
+    failed and triggers an automatic retry — giving the LLM a chance to
+    include ALL images with proper layout-aware positioning in code.
+    """
+
+    # Step 0: Check for missing approved images (detect only, no injection)
+    missing_details = _check_missing_images(output_path)
+    if missing_details:
+        summary = '; '.join(missing_details)
+        raise RuntimeError(
+            f'Generated code omitted {len(missing_details)} approved image(s). '
+            f'The LLM must include ALL approved images via slide_image_paths() '
+            f'and safe_add_picture() with layout-aware positioning. Details: {summary}'
+        )
 
     # Step 1: COM-based text overflow fix (measure + resize)
     if run_com_layout_fix:
@@ -1547,8 +1563,13 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             print(f'[font] Font pre-check failed (non-blocking): {exc}', file=sys.stderr)
 
-        run_generated_code(generated_path, namespace)
-        finalize_output(output_path, namespace)
+        with _enforce_save_path(output_path):
+            run_generated_code(generated_path, namespace)
+            finalize_output(output_path, namespace)
+
+        # Remove any rogue PPTX files that generated code may have created
+        # outside the monkeypatched save() (e.g. via shutil or os.rename)
+        _cleanup_rogue_pptx(output_path.parent, output_path.name)
 
         # In chunk mode, skip all post-processing (it runs on the merged PPTX later)
         if args.chunk_mode:

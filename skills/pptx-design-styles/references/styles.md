@@ -1147,7 +1147,7 @@ All colors in this guide reference `PPTX_THEME` tokens — **never hardcoded hex
 ### Layout
 - **Three overlapping circles** (CMYK primary colors) in center third
 - Each circle uses `multiply` blend mode — overlaps create secondary colors naturally
-- **Offset ghost text** behind main title (3–4pt shift, low opacity, accent color)
+- **Offset ghost text** under main title (5–6pt shift, low opacity, accent color)
 - Main title centered above circles
 - Monospace caption at bottom
 

@@ -865,9 +865,26 @@ export function registerPptxHandlers(): void {
       const renderDir = path.join(workspaceDir, 'previews')
       const imagePaths = await readPreviewImagePaths(renderDir)
 
-      // Fast path: images already exist
+      // Fast path: images already exist — but verify they belong to the current
+      // PPTX generation and are not stale previews from a prior run.
       if (imagePaths.length > 0) {
-        return { success: true, imagePaths }
+        const pptxPath = await findMostRecentPptx(renderDir)
+        if (pptxPath) {
+          try {
+            const pptxMtime = (await fs.stat(pptxPath)).mtimeMs
+            const imgMtime = (await fs.stat(imagePaths[0])).mtimeMs
+            // Allow 5 s tolerance for COM export lag after PPTX is written
+            if (imgMtime >= pptxMtime - 5000) {
+              return { success: true, imagePaths }
+            }
+            // Images are stale — fall through to re-render
+            console.log('[readExistingPreviews] Images are stale vs PPTX mtime, re-rendering')
+          } catch {
+            return { success: true, imagePaths } // stat failed, trust what we have
+          }
+        } else {
+          return { success: true, imagePaths } // no PPTX to compare against
+        }
       }
 
       // No images — try to render from an existing PPTX

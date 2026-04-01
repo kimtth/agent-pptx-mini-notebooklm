@@ -13,6 +13,9 @@ extraResources:
     to: .venv
   - from: scripts
     to: scripts
+    filter:
+      - "**/*"
+      - "!tempfiles/**"
   - from: skills
     to: skills
   - from: workflows

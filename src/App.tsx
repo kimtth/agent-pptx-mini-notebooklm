@@ -100,7 +100,8 @@ export default function App() {
         useSlidesStore.getState().setPptxCode(code)
         useSlidesStore.getState().setPptxBuildError(null)
         autoRetryCount.current = 0
-        window.dispatchEvent(new CustomEvent('pptx-preview-ready'))
+        // Chunked path: images were rendered server-side; let CenterArea re-read from disk.
+        window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
         useChatStore.getState().addMessage(
           createAssistantMessage('✅ Deck generated! Preview images are ready.'),
         )
@@ -140,7 +141,11 @@ export default function App() {
               .then((result) => {
                 if (result.success) {
                   autoRetryCount.current = 0
-                  window.dispatchEvent(new CustomEvent('pptx-preview-ready'))
+                  // Pass the exact image paths from the renderPreview result so
+                  // CenterArea can update immediately without a second disk read.
+                  window.dispatchEvent(new CustomEvent('pptx-preview-ready', {
+                    detail: { imagePaths: result.imagePaths ?? [] },
+                  }))
                   const warningNote = result.warning ? `\n\n⚠️ ${result.warning}` : ''
                   useChatStore.getState().addMessage(
                     createAssistantMessage(`✅ Deck generated! Preview images are ready.${warningNote}`),
