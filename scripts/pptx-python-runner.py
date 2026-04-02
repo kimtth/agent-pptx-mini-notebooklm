@@ -1449,7 +1449,13 @@ def render_preview_images(output_path: Path, render_dir: Path) -> None:
         if presentation is not None:
             presentation.Close()
         if powerpoint is not None:
-            powerpoint.Quit()
+            # Only quit if no other presentations are open — avoids
+            # killing the user's existing PowerPoint editing sessions.
+            try:
+                if powerpoint.Presentations.Count == 0:
+                    powerpoint.Quit()
+            except Exception:
+                pass
         pythoncom.CoUninitialize()
 
 

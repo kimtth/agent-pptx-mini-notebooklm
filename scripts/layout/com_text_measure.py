@@ -132,8 +132,11 @@ def measure_text_heights(
             except Exception:
                 pass
         if powerpoint is not None:
+            # Only quit if no other presentations are open — avoids
+            # killing the user's existing PowerPoint editing sessions.
             try:
-                powerpoint.Quit()
+                if powerpoint.Presentations.Count == 0:
+                    powerpoint.Quit()
             except Exception:
                 pass
         pythoncom.CoUninitialize()

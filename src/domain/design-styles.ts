@@ -1,4 +1,6 @@
 export const DESIGN_STYLE_OPTIONS = [
+  { value: 'Blank White', label: 'Blank (White)', mood: 'Clean · Minimal', bestFor: 'General purpose', tone: 'light' },
+  { value: 'Blank Dark', label: 'Blank (Dark)', mood: 'Clean · Minimal', bestFor: 'General purpose', tone: 'dark' },
   { value: 'Glassmorphism', label: 'Glassmorphism', mood: 'Premium · Tech', bestFor: 'SaaS, AI products', tone: 'dark' },
   { value: 'Neo-Brutalism', label: 'Neo-Brutalism', mood: 'Bold · Startup', bestFor: 'Pitch decks, marketing', tone: 'light' },
   { value: 'Bento Grid', label: 'Bento Grid', mood: 'Modular · Structured', bestFor: 'Feature overviews', tone: 'light' },

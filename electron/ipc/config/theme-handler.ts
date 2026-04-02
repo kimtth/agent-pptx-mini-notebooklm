@@ -118,6 +118,35 @@ function srgbClr(hex: string): string {
   return `<a:srgbClr val="${hex.toUpperCase()}"/>`;
 }
 
+function buildFontSchemeXml(name: string): string {
+  const latinMajor = 'Calibri Light';
+  const latinMinor = 'Calibri';
+  const eastAsia = 'Noto Sans JP';
+  const scriptFonts = [
+    ['Jpan', 'Noto Sans JP'],
+    ['Hans', 'Noto Sans SC'],
+    ['Hant', 'Noto Sans TC'],
+    ['Hang', 'Noto Sans KR'],
+  ] as const;
+  const majorScripts = scriptFonts.map(([script, typeface]) => `        <a:font script="${script}" typeface="${typeface}"/>`).join('\n');
+  const minorScripts = scriptFonts.map(([script, typeface]) => `        <a:font script="${script}" typeface="${typeface}"/>`).join('\n');
+
+  return `    <a:fontScheme name="${name}">
+      <a:majorFont>
+        <a:latin typeface="${latinMajor}" panose="020F0302020204030204"/>
+        <a:ea typeface="${eastAsia}"/>
+        <a:cs typeface="${latinMajor}"/>
+${majorScripts}
+      </a:majorFont>
+      <a:minorFont>
+        <a:latin typeface="${latinMinor}" panose="020F0502020204030204"/>
+        <a:ea typeface="${eastAsia}"/>
+        <a:cs typeface="${latinMinor}"/>
+${minorScripts}
+      </a:minorFont>
+    </a:fontScheme>`;
+}
+
 function buildTheme1Xml(name: string, slots: ThemeSlots): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="${name}">
@@ -136,18 +165,7 @@ function buildTheme1Xml(name: string, slots: ThemeSlots): string {
       <a:hlink>${srgbClr(slots.hlink)}</a:hlink>
       <a:folHlink>${srgbClr(slots.folHlink)}</a:folHlink>
     </a:clrScheme>
-    <a:fontScheme name="${name}">
-      <a:majorFont>
-        <a:latin typeface="Calibri Light" panose="020F0302020204030204"/>
-        <a:ea typeface=""/>
-        <a:cs typeface=""/>
-      </a:majorFont>
-      <a:minorFont>
-        <a:latin typeface="Calibri" panose="020F0502020204030204"/>
-        <a:ea typeface=""/>
-        <a:cs typeface=""/>
-      </a:minorFont>
-    </a:fontScheme>
+${buildFontSchemeXml(name)}
     <a:fmtScheme name="${name}">
       <a:fillStyleLst>
         <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
@@ -216,25 +234,29 @@ async function buildThmxZip(tokens: ThemeTokens): Promise<Buffer> {
   const zip = new JSZip();
   const name = tokens.name || 'Custom Theme';
 
+  // --- [Content_Types].xml ---
   zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/theme/theme/themeManager.xml" ContentType="application/vnd.openxmlformats-officedocument.themeManager+xml"/>
   <Override PartName="/theme/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
 </Types>`);
 
+  // --- _rels/.rels ---
   const rels = zip.folder('_rels');
   rels?.file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.microsoft.com/office/2006/relationships/ui/extensibility" Target="theme/theme/themeManager.xml"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="theme/theme/themeManager.xml"/>
 </Relationships>`);
 
+  // --- theme/theme/ ---
   const themeDir = zip.folder('theme');
   const themeThemeDir = themeDir?.folder('theme');
   const themeThemeRels = themeThemeDir?.folder('_rels');
 
   themeThemeDir?.file('themeManager.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Office:themeManager xmlns:Office="http://schemas.microsoft.com/office/drawing/2007/8/2/themeManager"/>`);
+<a:themeManager xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>`);
 
   themeThemeRels?.file('themeManager.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">

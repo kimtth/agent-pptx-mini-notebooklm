@@ -57,7 +57,7 @@ function syncPrimaryImage(slide: SlideItem, selectedImages: SlideSelectedImage[]
 }
 
 function mapLayout(raw: string): SlideItem['layout'] {
-  const valid = ['title', 'agenda', 'section', 'bullets', 'cards', 'stats', 'comparison', 'timeline', 'diagram', 'summary', 'chart'] as const;
+  const valid = ['title', 'agenda', 'section', 'bullets', 'cards', 'stats', 'comparison', 'timeline', 'diagram', 'summary', 'chart', 'closing', 'photo_fullbleed', 'multi_column'] as const;
   return valid.includes(raw as SlideItem['layout']) ? (raw as SlideItem['layout']) : 'bullets';
 }
 
@@ -67,6 +67,7 @@ interface SlidesStore {
   work: SlideWork;
   applyScenario(payload: ScenarioPayload): void;
   applySlideUpdate(update: SlideUpdatePayload): void;
+  patchSlide(number: number, patch: Partial<Pick<SlideItem, 'title' | 'keyMessage' | 'bullets' | 'notes' | 'layout'>>): void;
   applyResolvedImages(images: Array<{ id: string; number: number; imageQuery: string | null; imageUrl: string | null; imagePath: string | null; imageAttribution: string | null; sourcePageUrl: string | null; thumbnailUrl: string | null }>): void;
   setSlideImageQuery(number: number, imageQuery: string | null): void;
   removeSlideImage(number: number, imageId: string): void;
@@ -162,6 +163,19 @@ export const useSlidesStore = create<SlidesStore>()(persist(
                 imageQueries: normalizeImageQueries(update.imageQuery ?? s.imageQuery, update.imageQueries),
               }
             : s,
+        ),
+      },
+    }));
+  },
+
+  patchSlide(number, patch) {
+    set((state) => ({
+      work: {
+        ...state.work,
+        pptxCode: null,
+        pptxBuildError: null,
+        slides: state.work.slides.map((s) =>
+          s.number === number ? { ...s, ...patch } : s,
         ),
       },
     }));

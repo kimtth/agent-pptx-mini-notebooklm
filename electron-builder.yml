@@ -9,6 +9,8 @@ files:
       - out/**/*
       - package.json
 extraResources:
+  - from: app.ico
+    to: app.ico
   - from: .venv
     to: .venv
   - from: scripts
@@ -36,4 +38,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   shortcutName: PPTX Slide Agent
   createDesktopShortcut: true
+  installerIcon: app.ico
+  uninstallerIcon: app.ico
+  installerHeaderIcon: app.ico
 electronVersion: 41.0.0

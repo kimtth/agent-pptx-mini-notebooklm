@@ -6,7 +6,7 @@
 process.env.NODE_NO_WARNINGS = '1';
 
 import { app, BrowserWindow, shell } from 'electron';
-import { net, protocol } from 'electron';
+import { Menu, net, protocol } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { pathToFileURL } from 'url';
@@ -24,6 +24,79 @@ import { readWorkspaceDir } from './ipc/project/workspace-utils.ts';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
+
+function installApplicationMenu(): void {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: process.platform === 'darwin'
+        ? [
+            { role: 'close' },
+          ]
+        : [
+            { role: 'quit' },
+          ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'close' },
+      ],
+    },
+  ];
+
+  if (process.platform === 'darwin') {
+    template.unshift({
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    });
+  }
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+function getAppIconPath(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'app.ico')
+    : path.resolve(__dirname, '../../app.ico');
+}
 
 function registerLocalImageProtocol(): void {
   protocol.handle('pptx-local', async (request) => {
@@ -64,6 +137,7 @@ function createWindow(): void {
     minWidth: 1024,
     minHeight: 640,
     show: false,
+    icon: getAppIconPath(),
     backgroundColor: '#f4f5f7',
     titleBarStyle: 'hiddenInset',
     frame: process.platform !== 'darwin',
@@ -100,6 +174,7 @@ app.whenReady()
     // Apply persisted settings to process.env before creating handlers
     await applySettingsToEnv();
     registerLocalImageProtocol();
+    installApplicationMenu();
 
     // Register all IPC handlers (pass mainWindow getter for streaming)
     const getWindow = () => mainWindow;

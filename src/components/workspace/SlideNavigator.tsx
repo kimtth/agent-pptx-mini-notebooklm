@@ -273,13 +273,27 @@ function SlideListItem({
   onMoveToAppendix: () => void
   onDelete: () => void
 }) {
-  const { setSlideImageQuery, applyResolvedImages, removeSlideImage } = useSlidesStore()
+  const { setSlideImageQuery, applyResolvedImages, removeSlideImage, patchSlide } = useSlidesStore()
   const [imageQuery, setImageQuery] = useState(slide.imageQuery ?? '')
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(slide.title)
+  const [editKeyMessage, setEditKeyMessage] = useState(slide.keyMessage)
+  const [editBullets, setEditBullets] = useState(slide.bullets.join('\n'))
+  const [editNotes, setEditNotes] = useState(slide.notes)
 
   useEffect(() => {
     setImageQuery(slide.imageQuery ?? '')
   }, [slide.imageQuery])
+
+  useEffect(() => {
+    if (!editing) {
+      setEditTitle(slide.title)
+      setEditKeyMessage(slide.keyMessage)
+      setEditBullets(slide.bullets.join('\n'))
+      setEditNotes(slide.notes)
+    }
+  }, [slide.title, slide.keyMessage, slide.bullets, slide.notes, editing])
 
   function openPicker(nextQuery: string) {
     const trimmed = nextQuery.trim()
@@ -287,6 +301,28 @@ function SlideListItem({
       setSlideImageQuery(slide.number, trimmed || null)
     }
     setPickerOpen(true)
+  }
+
+  function startEdit() {
+    setEditTitle(slide.title)
+    setEditKeyMessage(slide.keyMessage)
+    setEditBullets(slide.bullets.join('\n'))
+    setEditNotes(slide.notes)
+    setEditing(true)
+  }
+
+  function saveEdit() {
+    patchSlide(slide.number, {
+      title: editTitle.trim(),
+      keyMessage: editKeyMessage.trim(),
+      bullets: editBullets.split('\n').map((b) => b.trim()).filter(Boolean),
+      notes: editNotes.trim(),
+    })
+    setEditing(false)
+  }
+
+  function cancelEdit() {
+    setEditing(false)
   }
 
   return (
@@ -303,33 +339,96 @@ function SlideListItem({
             {slide.number}
           </div>
 
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <span
-                className="text-[10px] font-mono px-1.5 py-0.5 border flex-none"
-                style={{ background: 'var(--surface-hover)', color: 'var(--text-secondary)', borderColor: 'var(--panel-border)' }}
-              >
-                {LAYOUT_BADGE[slide.layout] ?? slide.layout.slice(0, 3).toUpperCase()}
-              </span>
-              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                {slide.title}
-              </span>
+          {editing ? (
+            <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span
+                  className="text-[10px] font-mono px-1.5 py-0.5 border flex-none"
+                  style={{ background: 'var(--surface-hover)', color: 'var(--text-secondary)', borderColor: 'var(--panel-border)' }}
+                >
+                  {LAYOUT_BADGE[slide.layout] ?? slide.layout.slice(0, 3).toUpperCase()}
+                </span>
+              </div>
+              <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Title</label>
+              <input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="w-full border px-2 py-1 text-sm font-medium outline-none"
+                style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
+              />
+              <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Key Message</label>
+              <textarea
+                value={editKeyMessage}
+                onChange={(e) => setEditKeyMessage(e.target.value)}
+                rows={2}
+                className="w-full border px-2 py-1 text-xs outline-none resize-none"
+                style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
+              />
+              <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Bullets (one per line)</label>
+              <textarea
+                value={editBullets}
+                onChange={(e) => setEditBullets(e.target.value)}
+                rows={Math.max(2, editBullets.split('\n').length)}
+                className="w-full border px-2 py-1 text-[11px] outline-none resize-none"
+                style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
+              />
+              <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Notes</label>
+              <textarea
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                rows={2}
+                className="w-full border px-2 py-1 text-[11px] outline-none resize-none"
+                style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
+              />
+              <div className="flex items-center gap-1.5 mt-1">
+                <button
+                  onClick={saveEdit}
+                  className="h-7 px-3 text-[11px] font-semibold transition-colors"
+                  style={{ background: 'var(--accent)', color: '#fff' }}
+                >
+                  Save
+                </button>
+                <button
+                  onClick={cancelEdit}
+                  className="h-7 px-3 text-[11px] font-semibold border transition-colors hover:bg-[var(--surface-hover)]"
+                  style={{ borderColor: 'var(--panel-border)', color: 'var(--text-secondary)' }}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-            <p className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-              {slide.keyMessage}
-            </p>
-            {slide.bullets.length > 0 && (
-              <ul className="mt-1 flex flex-col gap-0.5">
-                {slide.bullets.map((b, i) => (
-                  <li key={i} className="text-[11px] leading-snug pl-2 border-l-2" style={{ color: 'var(--text-secondary)', borderColor: 'var(--panel-border)' }}>
-                    {b}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          ) : (
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span
+                  className="text-[10px] font-mono px-1.5 py-0.5 border flex-none"
+                  style={{ background: 'var(--surface-hover)', color: 'var(--text-secondary)', borderColor: 'var(--panel-border)' }}
+                >
+                  {LAYOUT_BADGE[slide.layout] ?? slide.layout.slice(0, 3).toUpperCase()}
+                </span>
+                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {slide.title}
+                </span>
+              </div>
+              <p className="text-xs mt-0.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                {slide.keyMessage}
+              </p>
+              {slide.bullets.length > 0 && (
+                <ul className="mt-1 flex flex-col gap-0.5">
+                  {slide.bullets.map((b, i) => (
+                    <li key={i} className="text-[11px] leading-snug pl-2 border-l-2" style={{ color: 'var(--text-secondary)', borderColor: 'var(--panel-border)' }}>
+                      {b}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           <div className="flex-none flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {!editing && (
+              <ActionBtn label="Edit slide text" onClick={startEdit}>✏️</ActionBtn>
+            )}
             <ActionBtn label="Move to appendix" onClick={onMoveToAppendix}>📎</ActionBtn>
             <ActionBtn label="Delete slide" onClick={onDelete}>🗑</ActionBtn>
           </div>
