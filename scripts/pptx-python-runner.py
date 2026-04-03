@@ -720,6 +720,7 @@ def _cleanup_rogue_pptx(directory: Path, canonical_name: str) -> None:
 def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: str = '') -> dict[str, object]:
     theme = _load_theme()
     title = os.environ.get('PPTX_TITLE', 'Presentation')
+    base_font_family = os.environ.get('PPTX_FONT_FAMILY', 'Calibri')
     if not workspace_dir:
         workspace_dir = os.environ.get('WORKSPACE_DIR', '')
     images_dir = os.path.join(workspace_dir, 'images') if workspace_dir else ''
@@ -790,7 +791,8 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
         'slide_image_paths': slide_image_paths,
         'slide_icon_name': slide_icon_name,
         'slide_icon_collection': slide_icon_collection,
-        'resolve_font': resolve_font,
+        'resolve_font': lambda text, base_font=base_font_family: resolve_font(text, base_font),
+        'PPTX_FONT_FAMILY': base_font_family,
         'ensure_noto_fonts': ensure_noto_fonts,
         'contrast_ratio': contrast_ratio,
         'ensure_contrast': ensure_contrast,

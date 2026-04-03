@@ -82,7 +82,7 @@ The most important fields in `ZoneDef` are:
 | `font_pt` / `bold` | Measurement hint sent to PowerPoint COM for text-bearing zones. |
 | `fixed_h` | Exact height. Used for rules, accent lines, and notes bands. |
 | `stretch` | Marks a zone that absorbs remaining vertical space. Usually the content zone. |
-| `width_fraction` | Reserved width-hint hook for zones that should use less than the full content width. |
+| `width_fraction` | Width as fraction of available content width. Used by `content_caption` / `picture_caption` to narrow title and key-message zones to the left ~35% narration column. The constraint solver's `_build_layout_spec` applies this via the caption-layout post-processing path. |
 
 ### Registered Layout Types
 
@@ -96,13 +96,22 @@ The blueprint catalog currently defines these layout families:
 | `bullets` | Standard stacked body content |
 | `cards` | Two-column card grid |
 | `stats` | Three-up stats row + footer |
-| `comparison` | Left/right split comparison |
+| `comparison` | Left/right split comparison (with sub-headers) |
 | `timeline` | Vertical timeline spine + node text |
 | `summary` | Summary box followed by content |
 | `diagram` | Content with sidebar for diagram support |
+| `chart` | Large content zone for chart rendering + caption footer |
 | `closing` | Thank-you / end slide — centered title + footer |
 | `photo_fullbleed` | Full-bleed hero image with overlaid title |
 | `multi_column` | Three-to-five equal-width content columns |
+| `content_caption` | Left narration (~35%) + right content area (~65%) — split layout |
+| `picture_caption` | Left narration (~35%) + right hero picture (~65%) — split layout |
+| `two_content` | Two equal content columns without comparison sub-headers |
+| `title_only` | Title bar + open canvas for freeform placement |
+| `quote` | Wide-margin centered quotation with attribution footer |
+| `big_number` | Single dominant KPI (large font) + context subtitle + supporting content |
+| `process` | Horizontal process flow — single-row card grid (3–6 steps) |
+| `pyramid` | Pyramid / funnel tiers along a vertical centre spine |
 
 The key design principle is: **blueprints define intent, not final geometry**. Final geometry is always solved from blueprint + measured content.
 
@@ -326,6 +335,22 @@ card_y = start_y + row × (card_h + gap_y)
 
 Since all cards share the same grid formula and the solver ensures the content zone has sufficient height for all rows, **no horizontal or vertical card-to-card collision is possible**.
 
+### Caption Layout Split (content_caption / picture_caption)
+
+Caption layouts use a post-solve adjustment that overrides the default full-width zones with a left/right split:
+
+```
+narration_w = 4.30"
+right_x     = narration_w + margin_x + gap_x
+right_w     = SLIDE_WIDTH - right_x - margin_x
+
+title_rect and key_message_rect are narrowed to narration_w (left column)
+content_rect is repositioned to (right_x, body_top, right_w, body_h)
+hero_rect (picture_caption only) mirrors the content_rect position
+```
+
+This layout is modelled after PowerPoint's built-in "Content with Caption" and "Picture with Caption" slide masters, which place a ~35% narration column on the left and ~65% content/picture area on the right.
+
 ### Content-Adaptive Measurement
 
 Per-item text measurement prevents overflow-driven collisions:
@@ -345,9 +370,12 @@ Not every layout measures text the same way.
 
 | Layout family | Measurement rule |
 |---------------|------------------|
-| Plain stacked layouts (`bullets`, `agenda`, `summary`, `diagram`) | Measure the entire content block once at the content width |
-| `cards` / `stats` / `comparison` | Measure each bullet independently at the actual per-column width |
-| `timeline` | Measure each bullet independently at the actual node text width (`text_w`) |
+| Plain stacked layouts (`bullets`, `agenda`, `summary`, `diagram`, `title_only`) | Measure the entire content block once at the content width |
+| `cards` / `stats` / `comparison` / `two_content` / `process` / `multi_column` | Measure each bullet independently at the actual per-column width |
+| `timeline` / `pyramid` | Measure each bullet independently at the actual node text width (`text_w`) |
+| `content_caption` / `picture_caption` | Title and key-message measured at left-column width (~4.30"); content measured at right-column width (~7.16") |
+| `quote` / `big_number` | Measured at wide-margin content width (margin_x = 1.5–1.8") |
+| `chart` / `closing` / `photo_fullbleed` | Minimal measurement — header zones only; content area is fixed or absent |
 
 This distinction matters because measuring a whole bullet list at full slide width systematically underestimates height for narrow card columns or timeline labels.
 
@@ -372,7 +400,7 @@ Each slide is serialized as `SlideContent`:
   "notes": "Speaker notes",
   "item_count": 3,
   "has_icon": true,
-  "font_family": "Calibri"
+  "font_family": "Calibri"   // defaults to user-selected PPTX_FONT_FAMILY
 }
 ```
 
@@ -477,7 +505,7 @@ The final generated Python code does not talk to the layout engine directly. Ins
 | `safe_add_picture()` | `(shapes, path, left_emu, top_emu, width_emu, height_emu) → Picture` | Adds images safely preserving aspect ratio and handling icon scaling. **First arg must be `slide.shapes`**, never `slide`. |
 | `safe_image_path()` | `(path) → str` | Validates and normalizes image paths |
 | `fetch_icon()` | `(icon_id, color_hex) → path_or_None` | Loads an icon from the local icon cache; rejects names outside the selected icon collection |
-| `resolve_font()` | `(text, fallback_name) → font_name_str` | Selects `Calibri` for Latin or the appropriate Noto Sans family for non-Latin text |
+| `resolve_font()` | `(text, fallback_name) → font_name_str` | Selects `PPTX_FONT_FAMILY` (user-selected, default Calibri) for Latin or the appropriate Noto Sans family for non-Latin text |
 | `ensure_noto_fonts()` | `() → None` | Downloads and installs missing Noto fonts on demand |
 | `estimate_text_height_in()` | `(text, width_in, font_size_pt) → float` | Fallback text height heuristic (CJK-aware) used by generated code and validator |
 | `contrast_ratio()` / `ensure_contrast()` | `ensure_contrast(fg_hex, bg_hex) → hex_str` | Contrast helpers for choosing readable text colors on filled panels |
@@ -561,7 +589,7 @@ Only vertical positions are solved by Cassowary. Horizontal placement is determi
 
 ### 2. Measurement Uses a Single Declared Font Family
 
-COM measurement is performed with the slide's declared `font_family` (currently `Calibri` for layout input). Runtime rendering may later substitute Noto Sans through `resolve_font()` for non-Latin scripts. In practice this is close enough, but it can introduce small residual differences in line breaks.
+COM measurement is performed with the slide's declared `font_family` (set to `PPTX_FONT_FAMILY`, user-selected, defaults to Calibri). Runtime rendering may later substitute Noto Sans through `resolve_font()` for non-Latin scripts. In practice this is close enough, but it can introduce small residual differences in line breaks.
 
 ### 3. Post-Generation Validation Is Geometric, Not Semantic
 

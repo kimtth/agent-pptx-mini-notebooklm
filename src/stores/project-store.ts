@@ -114,7 +114,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   buildSnapshot(): PptAppProject {
     const { work } = useSlidesStore.getState();
     const { messages } = useChatStore.getState();
-    const { seeds, colors, slots, tokens, themeName, selectedIconCollection } = usePaletteStore.getState();
+    const { seeds, colors, slots, tokens, themeName, selectedFont, selectedIconCollection } = usePaletteStore.getState();
     const { files, urls } = useDataSourcesStore.getState();
     const { enabled: nlmEnabled, infographicPaths } = useNotebookLMStore.getState();
     const { workspaceDir } = get();
@@ -126,7 +126,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       title: work.title || 'Untitled',
       slidesWork: work,
       chatMessages: messages,
-      palette: { seeds, colors, slots, tokens, themeName, selectedIconCollection, styleTone: usePaletteStore.getState().styleTone },
+      palette: { seeds, colors, slots, tokens, themeName, selectedFont, selectedIconCollection, styleTone: usePaletteStore.getState().styleTone },
       dataSources: { files, urls },
       notebookLM: { enabled: nlmEnabled, infographicPaths },
     };
@@ -167,6 +167,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       slots: data.palette.slots,
       tokens: data.palette.tokens,
       themeName: data.palette.themeName,
+      selectedFont: (data.palette as Record<string, unknown>).selectedFont as string ?? 'Calibri',
       selectedIconCollection: data.palette.selectedIconCollection ?? DEFAULT_ICONIFY_COLLECTION,
       styleTone: (data.palette as Record<string, unknown>).styleTone as 'dark' | 'light' | null ?? null,
     });

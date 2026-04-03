@@ -16,6 +16,7 @@ interface PaletteStore {
   slots: ThemeSlots | null;
   tokens: ThemeTokens | null;
   themeName: string;
+  selectedFont: string;
   selectedIconCollection: IconifyCollectionId;
   isGenerating: boolean;
   /** Tone of the active design style — used to flip BG/TEXT in theme tokens */
@@ -25,6 +26,7 @@ interface PaletteStore {
   setColors(colors: PaletteColor[]): void;
   setSlots(slots: ThemeSlots): void;
   setThemeName(name: string): void;
+  setSelectedFont(font: string): void;
   setSelectedIconCollection(collection: IconifyCollectionId): void;
   setGenerating(v: boolean): void;
   setStyleTone(tone: 'dark' | 'light' | null): void;
@@ -39,6 +41,7 @@ export const usePaletteStore = create<PaletteStore>()(persist(
   slots: null,
   tokens: null,
   themeName: 'My Theme',
+  selectedFont: 'Calibri',
   selectedIconCollection: DEFAULT_ICONIFY_COLLECTION,
   isGenerating: false,
   styleTone: null,
@@ -47,14 +50,16 @@ export const usePaletteStore = create<PaletteStore>()(persist(
   setColors: (colors) => set({ colors }),
   setSlots: (slots) => set({ slots }),
   setThemeName: (name) => set({ themeName: name }),
+  setSelectedFont: (selectedFont) => set({ selectedFont }),
   setSelectedIconCollection: (selectedIconCollection) => set({ selectedIconCollection }),
   setGenerating: (v) => set({ isGenerating: v }),
   setStyleTone: (tone) => set({ styleTone: tone }),
 
   commitTokens() {
-    const { themeName, slots, colors, styleTone } = get();
+    const { themeName, slots, colors, styleTone, selectedFont } = get();
     if (!slots) return;
     const tokens = buildThemeTokens(themeName, slots, colors, styleTone);
+    tokens.fontFamily = selectedFont || undefined;
     set({ tokens });
   },
 }),
@@ -67,6 +72,7 @@ export const usePaletteStore = create<PaletteStore>()(persist(
       slots: state.slots,
       tokens: state.tokens,
       themeName: state.themeName,
+      selectedFont: state.selectedFont,
       selectedIconCollection: state.selectedIconCollection,
       styleTone: state.styleTone,
     }),

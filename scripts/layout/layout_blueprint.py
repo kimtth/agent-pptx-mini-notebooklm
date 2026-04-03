@@ -298,6 +298,115 @@ _MULTI_COLUMN_BLUEPRINT = LayoutBlueprint(
     cards=CardsVariant(columns=3, gap_x=0.30, gap_y=0.25),
 )
 
+
+# -- content_caption (left narration + right content area) ------------------
+# Inspired by PowerPoint's "Content with Caption" layout:
+# title + text body on the left ~35%, large content area on the right ~65%.
+_CONTENT_CAPTION_BLUEPRINT = LayoutBlueprint(
+    layout_type='content_caption',
+    zones=(
+        ZoneDef(ZoneRole.TITLE, min_h=0.50, preferred_h=0.80, font_pt=28, bold=True,
+                width_fraction=0.35),
+        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.60, preferred_h=2.80, font_pt=16,
+                width_fraction=0.35),
+        ZoneDef(ZoneRole.CONTENT, min_h=2.0, preferred_h=4.2, stretch=True),
+        _ZONE_NOTES,
+    ),
+    has_sidebar=False,
+    tokens=DesignTokens(margin_top=0.50, header_w_ratio=1.0),
+)
+
+# -- picture_caption (left narration + right picture) -----------------------
+# Like content_caption but has_hero=True so the right zone renders a picture.
+_PICTURE_CAPTION_BLUEPRINT = LayoutBlueprint(
+    layout_type='picture_caption',
+    zones=(
+        ZoneDef(ZoneRole.TITLE, min_h=0.50, preferred_h=0.80, font_pt=28, bold=True,
+                width_fraction=0.35),
+        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.60, preferred_h=2.80, font_pt=16,
+                width_fraction=0.35),
+        _ZONE_NOTES,
+    ),
+    has_hero=True,
+    tokens=DesignTokens(margin_top=0.50, header_w_ratio=1.0),
+)
+
+# -- two_content (two equal content columns, no sub-headers) ----------------
+# From PowerPoint's "Two Content" layout: title + two side-by-side content
+# areas of equal width without comparison sub-headers.
+_TWO_CONTENT_BLUEPRINT = LayoutBlueprint(
+    layout_type='two_content',
+    zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
+    icon_size=1.6,
+    comparison=ComparisonVariant(gap_x=0.25),
+)
+
+# -- title_only (title bar + open canvas) -----------------------------------
+# PowerPoint's "Title Only" layout: a title band at the top, rest is open
+# canvas for freeform shapes, annotations, or custom diagram placement.
+_TITLE_ONLY_BLUEPRINT = LayoutBlueprint(
+    layout_type='title_only',
+    zones=(
+        _ZONE_TITLE,
+        ZoneDef(ZoneRole.CONTENT, min_h=3.0, preferred_h=4.8, stretch=True),
+        _ZONE_NOTES,
+    ),
+    tokens=DesignTokens(margin_top=0.40),
+)
+
+# -- quote (centered quotation + attribution) --------------------------------
+# A testimonial or quote slide with large centred text and a smaller
+# attribution line underneath.
+_QUOTE_BLUEPRINT = LayoutBlueprint(
+    layout_type='quote',
+    zones=(
+        ZoneDef(ZoneRole.ACCENT, fixed_h=0.05, min_h=0.05, preferred_h=0.05),
+        ZoneDef(ZoneRole.CONTENT, min_h=1.5, preferred_h=2.4, font_pt=28,
+                stretch=True),
+        ZoneDef(ZoneRole.FOOTER, min_h=0.30, preferred_h=0.50, font_pt=16),
+        _ZONE_NOTES,
+    ),
+    tokens=DesignTokens(margin_x=1.8, margin_top=1.6, header_w_ratio=1.0),
+)
+
+# -- big_number (single dominant KPI / metric) ------------------------------
+# Spotlight a single large number with a descriptive subtitle and optional
+# context bullets underneath.
+_BIG_NUMBER_BLUEPRINT = LayoutBlueprint(
+    layout_type='big_number',
+    zones=(
+        ZoneDef(ZoneRole.ACCENT, fixed_h=0.05, min_h=0.05, preferred_h=0.05),
+        ZoneDef(ZoneRole.TITLE, min_h=1.0, preferred_h=1.8, font_pt=72, bold=True),
+        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.40, preferred_h=0.60, font_pt=22),
+        ZoneDef(ZoneRole.CONTENT, min_h=0.8, preferred_h=1.6, stretch=True),
+        _ZONE_NOTES,
+    ),
+    tokens=DesignTokens(margin_x=1.5, margin_top=1.2, header_w_ratio=1.0),
+)
+
+# -- process (horizontal step flow) ----------------------------------------
+# Horizontal process / workflow steps (3–6 steps shown as equal-width cards
+# in a single row).
+_PROCESS_BLUEPRINT = LayoutBlueprint(
+    layout_type='process',
+    zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
+    icon_size=1.6,
+    cards=CardsVariant(columns=4, gap_x=0.30, gap_y=0.25),
+)
+
+# -- pyramid (funnel / pyramid visualisation) --------------------------------
+# A pyramid diagram — typically 3–5 tiers stacked vertically from wide
+# (bottom) to narrow (top). Uses the timeline variant to lay out tiers
+# along a vertical spine.
+_PYRAMID_BLUEPRINT = LayoutBlueprint(
+    layout_type='pyramid',
+    zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
+    icon_size=1.6,
+    timeline=TimelineVariant(line_x=6.67, dot_x=6.55, dot_size=0.0,
+                             text_x=0.5),
+)
+
+
 # -- registry ---------------------------------------------------------------
 
 _BLUEPRINTS: dict[str, LayoutBlueprint] = {
@@ -315,6 +424,14 @@ _BLUEPRINTS: dict[str, LayoutBlueprint] = {
     'closing': _CLOSING_BLUEPRINT,
     'photo_fullbleed': _PHOTO_FULLBLEED_BLUEPRINT,
     'multi_column': _MULTI_COLUMN_BLUEPRINT,
+    'content_caption': _CONTENT_CAPTION_BLUEPRINT,
+    'picture_caption': _PICTURE_CAPTION_BLUEPRINT,
+    'two_content': _TWO_CONTENT_BLUEPRINT,
+    'title_only': _TITLE_ONLY_BLUEPRINT,
+    'quote': _QUOTE_BLUEPRINT,
+    'big_number': _BIG_NUMBER_BLUEPRINT,
+    'process': _PROCESS_BLUEPRINT,
+    'pyramid': _PYRAMID_BLUEPRINT,
 }
 
 

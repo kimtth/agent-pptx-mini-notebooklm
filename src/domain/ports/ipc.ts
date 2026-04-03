@@ -108,6 +108,7 @@ export interface IpcChatAPI {
 }
 
 export interface IpcThemeAPI {
+  listFonts(): Promise<string[]>;
   generatePalette(seeds: string[]): Promise<PaletteColor[]>;
   autoAssign(colors: PaletteColor[], seeds?: string[]): Promise<ThemeSlots>;
   exportThmx(tokens: ThemeTokens): Promise<{ success: boolean; path?: string; error?: string }>;

@@ -493,6 +493,7 @@ async function buildPrompt(
   if (workspace.theme) {
     parts.push('## Active Theme Palette\n');
     parts.push(`Theme name: ${workspace.theme.name}`);
+    parts.push(`Font family: ${workspace.theme.fontFamily || 'Calibri'} (use PPTX_FONT_FAMILY variable or resolve_font(); CJK auto-falls back to Noto Sans)`);
     const slots = workspace.theme.slots;
     parts.push(`OOXML slots: dk1=#${slots.dk1}, lt1=#${slots.lt1}, dk2=#${slots.dk2}, lt2=#${slots.lt2}, accent1=#${slots.accent1}, accent2=#${slots.accent2}, accent3=#${slots.accent3}, accent4=#${slots.accent4}, accent5=#${slots.accent5}, accent6=#${slots.accent6}, hlink=#${slots.hlink}, folHlink=#${slots.folHlink}`);
     parts.push(`Semantic colors: PRIMARY=#${workspace.theme.C.PRIMARY}, SECONDARY=#${workspace.theme.C.SECONDARY}, BG=#${workspace.theme.C.BG}, TEXT=#${workspace.theme.C.TEXT}, ACCENT3=#${workspace.theme.C.ACCENT3}, ACCENT4=#${workspace.theme.C.ACCENT4}, ACCENT5=#${workspace.theme.C.ACCENT5}, ACCENT6=#${workspace.theme.C.ACCENT6}`);
@@ -597,10 +598,10 @@ async function buildChunkPrompt(
     '- fetch_icon(icon_id, color_hex) → path_or_None',
     '- safe_add_picture(shapes, path, left_emu, top_emu, width_emu, height_emu)  [first arg = slide.shapes]',
     '- ensure_contrast(fg_hex, bg_hex) → hex_str',
-    '- resolve_font(text, fallback) → font_name',
+    '- resolve_font(text, fallback) → font_name   (default fallback = PPTX_FONT_FAMILY)',
     '- apply_widescreen(prs) → prs',
     '- set_fill_transparency(shape, value)',
-    '- PRECOMPUTED_LAYOUT_SPECS, OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, WORKSPACE_DIR, IMAGES_DIR',
+    '- PRECOMPUTED_LAYOUT_SPECS, OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_FONT_FAMILY, WORKSPACE_DIR, IMAGES_DIR',
     'Do NOT invent helpers such as _txb, _rect, _oval, _shape, or any other shorthand.',
   ].join('\n');
 

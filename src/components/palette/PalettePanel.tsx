@@ -22,13 +22,20 @@ export function PalettePanel() {
     setGenerating,
     isGenerating,
     commitTokens,
+    selectedFont,
+    setSelectedFont,
     selectedIconCollection,
     setSelectedIconCollection,
   } = usePaletteStore()
   const [error, setError] = useState<string | null>(null)
+  const [systemFonts, setSystemFonts] = useState<string[]>([])
   const iconCollectionOptions = getIconifyCollectionOptions()
   const selectedCollection = getIconifyCollectionById(selectedIconCollection)
   const iconExamples = getIconifyExamples(selectedIconCollection)
+
+  useEffect(() => {
+    window.electronAPI.theme.listFonts().then((fonts: string[]) => setSystemFonts(fonts))
+  }, [])
 
   const generate = async () => {
     setError(null)
@@ -146,6 +153,43 @@ export function PalettePanel() {
           </div>
         </section>
       )}
+
+      {/* ── Font family ── */}
+      <section className="border" style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)' }}>
+        <div className="flex items-center px-4 border-b text-xs font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--text-secondary)', borderColor: 'var(--panel-border)', height: 40, minHeight: 40 }}
+        >
+          Font
+        </div>
+        <div className="px-4 py-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+              Font family
+            </span>
+            <select
+              value={selectedFont}
+              onChange={(e) => { setSelectedFont(e.target.value); commitTokens(); }}
+              className="h-9 border px-3 text-sm outline-none"
+              style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)', fontFamily: selectedFont }}
+            >
+              {systemFonts.length > 0 ? (
+                systemFonts.map((font) => (
+                  <option key={font} value={font} style={{ fontFamily: font }}>{font}</option>
+                ))
+              ) : (
+                <>
+                  <option value="Calibri">Calibri</option>
+                  <option value="Arial">Arial</option>
+                  <option value="Noto Sans">Noto Sans</option>
+                </>
+              )}
+            </select>
+          </label>
+          <p className="text-xs mt-2 leading-5" style={{ color: 'var(--text-muted)' }}>
+            Base font used for slide text. CJK text auto-falls back to Noto Sans variants.
+          </p>
+        </div>
+      </section>
 
       {/* ── Theme slot editor ── */}
       {slots && <ThemeSlotEditor />}

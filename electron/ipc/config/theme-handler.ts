@@ -6,8 +6,12 @@
  */
 
 import { ipcMain, dialog } from 'electron';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import fs from 'fs/promises';
 import JSZip from 'jszip';
+
+const execFileAsync = promisify(execFile);
 import { CopilotClient, approveAll } from '@github/copilot-sdk';
 import { normalizeGitHubToken, resolveCopilotCliPath } from '../llm/copilot-runtime.ts';
 import { onSettingsSaved } from './settings-handler.ts';
@@ -118,9 +122,9 @@ function srgbClr(hex: string): string {
   return `<a:srgbClr val="${hex.toUpperCase()}"/>`;
 }
 
-function buildFontSchemeXml(name: string): string {
-  const latinMajor = 'Calibri Light';
-  const latinMinor = 'Calibri';
+function buildFontSchemeXml(name: string, fontFamily?: string): string {
+  const latinMajor = fontFamily ? `${fontFamily} Light` : 'Calibri Light';
+  const latinMinor = fontFamily || 'Calibri';
   const eastAsia = 'Noto Sans JP';
   const scriptFonts = [
     ['Jpan', 'Noto Sans JP'],
@@ -147,7 +151,7 @@ ${minorScripts}
     </a:fontScheme>`;
 }
 
-function buildTheme1Xml(name: string, slots: ThemeSlots): string {
+function buildTheme1Xml(name: string, slots: ThemeSlots, fontFamily?: string): string {
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="${name}">
   <a:themeElements>
@@ -165,7 +169,7 @@ function buildTheme1Xml(name: string, slots: ThemeSlots): string {
       <a:hlink>${srgbClr(slots.hlink)}</a:hlink>
       <a:folHlink>${srgbClr(slots.folHlink)}</a:folHlink>
     </a:clrScheme>
-${buildFontSchemeXml(name)}
+${buildFontSchemeXml(name, fontFamily)}
     <a:fmtScheme name="${name}">
       <a:fillStyleLst>
         <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
@@ -263,7 +267,7 @@ async function buildThmxZip(tokens: ThemeTokens): Promise<Buffer> {
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme1.xml"/>
 </Relationships>`);
 
-  themeThemeDir?.file('theme1.xml', buildTheme1Xml(name, tokens.slots));
+  themeThemeDir?.file('theme1.xml', buildTheme1Xml(name, tokens.slots, tokens.fontFamily));
 
   return zip.generateAsync({
     type: 'nodebuffer',
@@ -418,11 +422,56 @@ async function generatePaletteWithLLM(seeds: string[]): Promise<PaletteColor[]> 
 }
 
 // ---------------------------------------------------------------------------
+// OS font listing (cached)
+// ---------------------------------------------------------------------------
+
+let fontCache: string[] | null = null;
+
+async function listSystemFonts(): Promise<string[]> {
+  if (fontCache) return fontCache;
+
+  try {
+    if (process.platform === 'win32') {
+      const { stdout } = await execFileAsync('powershell', [
+        '-NoProfile', '-NonInteractive', '-Command',
+        '[System.Reflection.Assembly]::LoadWithPartialName("System.Drawing") | Out-Null; ' +
+        '(New-Object System.Drawing.Text.InstalledFontCollection).Families | ForEach-Object { $_.Name }',
+      ], { windowsHide: true, timeout: 15_000 });
+      fontCache = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+    } else if (process.platform === 'darwin') {
+      const { stdout } = await execFileAsync('system_profiler', ['SPFontsDataType', '-detailLevel', 'mini'], { timeout: 15_000 });
+      const families = new Set<string>();
+      for (const line of stdout.split('\n')) {
+        const m = line.match(/^\s+Family:\s+(.+)/);
+        if (m) families.add(m[1].trim());
+      }
+      fontCache = [...families].sort();
+    } else {
+      const { stdout } = await execFileAsync('fc-list', ['--format', '%{family}\n'], { timeout: 15_000 });
+      const families = new Set<string>();
+      for (const line of stdout.split('\n')) {
+        const name = line.split(',')[0].trim();
+        if (name) families.add(name);
+      }
+      fontCache = [...families].sort();
+    }
+  } catch {
+    fontCache = ['Calibri', 'Arial', 'Times New Roman', 'Noto Sans'];
+  }
+
+  return fontCache;
+}
+
+// ---------------------------------------------------------------------------
 // Handler registration
 // ---------------------------------------------------------------------------
 
 export function registerThemeHandlers(): void {
   onSettingsSaved(() => { clientInstance = null; });
+
+  ipcMain.handle('theme:listFonts', async () => {
+    return listSystemFonts();
+  });
 
   ipcMain.handle('theme:generatePalette', async (_event, seeds: string[]) => {
     try {

@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   theme: {
+    listFonts: () => ipcRenderer.invoke('theme:listFonts'),
     generatePalette: (seeds: string[]) => ipcRenderer.invoke('theme:generatePalette', seeds),
     autoAssign: (colors: unknown[], seeds?: string[]) => ipcRenderer.invoke('theme:autoAssign', colors, seeds ?? []),
     exportThmx: (tokens: unknown) => ipcRenderer.invoke('theme:exportThmx', tokens),

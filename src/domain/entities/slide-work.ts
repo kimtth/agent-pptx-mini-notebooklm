@@ -35,7 +35,15 @@ export type SlideLayout =
   | 'chart'
   | 'closing'
   | 'photo_fullbleed'
-  | 'multi_column';
+  | 'multi_column'
+  | 'content_caption'
+  | 'picture_caption'
+  | 'two_content'
+  | 'title_only'
+  | 'quote'
+  | 'big_number'
+  | 'process'
+  | 'pyramid';
 
 export type FrameworkType =
   | 'mckinsey'

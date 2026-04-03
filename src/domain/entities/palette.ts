@@ -26,6 +26,7 @@ export interface ThemeSlots {
 /** Full theme with colors usable by PowerPoint theme and PPTX generation (no '#' prefix) */
 export interface ThemeTokens {
   name: string;
+  fontFamily?: string;
   slots: ThemeSlots;
   /** Flat map name→hex for dropdown rendering */
   colors: PaletteColor[];

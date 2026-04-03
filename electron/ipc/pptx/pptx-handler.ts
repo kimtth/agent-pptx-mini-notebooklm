@@ -311,7 +311,7 @@ async function assertValidLayoutInputArtifact(workspaceDir: string): Promise<voi
   }
 }
 
-export function buildLayoutInputSlides(slides: LayoutInputSourceSlide[]): LayoutInputSlide[] {
+export function buildLayoutInputSlides(slides: LayoutInputSourceSlide[], fontFamily?: string): LayoutInputSlide[] {
   return slides.map((slide) => ({
     layout_type: slide.layout,
     title_text: slide.title,
@@ -320,7 +320,7 @@ export function buildLayoutInputSlides(slides: LayoutInputSourceSlide[]): Layout
     notes: slide.notes || '',
     item_count: slide.bullets.length,
     has_icon: !!slide.icon,
-    font_family: 'Calibri',
+    font_family: fontFamily || 'Calibri',
   }))
 }
 
@@ -548,6 +548,7 @@ export async function executeGeneratedPythonCodeToFile(
             PYTHONIOENCODING: 'utf-8',
             PPTX_THEME_JSON: themePayload,
             PPTX_TITLE: title || 'Presentation',
+            PPTX_FONT_FAMILY: theme?.fontFamily || 'Calibri',
             ICON_CACHE_DIR: iconCacheDir,
             PPTX_ICON_COLLECTION: opts?.iconCollection ?? 'all',
             ...(opts?.renderDir ? { PPTX_SKIP_COM_LAYOUT_FIX: '1' } : {}),
@@ -676,6 +677,7 @@ export async function executeChunkedPptxGeneration(
           PYTHONIOENCODING: 'utf-8',
           PPTX_THEME_JSON: themePayload,
           PPTX_TITLE: title || 'Presentation',
+          PPTX_FONT_FAMILY: theme?.fontFamily || 'Calibri',
           ICON_CACHE_DIR: iconCacheDir,
           PPTX_ICON_COLLECTION: opts.iconCollection ?? 'all',
           PPTX_LAYOUT_SPECS_JSON: chunkLayoutSpecs,

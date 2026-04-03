@@ -352,6 +352,22 @@ def _build_layout_spec(
         hero_h = 3.65
         hero_rect = RectSpec(hero_x, round(hero_y, 4), hero_w, hero_h)
 
+    # Caption layouts (content_caption, picture_caption) — left narration + right content
+    # Title and key_message are narrowed to ~35%, content/hero occupies the right ~65%.
+    if blueprint.layout_type in ('content_caption', 'picture_caption'):
+        narration_w = 4.30
+        right_x = round(narration_w + mx + tokens.gap_x, 2)
+        right_w = round(SLIDE_WIDTH_IN - right_x - mx, 2)
+        body_top = title_rect.y if title_rect else mx
+        body_h = round((notes_rect.y if notes_rect else SLIDE_HEIGHT_IN - 0.7) - tokens.gap_y - body_top, 2)
+        if title_rect:
+            title_rect = RectSpec(mx, title_rect.y, narration_w, title_rect.h)
+        if key_rect:
+            key_rect = RectSpec(mx, key_rect.y, narration_w, key_rect.h)
+        content_rect = RectSpec(right_x, body_top, right_w, body_h)
+        if blueprint.has_hero:
+            hero_rect = RectSpec(right_x, body_top, right_w, body_h)
+
     # Sidebar (agenda, diagram — right column)
     sidebar_rect = None
     if blueprint.has_sidebar and content_rect:
@@ -407,7 +423,11 @@ def _default_max_items(bp: LayoutBlueprint) -> int:
     defaults = {
         'title': 0, 'section': 0, 'agenda': 5, 'bullets': 6,
         'cards': 4, 'stats': 3, 'comparison': 6, 'timeline': 5,
-        'summary': 3, 'diagram': 5,
+        'summary': 3, 'diagram': 5, 'chart': 0, 'closing': 0,
+        'photo_fullbleed': 0, 'multi_column': 5,
+        'content_caption': 5, 'picture_caption': 0, 'two_content': 6,
+        'title_only': 0, 'quote': 0, 'big_number': 3,
+        'process': 6, 'pyramid': 5,
     }
     return defaults.get(bp.layout_type, 6)
 

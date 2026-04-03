@@ -176,13 +176,22 @@ N+1. Appendix section (layout: section)
 | `bullets` | Bulleted explanation |
 | `cards` | Parallel items (2–4 cards) |
 | `stats` | Number highlights: large stats |
-| `comparison` | Before/After or option comparison |
+| `comparison` | Before/After or option comparison (with sub-headers) |
 | `timeline` | Sequential steps / roadmap |
 | `diagram` | Concept diagram / architecture |
 | `summary` | Key Takeaways (3 points) |
+| `chart` | Chart-focused layout: large chart zone |
 | `closing` | Thank-you / end slide |
 | `photo_fullbleed` | Full-bleed photo with overlaid title |
 | `multi_column` | 3–5 equal-width content columns |
+| `content_caption` | Left narration + right content area (split ~35/65) |
+| `picture_caption` | Left narration + right picture (split ~35/65) |
+| `two_content` | Two equal content columns without comparison sub-headers |
+| `title_only` | Title bar + open canvas for freeform content |
+| `quote` | Centered quotation / testimonial with attribution |
+| `big_number` | Single dominant KPI / metric spotlight |
+| `process` | Horizontal process flow (3–6 steps) |
+| `pyramid` | Pyramid / funnel visualisation (3–5 tiers) |
 
 ## Available Icons
 

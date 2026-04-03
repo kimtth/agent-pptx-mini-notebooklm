@@ -209,6 +209,148 @@ export function getSlideLayoutSpec(slide: SlideItem): SlideLayoutSpec {
         notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
         maxItems: 5,
       }
+    case 'chart':
+      return {
+        titleRect: headerRect(0.5, 0.5, 12.33, 0.50),
+        keyMessageRect: headerRect(0.5, 1.02, 12.33, 0.55),
+        accentRect: { x: 0.5, y: 1.62, w: 1.5, h: 0.04 },
+        iconRect: slide.icon ? iconCornerRect(1.6) : undefined,
+        contentRect: { x: 0.5, y: 1.86, w: 12.33, h: 4.2 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 0,
+        chart: {
+          chartRect: { x: 0.5, y: 1.86, w: 12.33, h: 3.9 },
+          captionRect: { x: 0.5, y: 5.86, w: 12.33, h: 0.22 },
+        },
+      }
+    case 'closing':
+      return {
+        titleRect: headerRect(0.9, 2.4, 11.53, 0.60),
+        keyMessageRect: headerRect(0.9, 3.1, 11.53, 0.50),
+        accentRect: { x: 0.9, y: 2.0, w: 0.9, h: 0.05 },
+        iconRect: slide.icon ? iconCornerRect(1.6) : undefined,
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 0,
+      }
+    case 'photo_fullbleed':
+      return {
+        titleRect: headerRect(0.7, 4.4, 11.93, 1.0),
+        keyMessageRect: headerRect(0.7, 5.5, 11.93, 0.50),
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 0,
+      }
+    case 'multi_column':
+      return {
+        titleRect: headerRect(0.5, 0.5, 12.33, 0.50),
+        keyMessageRect: headerRect(0.5, 1.02, 12.33, 0.55),
+        accentRect: { x: 0.5, y: 1.62, w: 1.5, h: 0.04 },
+        iconRect: slide.icon ? iconCornerRect(1.6) : undefined,
+        contentRect: { x: 0.5, y: 1.86, w: 12.33, h: 3.8 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 5,
+        cards: {
+          columns: 3,
+          cardW: 3.91,
+          cardH: 3.55,
+          startX: 0.5,
+          startY: 1.86,
+          gapX: 0.30,
+          gapY: 0.25,
+        },
+      }
+    case 'content_caption':
+      return {
+        titleRect: { x: 0.5, y: 0.50, w: 4.30, h: 0.80 },
+        keyMessageRect: { x: 0.5, y: 1.38, w: 4.30, h: 2.80 },
+        contentRect: { x: 5.67, y: 0.50, w: 7.16, h: 5.58 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 5,
+      }
+    case 'picture_caption':
+      return {
+        titleRect: { x: 0.5, y: 0.50, w: 4.30, h: 0.80 },
+        keyMessageRect: { x: 0.5, y: 1.38, w: 4.30, h: 2.80 },
+        contentRect: { x: 5.67, y: 0.50, w: 7.16, h: 5.58 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 0,
+      }
+    case 'two_content':
+      return {
+        titleRect: headerRect(0.5, 0.5, 12.33, 0.50),
+        keyMessageRect: headerRect(0.5, 1.02, 12.33, 0.55),
+        accentRect: { x: 0.5, y: 1.62, w: 1.5, h: 0.04 },
+        iconRect: slide.icon ? iconCornerRect(1.6) : undefined,
+        contentRect: { x: 0.5, y: 1.86, w: 12.33, h: 3.8 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 6,
+        comparison: {
+          left: { x: 0.5, y: 1.86, w: 6.04, h: 3.8 },
+          right: { x: 6.79, y: 1.86, w: 6.04, h: 3.8 },
+        },
+      }
+    case 'title_only':
+      return {
+        titleRect: headerRect(0.5, 0.40, 12.33, 0.50),
+        contentRect: { x: 0.5, y: 1.10, w: 12.33, h: 4.88 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 0,
+      }
+    case 'quote':
+      return {
+        accentRect: { x: 1.8, y: 1.6, w: 0.9, h: 0.05 },
+        contentRect: { x: 1.8, y: 1.85, w: 9.73, h: 2.4 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 0,
+      }
+    case 'big_number':
+      return {
+        accentRect: { x: 1.5, y: 1.2, w: 0.9, h: 0.05 },
+        titleRect: { x: 1.5, y: 1.43, w: 10.33, h: 1.8 },
+        keyMessageRect: { x: 1.5, y: 3.31, w: 10.33, h: 0.60 },
+        contentRect: { x: 1.5, y: 4.09, w: 10.33, h: 1.6 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 3,
+      }
+    case 'process':
+      return {
+        titleRect: headerRect(0.5, 0.5, 12.33, 0.50),
+        keyMessageRect: headerRect(0.5, 1.02, 12.33, 0.55),
+        accentRect: { x: 0.5, y: 1.62, w: 1.5, h: 0.04 },
+        iconRect: slide.icon ? iconCornerRect(1.6) : undefined,
+        contentRect: { x: 0.5, y: 1.86, w: 12.33, h: 3.8 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 6,
+        cards: {
+          columns: 4,
+          cardW: 2.86,
+          cardH: 3.55,
+          startX: 0.5,
+          startY: 1.86,
+          gapX: 0.30,
+          gapY: 0.25,
+        },
+      }
+    case 'pyramid':
+      return {
+        titleRect: headerRect(0.5, 0.5, 12.33, 0.50),
+        keyMessageRect: headerRect(0.5, 1.02, 12.33, 0.55),
+        accentRect: { x: 0.5, y: 1.62, w: 1.5, h: 0.04 },
+        iconRect: slide.icon ? iconCornerRect(1.6) : undefined,
+        contentRect: { x: 0.5, y: 1.86, w: 12.33, h: 3.8 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 5,
+        timeline: {
+          lineX: 6.67,
+          lineY: 1.86,
+          lineH: 3.34,
+          dotX: 6.55,
+          dotSize: 0.0,
+          startY: 1.82,
+          stepY: 0.62,
+          textX: 0.5,
+          textW: 12.33,
+        },
+      }
     case 'bullets':
     default:
       return {

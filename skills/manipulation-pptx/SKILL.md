@@ -78,7 +78,8 @@ Also available at runtime:
 - `SLIDE_WIDTH_IN`, `SLIDE_HEIGHT_IN`
 - `Presentation`, `Inches`, `Pt`, `RGBColor`, `PP_ALIGN`, `MSO_ANCHOR`, `MSO_AUTO_SHAPE_TYPE`
 - `rgb_color()`, `apply_widescreen()`, `safe_image_path()`, `safe_add_picture()`, `ensure_contrast()`, `set_fill_transparency()`
-- `resolve_font(text, base_font)` — returns the correct Noto Sans font for non-Latin text
+- `resolve_font(text, base_font)` — returns the correct Noto Sans font for non-Latin text (default base_font = `PPTX_FONT_FAMILY`)
+- `PPTX_FONT_FAMILY` — the user-selected base font (e.g., `'Calibri'`, `'Arial'`); use instead of hardcoding
 - `ensure_noto_fonts(text)` — downloads missing Noto Sans fonts (called automatically at startup)
 
 When referencing slide images, prefer `os.path.join(IMAGES_DIR, filename)` over hardcoded absolute paths.
@@ -424,12 +425,14 @@ Use `resolve_font(text, base_font)` to automatically select the correct font for
 
 ```python
 # resolve_font detects script and returns the appropriate Noto Sans variant
-font = resolve_font(slide_data['title'], 'Calibri')  # → 'Noto Sans JP' for Japanese
+# default base_font is PPTX_FONT_FAMILY (user-selected), NOT hardcoded 'Calibri'
+font = resolve_font(slide_data['title'])  # → 'Noto Sans JP' for Japanese, or PPTX_FONT_FAMILY for Latin
 run.font.name = font
 ```
 
 **Rules:**
-- For non-English body text, always use `resolve_font(text, base_font)` instead of hardcoding font names like `Yu Mincho`
+- For non-English body text, always use `resolve_font(text)` instead of hardcoding font names like `Yu Mincho`
+- `resolve_font()` already defaults to `PPTX_FONT_FAMILY` — no need to pass `'Calibri'` explicitly
 - Display/title fonts (Georgia, Bebas Neue, etc.) may be kept for Latin text, but pass CJK text through `resolve_font()`
 - Monospace labels (Consolas, Space Mono) are fine for Latin-only labels and numbers
 - Noto Sans fonts are auto-downloaded to workspace if not installed — no manual setup needed
