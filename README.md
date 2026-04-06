@@ -1,8 +1,10 @@
-# pptx-slide-agent
+# agent-pptx-mini-notebooklm
 
 Electron desktop app for generating PowerPoint decks from chat, files, and URLs with support for GitHub Copilot, OpenAI, Azure OpenAI, and Claude.
 
 <img src="./samples/main.png" alt="main screen" width="500" />
+
+This app aims to create a local, NotebookLM-style workflow for PPTX generation. It ingests source materials, grounds the content in them, and produces presentation-ready slides complete with layout, text, images, icons, and charts. Unlike NotebookLM, which generates AI images into slides, this app produces fully **editable slides** grounded in user-provided sources.. The app uses **constraint-based layout computation** (via the Kiwi solver in 🦋 Flutter) and **🦖 RAPTOR-style hierarchical retrieval and summarization** to structure the final output.
 
 ## Documentation Index
 
