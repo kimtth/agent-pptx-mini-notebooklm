@@ -64,14 +64,58 @@ def measure_text_heights(
 
     import pythoncom  # type: ignore
     import win32com.client  # type: ignore
+    import subprocess as _sp
+    import time as _time
+
+    def _get_ppt_pids() -> set[int]:
+        try:
+            r = _sp.run(
+                ['tasklist', '/FI', 'IMAGENAME eq POWERPNT.EXE', '/FO', 'CSV', '/NH'],
+                capture_output=True, text=True, timeout=5,
+            )
+            pids: set[int] = set()
+            for line in r.stdout.strip().splitlines():
+                parts = line.replace('"', '').split(',')
+                if len(parts) >= 2 and parts[1].strip().isdigit():
+                    pids.add(int(parts[1].strip()))
+            return pids
+        except Exception:
+            return set()
+
+    def _detect_new_ppt_pids(before: set[int], timeout_s: float = 2.0) -> set[int]:
+        deadline = _time.monotonic() + timeout_s
+        while _time.monotonic() < deadline:
+            delta = _get_ppt_pids() - before
+            if delta:
+                return delta
+            _time.sleep(0.2)
+        return _get_ppt_pids() - before
+
+    def _count_presentations(pp) -> int | None:
+        try:
+            count = getattr(getattr(pp, 'Presentations', None), 'Count', None)
+            return int(count) if count is not None else None
+        except Exception:
+            return None
 
     pythoncom.CoInitialize()
     powerpoint = None
     presentation = None
+    safe_to_quit = False
+    pp_pids: set[int] = set()
 
     try:
+        before = _get_ppt_pids()
         powerpoint = win32com.client.DispatchEx('PowerPoint.Application')
         powerpoint.Visible = 1  # required for AutoFit to compute correctly
+        pp_pids = _detect_new_ppt_pids(before)
+        safe_to_quit = bool(pp_pids)
+        print(
+            '[powerpoint-com] created app '
+            f'safe_to_quit={safe_to_quit} before_pids={sorted(before)} '
+            f'owned_pids={sorted(pp_pids)} presentations={_count_presentations(powerpoint)}',
+            file=sys.stderr,
+        )
 
         presentation = powerpoint.Presentations.Add(WithWindow=False)
 
@@ -132,13 +176,20 @@ def measure_text_heights(
             except Exception:
                 pass
         if powerpoint is not None:
-            # Only quit if no other presentations are open — avoids
-            # killing the user's existing PowerPoint editing sessions.
-            try:
-                if powerpoint.Presentations.Count == 0:
+            if safe_to_quit:
+                try:
                     powerpoint.Quit()
-            except Exception:
-                pass
+                    print(
+                        f'[powerpoint-com] quit owned app owned_pids={sorted(pp_pids)}',
+                        file=sys.stderr,
+                    )
+                except Exception as exc:
+                    print(f'[powerpoint-com] quit failed, leaving app running: {exc}', file=sys.stderr)
+            else:
+                print(
+                    '[powerpoint-com] skip quit — no owned PID detected',
+                    file=sys.stderr,
+                )
         pythoncom.CoUninitialize()
 
 

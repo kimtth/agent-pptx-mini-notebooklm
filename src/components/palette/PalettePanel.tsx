@@ -9,6 +9,27 @@ import { usePaletteStore } from '../../stores/palette-store.ts'
 import { PaletteCanvas } from './PaletteCanvas.tsx'
 import { ThemeSlotEditor } from './ThemeSlotEditor.tsx'
 import { getIconifyCollectionById, getIconifyCollectionOptions, getIconifyExamples } from '../../domain/icons/iconify.ts'
+import type { ThemeColorTreatment } from '../../domain/entities/palette.ts'
+
+const COLOR_TREATMENT_OPTIONS: Array<{
+  value: ThemeColorTreatment;
+  label: string;
+  description: string;
+  preview: string;
+}> = [
+  {
+    value: 'solid',
+    label: 'Solid',
+    description: 'Use single-color fills for cards and text panels.',
+    preview: 'var(--accent)',
+  },
+  {
+    value: 'gradient',
+    label: 'Gradient',
+    description: 'Prefer layered fills and tonal transitions for large panels.',
+    preview: 'linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 45%, white) 100%)',
+  },
+]
 
 export function PalettePanel() {
   const {
@@ -24,6 +45,8 @@ export function PalettePanel() {
     commitTokens,
     selectedFont,
     setSelectedFont,
+    selectedColorTreatment,
+    setSelectedColorTreatment,
     selectedIconCollection,
     setSelectedIconCollection,
   } = usePaletteStore()
@@ -187,6 +210,46 @@ export function PalettePanel() {
           </label>
           <p className="text-xs mt-2 leading-5" style={{ color: 'var(--text-muted)' }}>
             Base font used for slide text. CJK text auto-falls back to Noto Sans variants.
+          </p>
+        </div>
+      </section>
+
+      <section className="border" style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)' }}>
+        <div className="flex items-center px-4 border-b text-xs font-semibold uppercase tracking-wider"
+          style={{ color: 'var(--text-secondary)', borderColor: 'var(--panel-border)', height: 40, minHeight: 40 }}
+        >
+          Coloring
+        </div>
+        <div className="px-4 py-4 flex flex-col gap-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+            Text Box Fill Style
+          </span>
+          <div className="grid gap-3 md:grid-cols-2">
+            {COLOR_TREATMENT_OPTIONS.map((option) => {
+              const active = option.value === selectedColorTreatment
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => { setSelectedColorTreatment(option.value); commitTokens(); }}
+                  className="border p-3 text-left transition-colors"
+                  style={{
+                    borderColor: active ? 'var(--accent)' : 'var(--panel-border)',
+                    background: active ? 'color-mix(in srgb, var(--accent) 10%, var(--surface))' : 'var(--surface)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <div className="mb-3 h-12 border" style={{ borderColor: 'rgba(255,255,255,0.18)', background: option.preview }} />
+                  <div className="text-sm font-semibold">{option.label}</div>
+                  <p className="mt-1 text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
+                    {option.description}
+                  </p>
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
+            Gradient mode tells PPTX generation to prefer tonal blends on cards, banners, and background panels instead of flat fills.
           </p>
         </div>
       </section>

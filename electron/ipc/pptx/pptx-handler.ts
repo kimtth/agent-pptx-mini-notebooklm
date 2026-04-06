@@ -14,6 +14,45 @@ import { sliceLayoutSpecs, sliceSlideAssets } from '../llm/slide-chunker.ts'
 
 const execFileAsync = promisify(execFile)
 const GENERATED_CODE_EXECUTION_ATTEMPTS = 2
+let powerPointAutomationChain: Promise<void> = Promise.resolve()
+
+function queuePowerPointAutomation<T>(task: () => Promise<T>): Promise<T> {
+  const nextTask = powerPointAutomationChain.catch(() => undefined).then(task)
+  powerPointAutomationChain = nextTask.then(() => undefined, () => undefined)
+  return nextTask
+}
+
+function resolveThemeFontFamily(theme: ThemeTokens | null | undefined): string {
+  const fontFamily = theme?.fontFamily?.trim()
+  return fontFamily && fontFamily.length > 0 ? fontFamily : 'Calibri'
+}
+
+function resolveThemeColorTreatment(theme: ThemeTokens | null | undefined): 'solid' | 'gradient' {
+  return theme?.colorTreatment === 'gradient' ? 'gradient' : 'solid'
+}
+
+function applyLayoutFontFamily(slides: LayoutInputSlide[], fontFamily?: string): LayoutInputSlide[] {
+  const effectiveFontFamily = fontFamily?.trim() || 'Calibri'
+  return slides.map((slide) => ({
+    ...slide,
+    font_family: slide.font_family?.trim() || effectiveFontFamily,
+  }))
+}
+
+function normalizeLayoutSlides(
+  slides: LayoutInputSourceSlide[] | string,
+  fontFamily?: string,
+): string {
+  if (typeof slides !== 'string') {
+    return JSON.stringify(buildLayoutInputSlides(slides, fontFamily), null, 2)
+  }
+
+  const parsed = JSON.parse(slides) as unknown
+  if (!Array.isArray(parsed)) {
+    throw new Error('Layout input must be a top-level array of slide entries.')
+  }
+  return JSON.stringify(applyLayoutFontFamily(parsed as LayoutInputSlide[], fontFamily), null, 2)
+}
 
 // ---------------------------------------------------------------------------
 // Syntax preflight — fast Python AST check before full execution
@@ -312,6 +351,7 @@ async function assertValidLayoutInputArtifact(workspaceDir: string): Promise<voi
 }
 
 export function buildLayoutInputSlides(slides: LayoutInputSourceSlide[], fontFamily?: string): LayoutInputSlide[] {
+  const effectiveFontFamily = fontFamily?.trim() || 'Calibri'
   return slides.map((slide) => ({
     layout_type: slide.layout,
     title_text: slide.title,
@@ -320,21 +360,20 @@ export function buildLayoutInputSlides(slides: LayoutInputSourceSlide[], fontFam
     notes: slide.notes || '',
     item_count: slide.bullets.length,
     has_icon: !!slide.icon,
-    font_family: fontFamily || 'Calibri',
+    font_family: effectiveFontFamily,
   }))
 }
 
 export async function persistLayoutInputToWorkspace(
   slides: LayoutInputSourceSlide[] | string,
+  fontFamily?: string,
 ): Promise<{ success: boolean; slidesJson?: string; inputPath?: string; outputPath?: string; error?: string }> {
   try {
     const workspaceDir = await readWorkspaceDir()
     const { layoutDir, inputPath, outputPath } = buildLayoutArtifactPaths(workspaceDir)
     await fs.mkdir(layoutDir, { recursive: true })
 
-    const slidesJson = typeof slides === 'string'
-      ? slides
-      : JSON.stringify(buildLayoutInputSlides(slides), null, 2)
+    const slidesJson = normalizeLayoutSlides(slides, fontFamily)
 
     await fs.writeFile(inputPath, slidesJson, 'utf-8')
     return { success: true, slidesJson, inputPath, outputPath }
@@ -396,6 +435,7 @@ export async function persistSlideAssetsToWorkspace(
 async function refreshPreviewArtifacts(
   slides: SlideAssetSourceSlide[] | undefined,
   iconCollection: string,
+  fontFamily?: string,
 ): Promise<{ success: boolean; layoutSpecsJson?: string; error?: string }> {
   if (!slides || slides.length === 0) {
     return { success: true }
@@ -415,7 +455,7 @@ async function refreshPreviewArtifacts(
     icon: slide.icon,
   }))
 
-  const layoutSpecsResult = await computeLayoutSpecs(layoutInput)
+  const layoutSpecsResult = await computeLayoutSpecsInternal(layoutInput, fontFamily)
   if (!layoutSpecsResult.success || !layoutSpecsResult.specs?.trim()) {
     return { success: false, error: layoutSpecsResult.error ?? 'Failed to compute layout specs.' }
   }
@@ -428,11 +468,12 @@ async function refreshPreviewArtifacts(
  * (PowerPoint COM AutoFit + kiwisolver constraint solver).
  * Can be called from any IPC handler — does not depend on ipcMain.handle.
  */
-export async function computeLayoutSpecs(
+async function computeLayoutSpecsInternal(
   slides: LayoutInputSourceSlide[] | string,
+  fontFamily?: string,
 ): Promise<{ success: boolean; specs?: string; error?: string }> {
   try {
-    const persisted = await persistLayoutInputToWorkspace(slides)
+    const persisted = await persistLayoutInputToWorkspace(slides, fontFamily)
     if (!persisted.success || !persisted.inputPath || !persisted.outputPath) {
       return { success: false, error: persisted.error ?? 'Failed to persist layout input.' }
     }
@@ -464,7 +505,14 @@ export async function computeLayoutSpecs(
   }
 }
 
-export async function executeGeneratedPythonCodeToFile(
+export async function computeLayoutSpecs(
+  slides: LayoutInputSourceSlide[] | string,
+  fontFamily?: string,
+): Promise<{ success: boolean; specs?: string; error?: string }> {
+  return queuePowerPointAutomation(() => computeLayoutSpecsInternal(slides, fontFamily))
+}
+
+async function executeGeneratedPythonCodeToFileInternal(
   code: string,
   theme: ThemeTokens | null,
   title: string,
@@ -490,13 +538,15 @@ export async function executeGeneratedPythonCodeToFile(
   )
 
   const themePayload = JSON.stringify(theme?.C ?? DEFAULT_THEME_C)
+  const fontFamily = resolveThemeFontFamily(theme)
+  const colorTreatment = resolveThemeColorTreatment(theme)
   const workspaceDir = await readWorkspaceDir()
   await assertValidLayoutInputArtifact(workspaceDir)
   let layoutSpecsJson = opts?.layoutSpecsJson?.trim() ?? ''
   if (!layoutSpecsJson) {
     const { inputPath } = buildLayoutArtifactPaths(workspaceDir)
     const layoutInputJson = await fs.readFile(inputPath, 'utf-8')
-    const computed = await computeLayoutSpecs(layoutInputJson)
+    const computed = await computeLayoutSpecsInternal(layoutInputJson, fontFamily)
     if (!computed.success || !computed.specs?.trim()) {
       throw new Error(computed.error ?? 'Failed to compute hybrid layout specs.')
     }
@@ -548,7 +598,8 @@ export async function executeGeneratedPythonCodeToFile(
             PYTHONIOENCODING: 'utf-8',
             PPTX_THEME_JSON: themePayload,
             PPTX_TITLE: title || 'Presentation',
-            PPTX_FONT_FAMILY: theme?.fontFamily || 'Calibri',
+            PPTX_FONT_FAMILY: fontFamily,
+            PPTX_COLOR_TREATMENT: colorTreatment,
             ICON_CACHE_DIR: iconCacheDir,
             PPTX_ICON_COLLECTION: opts?.iconCollection ?? 'all',
             ...(opts?.renderDir ? { PPTX_SKIP_COM_LAYOUT_FIX: '1' } : {}),
@@ -573,6 +624,16 @@ export async function executeGeneratedPythonCodeToFile(
   }
 
   throw lastError
+}
+
+export async function executeGeneratedPythonCodeToFile(
+  code: string,
+  theme: ThemeTokens | null,
+  title: string,
+  outputPath: string,
+  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; includeImagesInLayout?: boolean },
+): Promise<PptxCompletionReport> {
+  return queuePowerPointAutomation(() => executeGeneratedPythonCodeToFileInternal(code, theme, title, outputPath, opts))
 }
 
 // ---------------------------------------------------------------------------
@@ -613,6 +674,8 @@ export async function executeChunkedPptxGeneration(
   await ensurePythonModule(python, 'pptx', `Install python-pptx. ${pythonSetupHint()}`)
 
   const themePayload = JSON.stringify(theme?.C ?? DEFAULT_THEME_C)
+  const fontFamily = resolveThemeFontFamily(theme)
+  const colorTreatment = resolveThemeColorTreatment(theme)
   const workspaceDir = await readWorkspaceDir()
   const iconCacheDir = getAppIconCacheDir()
 
@@ -677,7 +740,8 @@ export async function executeChunkedPptxGeneration(
           PYTHONIOENCODING: 'utf-8',
           PPTX_THEME_JSON: themePayload,
           PPTX_TITLE: title || 'Presentation',
-          PPTX_FONT_FAMILY: theme?.fontFamily || 'Calibri',
+          PPTX_FONT_FAMILY: fontFamily,
+          PPTX_COLOR_TREATMENT: colorTreatment,
           ICON_CACHE_DIR: iconCacheDir,
           PPTX_ICON_COLLECTION: opts.iconCollection ?? 'all',
           PPTX_LAYOUT_SPECS_JSON: chunkLayoutSpecs,
@@ -762,7 +826,7 @@ export async function executeChunkedPptxGeneration(
 
   // ---- Step 4: Render preview images from the merged PPTX ----
   try {
-    await renderPngFromPptx(outputPath, workDir)
+    await queuePowerPointAutomation(() => renderPngFromPptx(outputPath, workDir))
   } catch (err) {
     console.log('[chunked-pptx] Preview rendering failed (PPTX was generated):', err)
     if (finalReport) {
@@ -817,20 +881,48 @@ async function findMostRecentPptx(dirPath: string): Promise<string | null> {
 async function renderPngFromPptx(pptxPath: string, renderDir: string): Promise<void> {
   const python = await resolvePythonExecutable()
   const script = [
-    'import sys, pathlib',
+    'import sys, pathlib, subprocess, time',
     'pptx_path = sys.argv[1]',
     'render_dir = sys.argv[2]',
     'import pythoncom, win32com.client',
+    'def _pids():',
+    '    r = subprocess.run(["tasklist","/FI","IMAGENAME eq POWERPNT.EXE","/FO","CSV","/NH"], capture_output=True, text=True, timeout=5)',
+    '    s = set()',
+    '    for l in r.stdout.strip().splitlines():',
+    '        p = l.replace(chr(34),"").split(",")',
+    '        if len(p)>=2 and p[1].strip().isdigit(): s.add(int(p[1].strip()))',
+    '    return s',
+    'def _detect_new(before, timeout_s=2.0):',
+    '    deadline = time.monotonic() + timeout_s',
+    '    while time.monotonic() < deadline:',
+    '        delta = _pids() - before',
+    '        if delta: return delta',
+    '        time.sleep(0.2)',
+    '    return _pids() - before',
     'pythoncom.CoInitialize()',
+    'before = _pids()',
     'pp = None; prs = None',
+    'owned = set(); safe_to_quit = False',
     'try:',
     '    pp = win32com.client.DispatchEx("PowerPoint.Application")',
     '    pp.Visible = 1',
+    '    owned = _detect_new(before)',
+    '    safe_to_quit = bool(owned)',
+    '    print(f"[powerpoint-com] created app safe_to_quit={safe_to_quit} before_pids={sorted(before)} owned_pids={sorted(owned)}", file=sys.stderr)',
     '    prs = pp.Presentations.Open(pptx_path, WithWindow=False, ReadOnly=True)',
     '    prs.Export(render_dir, "PNG", 1280, 720)',
     'finally:',
-    '    if prs: prs.Close()',
-    '    if pp: pp.Quit()',
+    '    if prs:',
+    '        try: prs.Close()',
+    '        except Exception: pass',
+    '    if pp and safe_to_quit:',
+    '        try:',
+    '            pp.Quit()',
+    '            print(f"[powerpoint-com] quit owned app owned_pids={sorted(owned)}", file=sys.stderr)',
+    '        except Exception as exc:',
+    '            print(f"[powerpoint-com] quit failed, leaving app running: {exc}", file=sys.stderr)',
+    '    elif pp:',
+    '        print(f"[powerpoint-com] skip quit — no owned PID detected", file=sys.stderr)',
     '    pythoncom.CoUninitialize()',
   ].join('\n')
   await execFileAsync(python, ['-c', script, pptxPath, renderDir], {
@@ -896,7 +988,7 @@ export function registerPptxHandlers(): void {
       }
 
       try {
-        await renderPngFromPptx(pptxPath, renderDir)
+        await queuePowerPointAutomation(() => renderPngFromPptx(pptxPath, renderDir))
       } catch (err) {
         console.log('[readExistingPreviews] COM render failed:', err)
         return { success: false, imagePaths: [], warning: 'PPTX exists but preview rendering failed. PowerPoint desktop may be required.' }
@@ -918,60 +1010,62 @@ export function registerPptxHandlers(): void {
         return { success: false, error: 'Only agent-generated python-pptx code is supported' }
       }
 
-      const workspaceDir = await readWorkspaceDir()
-      const previewRoot = path.join(workspaceDir, 'previews')
-      const renderDir = previewRoot
-      const outputPath = path.join(previewRoot, 'presentation-preview.pptx')
+      return await queuePowerPointAutomation(async () => {
+        const workspaceDir = await readWorkspaceDir()
+        const previewRoot = path.join(workspaceDir, 'previews')
+        const renderDir = previewRoot
+        const outputPath = path.join(previewRoot, 'presentation-preview.pptx')
 
-      try {
-        const artifactRefresh = await refreshPreviewArtifacts(slides, iconCollection ?? 'all')
-        if (!artifactRefresh.success) {
-          return { success: false, error: artifactRefresh.error ?? 'Failed to refresh preview artifacts.' }
-        }
-
-        // Try to remove the old PPTX before regenerating; ignore if locked
-        await fs.unlink(outputPath).catch(() => {})
-        await removeStaleTimestampedPptx(previewRoot, 'presentation-preview.pptx')
-        await removePreviewImages(renderDir)
-        await fs.mkdir(previewRoot, { recursive: true })
-        await executeGeneratedPythonCodeToFile(code, themeTokens, title, outputPath, {
-          renderDir,
-          iconCollection,
-          templateMeta,
-          layoutSpecsJson: artifactRefresh.layoutSpecsJson,
-        })
-
-        // Find actual PPTX (may have a timestamped name if the original was locked)
-        let actualPptx: string | null = null
         try {
-          const previewEntries = await fs.readdir(previewRoot, { withFileTypes: true })
-          const pptxFile = previewEntries.find((e) => e.isFile() && /\.pptx$/i.test(e.name))
-          if (pptxFile) actualPptx = path.join(previewRoot, pptxFile.name)
-        } catch { /* ignore */ }
-
-        const imagePaths = await readPreviewImagePaths(renderDir)
-
-        if (imagePaths.length === 0) {
-          return {
-            success: !!actualPptx,
-            imagePaths: [],
-            warning: actualPptx
-              ? 'PPTX generated successfully but slide preview images could not be rendered. PowerPoint desktop may be required.'
-              : 'Preview rendering completed but no output was generated.',
+          const artifactRefresh = await refreshPreviewArtifacts(
+            slides,
+            iconCollection ?? 'all',
+            resolveThemeFontFamily(themeTokens),
+          )
+          if (!artifactRefresh.success) {
+            return { success: false, error: artifactRefresh.error ?? 'Failed to refresh preview artifacts.' }
           }
-        }
 
-        // Warn if file was renamed due to lock
-        const wasRenamed = actualPptx && path.basename(actualPptx) !== 'presentation-preview.pptx'
-        return {
-          success: true,
-          imagePaths,
-          ...(wasRenamed ? { warning: `The previous PPTX was locked. New file saved as ${path.basename(actualPptx!)}.  Close the old file in PowerPoint to avoid mismatches.` } : {}),
+          await fs.unlink(outputPath).catch(() => {})
+          await removeStaleTimestampedPptx(previewRoot, 'presentation-preview.pptx')
+          await removePreviewImages(renderDir)
+          await fs.mkdir(previewRoot, { recursive: true })
+          await executeGeneratedPythonCodeToFileInternal(code, themeTokens, title, outputPath, {
+            renderDir,
+            iconCollection,
+            templateMeta,
+            layoutSpecsJson: artifactRefresh.layoutSpecsJson,
+          })
+
+          let actualPptx: string | null = null
+          try {
+            const previewEntries = await fs.readdir(previewRoot, { withFileTypes: true })
+            const pptxFile = previewEntries.find((e) => e.isFile() && /\.pptx$/i.test(e.name))
+            if (pptxFile) actualPptx = path.join(previewRoot, pptxFile.name)
+          } catch { /* ignore */ }
+
+          const imagePaths = await readPreviewImagePaths(renderDir)
+
+          if (imagePaths.length === 0) {
+            return {
+              success: !!actualPptx,
+              imagePaths: [],
+              warning: actualPptx
+                ? 'PPTX generated successfully but slide preview images could not be rendered. PowerPoint desktop may be required.'
+                : 'Preview rendering completed but no output was generated.',
+            }
+          }
+
+          const wasRenamed = actualPptx && path.basename(actualPptx) !== 'presentation-preview.pptx'
+          return {
+            success: true,
+            imagePaths,
+            ...(wasRenamed ? { warning: `The previous PPTX was locked. New file saved as ${path.basename(actualPptx!)}.  Close the old file in PowerPoint to avoid mismatches.` } : {}),
+          }
+        } catch (error) {
+          throw error
         }
-      } catch (error) {
-        // Do NOT delete previewRoot — keep generated-source.py + PPTX for debugging
-        throw error
-      }
+      })
     } catch (err) {
       return { success: false, error: formatExecutionFailure(err) }
     }

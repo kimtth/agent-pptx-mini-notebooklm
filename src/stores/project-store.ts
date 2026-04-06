@@ -11,6 +11,7 @@ import { usePaletteStore } from './palette-store';
 import { useDataSourcesStore } from './data-sources-store';
 import { useNotebookLMStore } from './notebooklm-store';
 import { DEFAULT_ICONIFY_COLLECTION } from '../domain/icons/iconify';
+import { applyThemeColorTreatment, applyThemeFontFamily } from '../application/palette-use-case';
 
 function normalizeLoadedSelectedImages(slide: PptAppProject['slidesWork']['slides'][number]) {
   if (Array.isArray(slide.selectedImages) && slide.selectedImages.length > 0) {
@@ -114,7 +115,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   buildSnapshot(): PptAppProject {
     const { work } = useSlidesStore.getState();
     const { messages } = useChatStore.getState();
-    const { seeds, colors, slots, tokens, themeName, selectedFont, selectedIconCollection } = usePaletteStore.getState();
+    const { seeds, colors, slots, tokens, themeName, selectedFont, selectedColorTreatment, selectedIconCollection } = usePaletteStore.getState();
     const { files, urls } = useDataSourcesStore.getState();
     const { enabled: nlmEnabled, infographicPaths } = useNotebookLMStore.getState();
     const { workspaceDir } = get();
@@ -126,7 +127,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       title: work.title || 'Untitled',
       slidesWork: work,
       chatMessages: messages,
-      palette: { seeds, colors, slots, tokens, themeName, selectedFont, selectedIconCollection, styleTone: usePaletteStore.getState().styleTone },
+      palette: { seeds, colors, slots, tokens, themeName, selectedFont, selectedColorTreatment, selectedIconCollection, styleTone: usePaletteStore.getState().styleTone },
       dataSources: { files, urls },
       notebookLM: { enabled: nlmEnabled, infographicPaths },
     };
@@ -161,15 +162,21 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
 
     // Restore palette store
+    const selectedFont = data.palette.selectedFont ?? 'Calibri';
+    const selectedColorTreatment = data.palette.selectedColorTreatment ?? 'solid';
     usePaletteStore.setState({
       seeds: data.palette.seeds,
       colors: data.palette.colors,
       slots: data.palette.slots,
-      tokens: data.palette.tokens,
+      tokens: applyThemeColorTreatment(
+        applyThemeFontFamily(data.palette.tokens, selectedFont),
+        selectedColorTreatment,
+      ),
       themeName: data.palette.themeName,
-      selectedFont: (data.palette as Record<string, unknown>).selectedFont as string ?? 'Calibri',
+      selectedFont,
+      selectedColorTreatment,
       selectedIconCollection: data.palette.selectedIconCollection ?? DEFAULT_ICONIFY_COLLECTION,
-      styleTone: (data.palette as Record<string, unknown>).styleTone as 'dark' | 'light' | null ?? null,
+      styleTone: data.palette.styleTone ?? null,
     });
 
     // Restore data sources store

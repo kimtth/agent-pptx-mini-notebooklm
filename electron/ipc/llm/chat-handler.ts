@@ -493,7 +493,8 @@ async function buildPrompt(
   if (workspace.theme) {
     parts.push('## Active Theme Palette\n');
     parts.push(`Theme name: ${workspace.theme.name}`);
-    parts.push(`Font family: ${workspace.theme.fontFamily || 'Calibri'} (use PPTX_FONT_FAMILY variable or resolve_font(); CJK auto-falls back to Noto Sans)`);
+    parts.push(`Font family: ${workspace.theme.fontFamily || 'Calibri'} (this is the ONLY font for the deck. Set run.font.name = PPTX_FONT_FAMILY on every text run. PowerPoint handles glyph substitution for non-Latin scripts automatically. Do NOT introduce any other font families in generated code.)`);
+    parts.push(`Color treatment: ${workspace.theme.colorTreatment || 'solid'} (${workspace.theme.colorTreatment === 'gradient' ? 'Prefer gradient fills on large cards, ribbons, and background panels.' : 'Prefer solid fills unless the chosen design style explicitly needs a gradient accent.'})`);
     const slots = workspace.theme.slots;
     parts.push(`OOXML slots: dk1=#${slots.dk1}, lt1=#${slots.lt1}, dk2=#${slots.dk2}, lt2=#${slots.lt2}, accent1=#${slots.accent1}, accent2=#${slots.accent2}, accent3=#${slots.accent3}, accent4=#${slots.accent4}, accent5=#${slots.accent5}, accent6=#${slots.accent6}, hlink=#${slots.hlink}, folHlink=#${slots.folHlink}`);
     parts.push(`Semantic colors: PRIMARY=#${workspace.theme.C.PRIMARY}, SECONDARY=#${workspace.theme.C.SECONDARY}, BG=#${workspace.theme.C.BG}, TEXT=#${workspace.theme.C.TEXT}, ACCENT3=#${workspace.theme.C.ACCENT3}, ACCENT4=#${workspace.theme.C.ACCENT4}, ACCENT5=#${workspace.theme.C.ACCENT5}, ACCENT6=#${workspace.theme.C.ACCENT6}`);
@@ -598,10 +599,11 @@ async function buildChunkPrompt(
     '- fetch_icon(icon_id, color_hex) → path_or_None',
     '- safe_add_picture(shapes, path, left_emu, top_emu, width_emu, height_emu)  [first arg = slide.shapes]',
     '- ensure_contrast(fg_hex, bg_hex) → hex_str',
-    '- resolve_font(text, fallback) → font_name   (default fallback = PPTX_FONT_FAMILY)',
+    '- resolve_font(text, fallback) → PPTX_FONT_FAMILY   (always returns the base font — kept for backward compat)',
     '- apply_widescreen(prs) → prs',
     '- set_fill_transparency(shape, value)',
-    '- PRECOMPUTED_LAYOUT_SPECS, OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_FONT_FAMILY, WORKSPACE_DIR, IMAGES_DIR',
+    '- apply_gradient_fill(shape, color_stops, angle_degrees=0)',
+    '- PRECOMPUTED_LAYOUT_SPECS, OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_FONT_FAMILY, PPTX_COLOR_TREATMENT, WORKSPACE_DIR, IMAGES_DIR',
     'Do NOT invent helpers such as _txb, _rect, _oval, _shape, or any other shorthand.',
   ].join('\n');
 
@@ -744,7 +746,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
       let slideAssetsPromise: Promise<void> | null = null;
       const workflow = resolveWorkflow(message, workspace);
       if (mode === 'pptx' && workspace.slides.length > 0) {
-        layoutSpecsPromise = computeLayoutSpecs(workspace.slides)
+        layoutSpecsPromise = computeLayoutSpecs(workspace.slides, workspace.theme?.fontFamily)
           .then((result) => {
             if (result.success && result.specs) layoutSpecsJson = result.specs;
           })
@@ -858,7 +860,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         },
         handler: async (args: ScenarioPayload) => {
           win.webContents.send('chat:scenario', args);
-          computeLayoutSpecs(args.slides).catch((err) => {
+          computeLayoutSpecs(args.slides, workspace.theme?.fontFamily).catch((err) => {
             console.log('[chat] Failed to compute layout specs for storyboard (non-blocking):', err);
           });
           return { success: true, message: `Scenario "${args.title}" set with ${args.slides.length} slides.` };

@@ -91,6 +91,7 @@ export interface IpcChatAPI {
       iconProvider: 'iconify';
       iconCollection: IconifyCollectionId;
       availableIcons: string[];
+      includeImagesInLayout?: boolean;
       chunkSize?: number;
     },
   ): void;
@@ -218,6 +219,9 @@ export interface PptAppProject {
     slots: import('../entities/palette').ThemeSlots | null;
     tokens: import('../entities/palette').ThemeTokens | null;
     themeName: string;
+    selectedFont?: string;
+    selectedColorTreatment?: import('../entities/palette').ThemeColorTreatment;
+    styleTone?: 'dark' | 'light' | null;
     iconDir?: string | null;
     selectedIconCollection?: IconifyCollectionId;
   };

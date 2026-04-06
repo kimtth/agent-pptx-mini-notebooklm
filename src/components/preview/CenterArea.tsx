@@ -10,10 +10,11 @@ import { useChatStore } from '../../stores/chat-store'
 import { useProjectStore } from '../../stores/project-store'
 import { PptxPreviewCard } from './PptxPreviewCard.tsx'
 import { createAssistantMessage } from '../../application/chat-use-case'
+import { applyThemeColorTreatment, applyThemeFontFamily } from '../../application/palette-use-case'
 
 export function CenterArea() {
   const { work } = useSlidesStore()
-  const { tokens } = usePaletteStore()
+  const { tokens, selectedFont, selectedColorTreatment } = usePaletteStore()
   const { addMessage } = useChatStore()
   const { workspaceDir } = useProjectStore()
   const [selected, setSelected] = useState(0)
@@ -96,9 +97,13 @@ export function CenterArea() {
     setExporting(true)
     setExportError(null)
     try {
+      const effectiveTheme = applyThemeColorTreatment(
+        applyThemeFontFamily(tokens, selectedFont),
+        selectedColorTreatment,
+      )
       const result = await window.electronAPI.pptx.generate(
         work.pptxCode ?? '',
-        tokens,
+        effectiveTheme,
         work.title || 'presentation',
         undefined,
         undefined,

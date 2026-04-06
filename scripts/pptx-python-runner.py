@@ -55,159 +55,21 @@ if not ICON_CACHE_DIR:
         ICON_CACHE_DIR = os.path.normpath(_default_cache)
 
 # ---------------------------------------------------------------------------
-# Noto Sans font support for non-Latin scripts
+# Font resolution
 # ---------------------------------------------------------------------------
-
-# Map of script ranges → Noto Sans font family name
-_NOTO_FONT_MAP: list[tuple[str, list[tuple[int, int]]]] = [
-    ('Noto Sans JP', [(0x3040, 0x309F), (0x30A0, 0x30FF), (0x31F0, 0x31FF),   # Hiragana, Katakana
-                      (0x4E00, 0x9FFF), (0xFF65, 0xFF9F), (0xFF01, 0xFF60)]),  # CJK Unified (JP fallback)
-    ('Noto Sans KR', [(0xAC00, 0xD7AF), (0x1100, 0x11FF), (0x3130, 0x318F)]), # Hangul
-    ('Noto Sans SC', [(0x4E00, 0x9FFF),]),  # CJK Unified (SC fallback, lower priority than JP)
-    ('Noto Sans TC', [(0x4E00, 0x9FFF),]),  # CJK Unified (TC fallback)
-    ('Noto Sans Thai', [(0x0E00, 0x0E7F),]),
-    ('Noto Sans Arabic', [(0x0600, 0x06FF), (0x0750, 0x077F), (0xFB50, 0xFDFF)]),
-    ('Noto Sans Devanagari', [(0x0900, 0x097F),]),
-]
-
-# Google Fonts download URLs for the main Noto Sans variants needed for PPTX
-_NOTO_FONT_URLS: dict[str, str] = {
-    'Noto Sans JP': 'https://github.com/notofonts/noto-cjk/releases/download/Sans2.005/08_NotoSansJP.zip',
-    'Noto Sans KR': 'https://github.com/notofonts/noto-cjk/releases/download/Sans2.005/09_NotoSansKR.zip',
-    'Noto Sans SC': 'https://github.com/notofonts/noto-cjk/releases/download/Sans2.005/10_NotoSansSC.zip',
-    'Noto Sans TC': 'https://github.com/notofonts/noto-cjk/releases/download/Sans2.005/11_NotoSansTC.zip',
-}
-
-_WINDOWS_USER_FONTS = Path(os.environ.get('LOCALAPPDATA', '')) / 'Microsoft' / 'Windows' / 'Fonts'
-_SYSTEM_FONTS = Path(r'C:\Windows\Fonts') if sys.platform == 'win32' else Path('/usr/share/fonts')
-
-
-def _font_installed(family: str) -> bool:
-    """Check whether a font family has a .ttf/.otf file in system or user fonts."""
-    slug = family.replace(' ', '')
-    patterns = [slug.lower(), family.lower().replace(' ', '')]
-
-    search_dirs: list[Path] = []
-    if sys.platform == 'win32':
-        search_dirs.append(_SYSTEM_FONTS)
-        if _WINDOWS_USER_FONTS.is_dir():
-            search_dirs.append(_WINDOWS_USER_FONTS)
-    else:
-        search_dirs.append(_SYSTEM_FONTS)
-
-    for d in search_dirs:
-        if not d.is_dir():
-            continue
-        for f in d.iterdir():
-            name_lower = f.name.lower()
-            if any(p in name_lower for p in patterns) and name_lower.endswith(('.ttf', '.otf')):
-                return True
-    return False
-
-
-def _install_font_windows(ttf_path: Path) -> None:
-    """Install a font file to the Windows per-user font directory."""
-    _WINDOWS_USER_FONTS.mkdir(parents=True, exist_ok=True)
-    dest = _WINDOWS_USER_FONTS / ttf_path.name
-    if dest.exists():
-        return
-    import shutil
-    shutil.copy2(ttf_path, dest)
-
-    # Register in the Windows registry for the current user
-    try:
-        import winreg
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts',
-            0,
-            winreg.KEY_SET_VALUE,
-        )
-        font_name = ttf_path.stem.replace('-', ' ')
-        winreg.SetValueEx(key, f'{font_name} (TrueType)', 0, winreg.REG_SZ, str(dest))
-        winreg.CloseKey(key)
-    except Exception:
-        pass  # Font file is copied — registry is optional for python-pptx
-
-
-def _download_and_install_noto(family: str, fonts_cache_dir: Path) -> bool:
-    """Download a Noto Sans font family and install it. Returns True on success."""
-    url = _NOTO_FONT_URLS.get(family)
-    if not url:
-        return False
-
-    family_dir = fonts_cache_dir / family.replace(' ', '')
-    if family_dir.is_dir() and any(family_dir.glob('*.ttf')):
-        # Already cached — just ensure installed
-        for ttf in family_dir.glob('*.ttf'):
-            if sys.platform == 'win32':
-                _install_font_windows(ttf)
-            return True
-        return True
-
-    print(f'[font] Downloading {family}...', file=sys.stderr)
-    import urllib.request
-    import tempfile
-    import zipfile
-    try:
-        zip_path = os.path.join(tempfile.gettempdir(), f'{family.replace(" ", "")}.zip')
-        urllib.request.urlretrieve(url, zip_path)
-
-        family_dir.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(zip_path, 'r') as zf:
-            for member in zf.namelist():
-                # Only extract Regular weight .ttf (keep it simple)
-                basename = os.path.basename(member)
-                if not basename.endswith('.ttf'):
-                    continue
-                lower = basename.lower()
-                if 'regular' in lower or 'medium' in lower or 'bold' in lower:
-                    target = family_dir / basename
-                    with zf.open(member) as src, open(target, 'wb') as dst:
-                        dst.write(src.read())
-                    if sys.platform == 'win32':
-                        _install_font_windows(target)
-
-        os.unlink(zip_path)
-        print(f'[font] Installed {family}', file=sys.stderr)
-        return True
-    except Exception as exc:
-        print(f'[font] Failed to download {family}: {exc}', file=sys.stderr)
-        return False
-
-
-def ensure_noto_fonts(text: str, fonts_cache_dir: str = '') -> None:
-    """Ensure that appropriate Noto Sans fonts are available for the given text."""
-    needed: set[str] = set()
-    for ch in text:
-        cp = ord(ch)
-        for family, ranges in _NOTO_FONT_MAP:
-            if any(lo <= cp <= hi for lo, hi in ranges):
-                needed.add(family)
-                break
-
-    if not needed:
-        return
-
-    cache_dir = Path(fonts_cache_dir) if fonts_cache_dir else Path(os.environ.get('WORKSPACE_DIR', '.')) / 'fonts'
-
-    for family in needed:
-        if _font_installed(family):
-            continue
-        _download_and_install_noto(family, cache_dir)
+# The user selects a font from the system font list in the palette UI.
+# resolve_font() always returns that font unchanged — PowerPoint handles
+# glyph substitution for missing characters at render time.
+# ---------------------------------------------------------------------------
 
 
 def resolve_font(text: str, base_font: str = 'Calibri') -> str:
-    """Return the best font for the given text content.
+    """Return *base_font* unchanged.
 
-    If the text contains CJK/non-Latin characters, returns the appropriate
-    Noto Sans variant. Otherwise returns the base font unchanged.
+    PowerPoint handles font fallback for missing glyphs (e.g. CJK characters
+    in a Latin-only font) at render time.  We never substitute fonts at the
+    python-pptx level.
     """
-    for ch in text:
-        cp = ord(ch)
-        for family, ranges in _NOTO_FONT_MAP:
-            if any(lo <= cp <= hi for lo, hi in ranges):
-                return family
     return base_font
 
 
@@ -721,6 +583,7 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
     theme = _load_theme()
     title = os.environ.get('PPTX_TITLE', 'Presentation')
     base_font_family = os.environ.get('PPTX_FONT_FAMILY', 'Calibri')
+    color_treatment = (os.environ.get('PPTX_COLOR_TREATMENT', 'solid') or 'solid').strip().lower()
     if not workspace_dir:
         workspace_dir = os.environ.get('WORKSPACE_DIR', '')
     images_dir = os.path.join(workspace_dir, 'images') if workspace_dir else ''
@@ -793,10 +656,11 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
         'slide_icon_collection': slide_icon_collection,
         'resolve_font': lambda text, base_font=base_font_family: resolve_font(text, base_font),
         'PPTX_FONT_FAMILY': base_font_family,
-        'ensure_noto_fonts': ensure_noto_fonts,
+        'PPTX_COLOR_TREATMENT': 'gradient' if color_treatment == 'gradient' else 'solid',
         'contrast_ratio': contrast_ratio,
         'ensure_contrast': ensure_contrast,
         'set_fill_transparency': set_fill_transparency,
+        'apply_gradient_fill': apply_gradient_fill,
         # Chart / data-visualisation
         'matplotlib': matplotlib,
         'plt': plt,
@@ -971,14 +835,119 @@ def _shrink_text_frame_fonts(shape, scale: float) -> bool:
     return changed
 
 
+def _get_powerpnt_pids() -> set[int]:
+    """Return the set of POWERPNT.EXE PIDs currently running."""
+    import subprocess as _sp
+    try:
+        r = _sp.run(
+            ['tasklist', '/FI', 'IMAGENAME eq POWERPNT.EXE', '/FO', 'CSV', '/NH'],
+            capture_output=True, text=True, timeout=5,
+        )
+        pids: set[int] = set()
+        for line in r.stdout.strip().splitlines():
+            parts = line.replace('"', '').split(',')
+            if len(parts) >= 2 and parts[1].strip().isdigit():
+                pids.add(int(parts[1].strip()))
+        return pids
+    except Exception:
+        return set()
+
+
+def _detect_new_powerpnt_pids(before: set[int], timeout_s: float = 2.0) -> set[int]:
+    """Poll for newly spawned POWERPNT.EXE processes for a short window."""
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        after = _get_powerpnt_pids()
+        delta = after - before
+        if delta:
+            return delta
+        time.sleep(0.2)
+    return _get_powerpnt_pids() - before
+
+
+def _count_open_presentations(pp) -> int | None:
+    """Return the current PowerPoint presentation count when available."""
+    try:
+        presentations = getattr(pp, 'Presentations', None)
+        count = getattr(presentations, 'Count', None)
+        if count is None:
+            return None
+        return int(count)
+    except Exception:
+        return None
+
+
+def _create_powerpoint_com() -> tuple[object, dict[str, object]]:
+    """Create a PowerPoint COM app and track whether it is safe to quit it.
+
+    Safety rule: DispatchEx always creates a new isolated COM instance, so
+    if we detected a new POWERPNT.EXE PID it is definitively ours — safe to
+    Quit regardless of what other PowerPoint processes were already running.
+    When no new PID was detected (DispatchEx may have piggybacked on an
+    existing process), we must NOT quit because it could affect user sessions.
+    """
+    import win32com.client  # type: ignore
+
+    before = _get_powerpnt_pids()
+    pp = win32com.client.DispatchEx('PowerPoint.Application')
+    pp.Visible = 1
+    owned_pids = _detect_new_powerpnt_pids(before)
+    presentations_before = _count_open_presentations(pp)
+    safe_to_quit = bool(owned_pids)
+    print(
+        '[powerpoint-com] created app '
+        f'safe_to_quit={safe_to_quit} before_pids={sorted(before)} '
+        f'owned_pids={sorted(owned_pids)} presentations={presentations_before}',
+        file=sys.stderr,
+    )
+    return pp, {
+        'before_pids': before,
+        'owned_pids': owned_pids,
+        'safe_to_quit': safe_to_quit,
+        'presentations_before': presentations_before,
+    }
+
+
+def _quit_powerpoint_com(pp, ownership: dict[str, object] | None = None) -> None:
+    """Quit a PowerPoint COM app only when we can prove we created it.
+
+    Safe to quit when ``owned_pids`` is non-empty — that means DispatchEx
+    spawned a new POWERPNT.EXE process that belongs to us.  When the set is
+    empty, DispatchEx may have piggybacked on a user-visible session so we
+    must leave the application running.
+    """
+    if pp is not None:
+        safe = bool((ownership or {}).get('safe_to_quit'))
+        owned_pids = (ownership or {}).get('owned_pids')
+        if safe:
+            try:
+                pp.Quit()
+                print(
+                    f'[powerpoint-com] quit owned app owned_pids={sorted(owned_pids or [])}',
+                    file=sys.stderr,
+                )
+                return
+            except Exception as exc:
+                print(f'[powerpoint-com] quit failed, leaving app running: {exc}', file=sys.stderr)
+                return
+        print(
+            '[powerpoint-com] skip quit — no owned PID detected (DispatchEx may have reused existing process)',
+            file=sys.stderr,
+        )
+
+
 def _collect_com_overflows(output_path: Path) -> list[dict[str, object]] | None:
     """Return COM-measured overflow metadata, or None if COM is unavailable."""
     if sys.platform != 'win32':
         return None
     try:
+        import importlib.util
         import pythoncom  # type: ignore
-        import win32com.client  # type: ignore
     except ImportError:
+        return None
+    if importlib.util.find_spec('win32com.client') is None:
         return None
 
     abs_path = str(output_path.resolve())
@@ -987,10 +956,10 @@ def _collect_com_overflows(output_path: Path) -> list[dict[str, object]] | None:
     pythoncom.CoInitialize()
     ppt = None
     prs_com = None
+    ppt_ownership: dict[str, object] = {}
 
     try:
-        ppt = win32com.client.DispatchEx('PowerPoint.Application')
-        ppt.Visible = 1  # Required for layout engine to compute correctly
+        ppt, ppt_ownership = _create_powerpoint_com()
         prs_com = ppt.Presentations.Open(
             abs_path, ReadOnly=0, Untitled=0, WithWindow=0,
         )
@@ -1053,11 +1022,7 @@ def _collect_com_overflows(output_path: Path) -> list[dict[str, object]] | None:
                 prs_com.Close()
             except Exception:
                 pass
-        if ppt is not None:
-            try:
-                ppt.Quit()
-            except Exception:
-                pass
+        _quit_powerpoint_com(ppt, ppt_ownership)
         pythoncom.CoUninitialize()
 
     return overflows
@@ -1196,6 +1161,41 @@ def set_fill_transparency(shape, value: float) -> None:
         opacity_val = str(int((1.0 - value) * 100000))
         alpha_el = etree.SubElement(color_el, f'{{{ns}}}alpha')
         alpha_el.set('val', opacity_val)
+
+
+def apply_gradient_fill(shape, color_stops: list[str], angle_degrees: float = 0.0) -> None:
+    """Apply a linear gradient fill using DrawingML XML."""
+    from lxml import etree
+
+    stops = [str(color).replace('#', '').strip().upper() for color in color_stops if str(color).strip()]
+    stops = [color for color in stops if re.fullmatch(r'[0-9A-F]{6}', color)]
+    if len(stops) < 2:
+        raise ValueError('apply_gradient_fill requires at least two valid hex color stops.')
+
+    ns = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+    sp_pr = getattr(shape._element, 'spPr', None)
+    if sp_pr is None:
+        raise ValueError('Shape does not support fill properties.')
+
+    for fill_tag in ('solidFill', 'gradFill', 'pattFill', 'blipFill', 'grpFill', 'noFill'):
+        for existing in list(sp_pr.findall(f'{{{ns}}}{fill_tag}')):
+            sp_pr.remove(existing)
+
+    grad_fill = etree.SubElement(sp_pr, f'{{{ns}}}gradFill')
+    grad_fill.set('rotWithShape', '1')
+    gs_list = etree.SubElement(grad_fill, f'{{{ns}}}gsLst')
+
+    stop_count = len(stops) - 1
+    for index, color in enumerate(stops):
+        position = 0 if stop_count == 0 else int(round(index * 100000 / stop_count))
+        gradient_stop = etree.SubElement(gs_list, f'{{{ns}}}gs')
+        gradient_stop.set('pos', str(position))
+        srgb = etree.SubElement(gradient_stop, f'{{{ns}}}srgbClr')
+        srgb.set('val', color)
+
+    linear = etree.SubElement(grad_fill, f'{{{ns}}}lin')
+    linear.set('ang', str(int(round((angle_degrees % 360) * 60000))))
+    linear.set('scaled', '1')
 
 
 def _get_run_color_hex(run, para) -> str | None:
@@ -1426,10 +1426,12 @@ def render_preview_images(output_path: Path, render_dir: Path) -> None:
         raise RuntimeError('Local slide preview rendering is only supported on Windows.')
 
     try:
+        import importlib.util
         import pythoncom  # type: ignore
-        import win32com.client  # type: ignore
     except ImportError as exc:
         raise RuntimeError('pywin32 is required for local PPTX preview rendering on Windows.') from exc
+    if importlib.util.find_spec('win32com.client') is None:
+        raise RuntimeError('pywin32 is required for local PPTX preview rendering on Windows.')
 
     render_dir.mkdir(parents=True, exist_ok=True)
     # Only remove old preview images; preserve generated-source.py and .pptx files
@@ -1440,24 +1442,20 @@ def render_preview_images(output_path: Path, render_dir: Path) -> None:
     pythoncom.CoInitialize()
     powerpoint = None
     presentation = None
+    pp_ownership: dict[str, object] = {}
     try:
-        powerpoint = win32com.client.DispatchEx('PowerPoint.Application')
-        powerpoint.Visible = 1
+        powerpoint, pp_ownership = _create_powerpoint_com()
         presentation = powerpoint.Presentations.Open(str(output_path), WithWindow=False, ReadOnly=True)
         presentation.Export(str(render_dir), 'PNG', 1280, 720)
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError('Microsoft PowerPoint is required to render local preview images.') from exc
     finally:
         if presentation is not None:
-            presentation.Close()
-        if powerpoint is not None:
-            # Only quit if no other presentations are open — avoids
-            # killing the user's existing PowerPoint editing sessions.
             try:
-                if powerpoint.Presentations.Count == 0:
-                    powerpoint.Quit()
+                presentation.Close()
             except Exception:
                 pass
+        _quit_powerpoint_com(powerpoint, pp_ownership)
         pythoncom.CoUninitialize()
 
 
@@ -1563,13 +1561,6 @@ def main() -> int:
 
         output_path = _unlock_or_rename(output_path)
         namespace = build_namespace(generated_path, output_path, workspace_dir=workspace_dir)
-
-        # Pre-download Noto Sans fonts for any non-Latin text in the generated code
-        try:
-            code_text = generated_path.read_text(encoding='utf-8')
-            ensure_noto_fonts(code_text, os.environ.get('WORKSPACE_DIR', ''))
-        except Exception as exc:  # noqa: BLE001
-            print(f'[font] Font pre-check failed (non-blocking): {exc}', file=sys.stderr)
 
         with _enforce_save_path(output_path):
             run_generated_code(generated_path, namespace)

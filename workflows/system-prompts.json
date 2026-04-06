@@ -24,11 +24,12 @@
           "fetch_icon(icon_id, color_hex) → path_or_None",
           "safe_add_picture(shapes, path, left_emu, top_emu, width_emu, height_emu) → Picture  [first arg MUST be slide.shapes]",
           "ensure_contrast(fg_hex, bg_hex) → hex_str",
-          "resolve_font(text, fallback_name) → font_name_str  (default fallback = PPTX_FONT_FAMILY)",
+          "resolve_font(text, fallback_name) → font_name_str  (always returns PPTX_FONT_FAMILY — kept for backward compatibility)",
+          "apply_gradient_fill(shape, color_stops, angle_degrees=0) → None",
           "apply_widescreen(prs) → prs",
           "set_fill_transparency(shape, value_0_to_1) → None",
           "PRECOMPUTED_LAYOUT_SPECS: list[LayoutSpec] — indexed from 0 for this chunk's first slide",
-          "OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_FONT_FAMILY, WORKSPACE_DIR, IMAGES_DIR, ICON_CACHE_DIR — pre-set string constants",
+          "OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_FONT_FAMILY, PPTX_COLOR_TREATMENT, WORKSPACE_DIR, IMAGES_DIR, ICON_CACHE_DIR — pre-set string constants",
           "Do NOT invent helper names like _txb, _rect, _oval, _shape, _memphis, or any other shorthand."
         ]
       },
@@ -54,6 +55,7 @@
         "title": "COLOR RULES",
         "items": [
           "Readability is mandatory. Use PPTX_THEME colors as the ONLY color source. When a palette is active, its colors override ALL colors from the design style spec — do NOT use hardcoded hex values from any style reference. Prefer theme slots and semantic theme colors over arbitrary RGB values. When setting text on any colored fill, glass panel, slide background, or image background, ALWAYS use ensure_contrast(fg_hex, bg_hex) — this includes text placed directly on the slide background. Never place dark text on a dark background or light text on a light background. If a decorative color choice reduces readability, discard it.",
+          "When PPTX_COLOR_TREATMENT is 'gradient', prefer gradient fills for hero panels, ribbons, callout cards, and large background shapes. Use apply_gradient_fill(shape, [PPTX_THEME['ACCENT1'], PPTX_THEME['ACCENT3']], angle_degrees=35) or similar 2-3 stop gradients built only from theme colors. Avoid rainbow gradients and avoid gradients on dense text boxes where readability would suffer.",
           "For translucent fills, use the runtime helper set_fill_transparency(shape, value). Do not access shape.fill._fill or call XML methods on fill proxy objects. If OOXML edits are necessary, traverse shape._element.spPr / shape._element.findall(...)."
         ]
       },
@@ -73,7 +75,7 @@
       {
         "title": "FONT RULES",
         "items": [
-          "For non-English text (Japanese, Korean, Chinese, Thai, Arabic, etc.), use resolve_font(text) to select the correct Noto Sans variant. The default base font is PPTX_FONT_FAMILY (user-selected). Example: run.font.name = resolve_font(slide_title). For Latin text use PPTX_FONT_FAMILY directly: run.font.name = PPTX_FONT_FAMILY. Never hardcode Calibri or other font names — resolve_font() handles script detection automatically and Noto Sans fonts are auto-downloaded if not installed."
+          "Always use PPTX_FONT_FAMILY for all text — Latin and non-Latin alike. Set run.font.name = PPTX_FONT_FAMILY on every text run. PowerPoint handles glyph substitution for scripts the font does not cover (e.g. CJK in a Latin font). Never hardcode Calibri, Aptos, Arial, or any other font family. Do not create title/body font pairings. The deck must use one base font only: PPTX_FONT_FAMILY."
         ]
       },
       {

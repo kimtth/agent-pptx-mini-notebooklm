@@ -7,6 +7,8 @@ export interface PaletteColor {
   hex: string;
 }
 
+export type ThemeColorTreatment = 'solid' | 'gradient';
+
 /** 12 OOXML theme color slots */
 export interface ThemeSlots {
   dk1: string;
@@ -27,6 +29,7 @@ export interface ThemeSlots {
 export interface ThemeTokens {
   name: string;
   fontFamily?: string;
+  colorTreatment?: ThemeColorTreatment;
   slots: ThemeSlots;
   /** Flat map name→hex for dropdown rendering */
   colors: PaletteColor[];

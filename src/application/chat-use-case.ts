@@ -24,7 +24,7 @@ export interface WorkspaceContext {
   designStyle: DesignStyle | null;
   framework: FrameworkType | null;
   templateMeta: TemplateMeta | null;
-  pptxBuildError?: string | null;
+  pptxBuildError: string | null;
   theme: ThemeTokens | null;
   workflow: WorkflowConfig | null;
   dataSources: DataFile[];

@@ -12,6 +12,8 @@ import { usePaletteStore } from './stores/palette-store.ts'
 import { useProjectStore } from './stores/project-store.ts'
 import { useDataSourcesStore } from './stores/data-sources-store.ts'
 import { createAssistantMessage, createUserMessage, historyToIpc, extractPptxCodeBlock } from './application/chat-use-case.ts'
+import { applyThemeColorTreatment, applyThemeFontFamily } from './application/palette-use-case.ts'
+import type { WorkspaceContext } from './application/chat-use-case.ts'
 import { getAvailableIconChoices } from './domain/icons/iconify.ts'
 import { getWorkflowConfig } from './domain/workflows/workflow-config.ts'
 import type { FrameworkType } from './domain/entities/slide-work'
@@ -49,12 +51,12 @@ export default function App() {
     useSlidesStore.getState().setPptxBusy(true)
 
     const { work } = useSlidesStore.getState()
-    const { tokens, selectedIconCollection } = usePaletteStore.getState()
+    const { tokens, selectedFont, selectedColorTreatment, selectedIconCollection } = usePaletteStore.getState()
     const { files: dataSources, urls: urlSources } = useDataSourcesStore.getState()
     const availableIcons = getAvailableIconChoices(selectedIconCollection)
     const workflow = getWorkflowConfig('create-pptx')
 
-    window.electronAPI.chat.send(retryPrompt, historyToIpc([...useChatStore.getState().messages]), {
+    const workspaceContext: WorkspaceContext = {
       title: work.title,
       slides: work.slides,
       designBrief: work.designBrief,
@@ -62,7 +64,10 @@ export default function App() {
       framework: work.framework,
       templateMeta: work.templateMeta,
       pptxBuildError: errMsg,
-      theme: tokens,
+      theme: applyThemeColorTreatment(
+        applyThemeFontFamily(tokens, selectedFont),
+        selectedColorTreatment,
+      ),
       workflow,
       dataSources,
       urlSources,
@@ -70,7 +75,9 @@ export default function App() {
       iconCollection: selectedIconCollection,
       availableIcons,
       includeImagesInLayout: work.includeImagesInLayout,
-    })
+    }
+
+    window.electronAPI.chat.send(retryPrompt, historyToIpc([...useChatStore.getState().messages]), workspaceContext)
   }
 
   useEffect(() => {
@@ -131,7 +138,11 @@ export default function App() {
             useSlidesStore.getState().setPptxBuildError(null)
 
             // Auto-execute the generated code to produce PPTX + preview PNGs in workspace
-            const { tokens: paletteTokens, selectedIconCollection } = usePaletteStore.getState()
+            const { tokens, selectedFont, selectedColorTreatment, selectedIconCollection } = usePaletteStore.getState()
+            const paletteTokens = applyThemeColorTreatment(
+              applyThemeFontFamily(tokens, selectedFont),
+              selectedColorTreatment,
+            )
             const currentWork = useSlidesStore.getState().work
             const pptxTitle = currentWork.title || 'presentation'
             useChatStore.getState().addMessage(

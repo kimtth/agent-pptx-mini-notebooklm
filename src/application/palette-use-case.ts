@@ -3,7 +3,7 @@
  * Assembles ThemeTokens from slots + colors (renderer-side).
  */
 
-import type { PaletteColor, ThemeSlots, ThemeTokens } from '../domain/entities/palette';
+import type { PaletteColor, ThemeColorTreatment, ThemeSlots, ThemeTokens } from '../domain/entities/palette';
 
 export function buildThemeTokens(
   name: string,
@@ -33,6 +33,36 @@ export function buildThemeTokens(
     BORDER: isDark ? slots.dk2 : slots.lt2,
   };
   return { name, slots, colors, C };
+}
+
+export function applyThemeFontFamily(
+  tokens: ThemeTokens | null,
+  fontFamily?: string | null,
+): ThemeTokens | null {
+  if (!tokens) return null;
+  const nextFontFamily = fontFamily?.trim() || undefined;
+  if (tokens.fontFamily === nextFontFamily) {
+    return tokens;
+  }
+  return {
+    ...tokens,
+    fontFamily: nextFontFamily,
+  };
+}
+
+export function applyThemeColorTreatment(
+  tokens: ThemeTokens | null,
+  colorTreatment?: ThemeColorTreatment | null,
+): ThemeTokens | null {
+  if (!tokens) return null;
+  const nextColorTreatment = colorTreatment ?? 'solid';
+  if (tokens.colorTreatment === nextColorTreatment) {
+    return tokens;
+  }
+  return {
+    ...tokens,
+    colorTreatment: nextColorTreatment,
+  };
 }
 
 /** Parse `ColorName | #HEX` lines */
