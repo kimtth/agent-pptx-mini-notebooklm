@@ -43,9 +43,13 @@ When a design style specifies colors (backgrounds, accents, text) that conflict 
 | Eco / Wellness / Culture | Hand-crafted Organic, Nordic Minimalism, Dark Forest Nature |
 | IT Infrastructure / Architecture | Isometric 3D Flat, Cyberpunk Outline, Architectural Blueprint |
 | Portfolio / Art / Creative | Monochrome Minimal, Editorial Magazine, Risograph Print, Maximalist Collage |
-| Pitch Deck / Strategy | Neo-Brutalism, Duotone Split, Bento Grid, Art Deco Luxe |
+| Pitch Deck / Strategy | Neo-Brutalism, Duotone Split, Bento Grid, Art Deco Luxe, Editorial Split Hero, Diagonal Block Narrative |
 | Luxury / Events / Gala | Art Deco Luxe, Monochrome Minimal, Dark Academia |
 | Science / Biotech / Innovation | Liquid Blob, SciFi Holographic, Aurora Neon |
+| Business Reports / Dashboards | KPI Dashboard Strip, Swiss International, Geometric Proposal Grid |
+| Roadmaps / Process Plans | Process Timeline Ribbon, Bento Grid |
+| Executive Summary / Keynotes | Accent Monochrome Focus, Editorial Split Hero |
+| Creative / Brand Storytelling | Organic Editorial Canvas, Editorial Magazine, Maximalist Collage |
 
 ---
 
@@ -84,6 +88,18 @@ When a design style specifies colors (backgrounds, accents, text) that conflict 
 | 29 | SciFi Holographic Data | Hologram · HUD | AI, quantum, defense |
 | 30 | Risograph Print | CMYK · Indie | Publishing, art, music |
 
+### Template Motif Styles
+
+| # | Motif Name | Mood | Best For |
+|---|------------|------|----------|
+| M1 | Editorial Split Hero | Hero · Bold | Pitch decks, proposals, keynotes |
+| M2 | Diagonal Block Narrative | Directional · Energetic | Launch slides, campaigns |
+| M3 | KPI Dashboard Strip | Data · Compact | Reports, review decks |
+| M4 | Geometric Proposal Grid | Structured · Modular | Project proposals, plans |
+| M5 | Accent Monochrome Focus | Neutral · Emphasis | Executive summary, quotes |
+| M6 | Process Timeline Ribbon | Sequential · Connected | Roadmaps, phase plans |
+| M7 | Organic Editorial Canvas | Soft · Story | Creative briefs, lifestyle |
+
 ---
 
 ## Core Production Principles
@@ -96,5 +112,41 @@ When a design style specifies colors (backgrounds, accents, text) that conflict 
 - Repeat each style's **signature element** consistently across all slides
 - Match **font pairing** exactly as specified — typography drives 50% of the style impression
 - `references/styles.md` uses **theme token names** (`DARK`, `ACCENT1`, etc.) — not hardcoded HEX. Always resolve them via `PPTX_THEME` at runtime.
+
+## Reusable Card Pattern Mapping
+
+Use these micro-patterns across multiple styles when the content calls for cards. They are reusable layout treatments, not separate brand styles.
+
+| Pattern | Best Use | Core Move | Works Especially Well With |
+|---|---|---|---|
+| Icon Card | 2-4 strategic pillars, features, benefits | One prominent icon integrated into each card body | Bento Grid, Neo-Brutalism, Claymorphism, Pastel Soft UI, Isometric 3D Flat |
+| Header Icon Card | 3-6 compact categories, process steps, capability clusters | Slim top band with small icons and short heading | Swiss International, Editorial Magazine, Architectural Blueprint, Glassmorphism, Monochrome Minimal |
+
+Rules:
+
+- Prefer `Icon Card` when each card needs a strong single concept marker.
+- Prefer `Header Icon Card` when the card title and small symbolic cues should read before the body copy.
+- Do not treat these as separate styles in the selector. They are implementation patterns inside the chosen design style.
+
+## Reusable Template Motif Mapping
+
+In addition to the card-level patterns above, you can reuse broader presentation-template motifs that recur across external template libraries such as Canva, Slidesgo, and Visme. These are also implementation patterns, not selector entries.
+
+| Motif | Best Use | Core Move |
+|---|---|---|
+| Editorial Split Hero | Pitch decks, proposals, keynote openers | Narrow anchor column plus large hero stage for one dominant message |
+| Diagonal Block Narrative | Launch slides, campaign slides, strategic statements | Strong diagonal geometry creates directional energy and framing |
+| KPI Dashboard Strip | Reports, review decks, business updates | Compact summary ribbon above a modular metric or chart zone |
+| Geometric Proposal Grid | Project proposals, business plans, workstreams | Even tiles and disciplined gutters split scope into readable modules |
+| Accent Monochrome Focus | Executive summary, quote, single-point slides | Mostly neutral base with one saturated emphasis block |
+| Process Timeline Ribbon | Roadmaps, onboarding, phase plans | Connected markers on a ribbon or rail with explanation grouped below |
+| Organic Editorial Canvas | Creative briefs, brand storytelling, lifestyle decks | Soft neutral field with one image window and one organic accent mass |
+
+Rules:
+
+- Use these motifs to vary composition when multiple slides would otherwise feel structurally identical.
+- Combine a motif with a named design style only when the motif reinforces the style's tone rather than fighting it.
+- Prefer motifs for slide-level composition and card patterns for component-level treatment.
+- Do not present these motifs as new Brand Style selector options unless the product model itself is extended.
 
 For detailed color, font, and layout specs per style → **[references/styles.md](references/styles.md)**

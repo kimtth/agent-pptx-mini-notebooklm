@@ -58,6 +58,32 @@ All colors in this guide reference `PPTX_THEME` tokens — **never hardcoded hex
 
 ---
 
+## Reusable Layout Pattern Library
+
+These patterns are reusable card treatments that can be combined with many of the 30 styles below. They are not separate selector entries.
+
+### Icon Card
+
+- Use for: feature cards, strategic pillars, value propositions, 2-4 big ideas.
+- Structure: a clear card shell with one prominent icon placed inside the card body, then the title and supporting copy grouped beneath or beside it.
+- Visual rule: the icon should feel embedded in the card architecture, not pinned to the outer edge as a tiny badge.
+- Good style pairings: Bento Grid, Neo-Brutalism, Claymorphism, Isometric 3D Flat, Pastel Soft UI.
+
+### Header Icon Card
+
+- Use for: compact capability sets, process steps, team roles, structured comparisons.
+- Structure: a slim top header band containing one or more small icons and a short heading, with the body copy placed in a separate text block below.
+- Visual rule: keep the header icons small but intentional; the header should read as a designed band, not random stickers.
+- Good style pairings: Swiss International, Editorial Magazine, Architectural Blueprint, Glassmorphism, Monochrome Minimal.
+
+### Pattern Safety
+
+- Do not duplicate both patterns on the same slide unless there is a clear hierarchy.
+- If the body copy becomes dense, simplify the card pattern before shrinking fonts.
+- Always keep icon contrast strong against the card or header fill.
+
+---
+
 ## 01. Glassmorphism
 
 **Mood**: Premium, tech, futuristic  

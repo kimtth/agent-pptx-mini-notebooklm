@@ -218,6 +218,27 @@ tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE  # shrink text to fit fixed shape
 - Do not stack shapes at `y=0` or bunch everything in the top 2 inches of the slide.
 - No two content shapes should share overlapping `(x, x+w)` AND `(y, y+h)` ranges.
 - When using `notes_rect` from the spec, always create the notes text box with `name = "notes_body"` so the layout repair engine skips it.
+
+### Card Pattern Metadata
+
+When `spec.cards` exists, treat `spec.cards.pattern` as a rendering instruction for the card interior, not just a geometry hint.
+
+- `standard`: plain content cards, no extra chrome required.
+- `icon_card`: each card should include one strong icon integrated into the card body. Place the icon inside the card, usually near the top-left or centered in a dedicated icon block, at a size that reads as a primary visual anchor.
+- `header_icon_card`: each card should reserve a slim header band and place one or more small icons inside that header area. The icons are supporting accents, not the hero element.
+
+Use the metadata fields consistently:
+
+- `spec.cards.icon_size`: preferred icon size in inches for the card pattern.
+- `spec.cards.header_band_h`: reserved header band height for `header_icon_card`.
+- `spec.cards.header_icon_count`: target icon count for the header band. Use one icon for process cards and multiple small icons for richer summary cards.
+
+Pattern rules:
+
+- Do not place tiny decorative icons floating above the card edge. If the pattern is icon-based, the icon must feel structurally attached to the card.
+- For `icon_card`, keep the icon bold and the text block clearly separated below or beside it.
+- For `header_icon_card`, use a clean top band with small icons plus a short heading, then place body copy below the divider.
+- Preserve readability: the header band should not consume so much height that body text is forced below 14pt.
 - Do not place body/content shapes at Y positions that could overlap the notes zone (`spec.notes_rect.y` onwards). Reserve the bottom region.
 
 ### Layout Template System

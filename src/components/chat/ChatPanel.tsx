@@ -204,6 +204,7 @@ export function ChatPanel() {
       designBrief: work.designBrief,
       designStyle: work.designStyle,
       framework: work.framework,
+      customFrameworkPrompt: work.customFrameworkPrompt,
       templateMeta: work.templateMeta,
       pptxBuildError: work.pptxBuildError,
       theme: effectiveTheme,
@@ -229,8 +230,11 @@ export function ChatPanel() {
     let prompt = input.trim()
     if (!prompt) {
       const fw = useSlidesStore.getState().work.framework
+      const customFrameworkPrompt = useSlidesStore.getState().work.customFrameworkPrompt?.trim()
       prompt = fw
-        ? `Start the prestaging workflow now. The user has already chosen the "${fw}" business framework — apply it directly and do NOT ask the user to choose again. Understand the content and generate the preliminary slide scenario in the slide panel. Do not generate PPTX code in this step.`
+        ? fw === 'custom-prompt' && customFrameworkPrompt
+          ? `Start the prestaging workflow now. The user has already chosen a custom business framework. Apply this custom framework prompt directly: "${customFrameworkPrompt}". Do NOT ask the user to choose a framework again. Understand the content and generate the preliminary slide scenario in the slide panel. Do not generate PPTX code in this step.`
+          : `Start the prestaging workflow now. The user has already chosen the "${fw}" business framework — apply it directly and do NOT ask the user to choose again. Understand the content and generate the preliminary slide scenario in the slide panel. Do not generate PPTX code in this step.`
         : workflow.triggerPrompt
     }
     await sendMessage(prompt, { workflowId: workflow.id })

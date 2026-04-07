@@ -68,6 +68,7 @@ interface WorkspaceContext {
   designBrief: DesignBrief | null;
   designStyle: import('../../../src/domain/entities/slide-work').DesignStyle | null;
   framework: FrameworkType | null;
+  customFrameworkPrompt: string | null;
   templateMeta: TemplateMeta | null;
   pptxBuildError: string | null;
   theme: ThemeTokens | null;
@@ -400,6 +401,9 @@ async function buildPrompt(
     parts.push(`Images directory (absolute): ${path.join(workspaceAbsPath, 'images')}`);
     if (workspace.title) parts.push(`Presentation: "${workspace.title}"`);
     if (workspace.framework) parts.push(`Framework: ${workspace.framework}`);
+    if (workspace.framework === 'custom-prompt' && workspace.customFrameworkPrompt?.trim()) {
+      parts.push(`Custom framework prompt: ${workspace.customFrameworkPrompt.trim()}`);
+    }
     if (workspace.designStyle) parts.push(`Design style: ${workspace.designStyle}`);
     // Signal to the AI when a custom template is active
     const wsTemplatePath = path.join(workspaceAbsPath, 'template', 'template.pptx');
@@ -1052,8 +1056,11 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         workspaceAbsPath: string,
       ): LLMSessionConfig => {
         const workflowDirective = workflow?.agentDirective ?? '';
+        const hasCustomFrameworkPrompt = workspace.framework === 'custom-prompt' && !!workspace.customFrameworkPrompt?.trim();
         const storyFrameworkInstruction = frameworkAlreadySet
-          ? 'IMPORTANT: The user has already chosen a business framework — it is shown in the Current Workspace section. Apply it directly. Do NOT ask the user to choose a framework again or list framework options.'
+          ? hasCustomFrameworkPrompt
+            ? 'IMPORTANT: The user has already chosen a custom business framework. It is shown in the Current Workspace section under Custom framework prompt. Follow those instructions directly and do NOT ask the user to choose a framework again.'
+            : 'IMPORTANT: The user has already chosen a business framework — it is shown in the Current Workspace section. Apply it directly. Do NOT ask the user to choose a framework again or list framework options.'
           : 'When creating a presentation outline, the business framework is defined by the user. If the user has already specified a framework, apply it directly. If not, present the available options using suggest_framework and ask the user to choose before calling set_scenario.';
         const pptxSystemMessage = buildManagedSystemPrompt('pptx', {
           workflowDirective,

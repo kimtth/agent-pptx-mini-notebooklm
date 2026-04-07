@@ -21,11 +21,12 @@ const LAYOUT_BADGE: Record<string, string> = {
 }
 
 export function SlideNavigator() {
-  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework, setTemplatePath, setTemplateMeta, setIncludeImagesInLayout, reset } = useSlidesStore()
+  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework, setCustomFrameworkPrompt, setTemplatePath, setTemplateMeta, setIncludeImagesInLayout, reset } = useSlidesStore()
   const slides = work.slides
   const selectedFramework = getFrameworkMeta(work.framework)
   const selectedStyle = getDesignStyleMeta(work.designStyle)
   const isCustomTemplate = work.designStyle === 'Custom Template'
+  const isCustomFramework = work.framework === 'custom-prompt'
   const [templateLoading, setTemplateLoading] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
 
@@ -110,11 +111,39 @@ export function SlideNavigator() {
           <p className="text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
             {selectedFramework?.description ?? 'Choose a structure for the story so slide recommendations follow a consistent business logic.'}
           </p>
+          {isCustomFramework && (
+            <div className="mt-1 flex flex-col gap-1.5 border p-2" style={{ borderColor: 'var(--panel-border)', background: 'var(--surface-hover)' }}>
+              <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                Custom Prompt
+              </label>
+              <textarea
+                value={work.customFrameworkPrompt ?? ''}
+                onChange={(e) => setCustomFrameworkPrompt(e.target.value)}
+                placeholder="Example: Structure the deck as problem, root cause, strategic options, recommendation, implementation roadmap, and decision asks. Keep titles conclusion-first and executive in tone."
+                className="min-h-24 resize-y border px-2 py-2 text-xs leading-5 outline-none"
+                style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
+              />
+              <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                Write the exact story logic or slide-writing rules you want the agent to follow.
+              </p>
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-            Brand Style
-          </label>
+          <div className="flex items-center justify-between gap-2">
+            <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+              Brand Style
+            </label>
+            <button
+              type="button"
+              onClick={() => { void window.electronAPI.project.openBrandStyleSamples() }}
+              className="text-[10px] font-semibold uppercase tracking-[0.18em] transition-opacity hover:opacity-100"
+              style={{ color: 'var(--accent)', opacity: 0.82 }}
+              title="Open Brand Style samples"
+            >
+              Samples
+            </button>
+          </div>
           <select
             value={work.designStyle ?? ''}
             onChange={(e) => {
@@ -130,11 +159,18 @@ export function SlideNavigator() {
             style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
           >
             <option value="">Select a brand style</option>
-            {DESIGN_STYLE_OPTIONS.map((style) => (
-              <option key={style.value} value={style.value}>
-                {style.tone === 'dark' ? '🌙 ' : style.tone === 'light' ? '☀️ ' : ''}{style.label}
-              </option>
-            ))}
+            {(() => {
+              const categories = [...new Set(DESIGN_STYLE_OPTIONS.map((s) => s.category))]
+              return categories.map((cat) => (
+                <optgroup key={cat} label={cat}>
+                  {DESIGN_STYLE_OPTIONS.filter((s) => s.category === cat).map((style) => (
+                    <option key={style.value} value={style.value}>
+                      {style.tone === 'dark' ? '🌙 ' : style.tone === 'light' ? '☀️ ' : ''}{style.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))
+            })()}
           </select>
           <p className="text-[11px] leading-4" style={{ color: 'var(--text-muted)' }}>
             {selectedStyle

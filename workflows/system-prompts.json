@@ -40,6 +40,7 @@
           "Do not reconstruct layout input arrays or slide structure metadata inline from duplicated constants. The workspace layout-input.json file is the source of truth for layout-driven content structure.",
           "Never use literal float coordinates for positioning. Every x, y, w, h must reference a spec.* field from PRECOMPUTED_LAYOUT_SPECS[slide_index] or be computed relative to one (e.g., spec.content_rect.y + idx * row_h).",
           "For slides with title, key message, and body content, use the sub-zone rects (spec.hero_rect, spec.chips_rect, spec.footer_rect, spec.sidebar_rect) from PRECOMPUTED_LAYOUT_SPECS instead of hardcoded coordinates.",
+          "When spec.cards is present, inspect spec.cards.pattern before drawing card interiors. 'icon_card' means each card should include one prominent icon integrated inside the card body using spec.cards.icon_size as the target scale. 'header_icon_card' means reserve a top header band using spec.cards.header_band_h and place one or more small icons in that band using spec.cards.header_icon_count as the target density.",
           "Always use PRECOMPUTED_LAYOUT_SPECS[slide_index] for layout coordinates.",
           "Prefer defining build_presentation(output_path, theme, title), and save the deck to output_path."
         ]
