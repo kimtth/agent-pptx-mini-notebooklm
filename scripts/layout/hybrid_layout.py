@@ -316,6 +316,10 @@ def _cards_to_dict(c) -> dict | None:
         'columns': c.columns, 'card_w': c.card_w, 'card_h': c.card_h,
         'start_x': c.start_x, 'start_y': c.start_y,
         'gap_x': c.gap_x, 'gap_y': c.gap_y,
+        'pattern': c.pattern,
+        'icon_size': c.icon_size,
+        'header_band_h': c.header_band_h,
+        'header_icon_count': c.header_icon_count,
     }
 
 
@@ -387,7 +391,14 @@ def layout_spec_from_dict(d: dict) -> LayoutSpec:
 
     cards = None
     if d.get('cards'):
-        cards = CardsSpec(**d['cards'])
+        cards_payload = {
+            'pattern': 'standard',
+            'icon_size': 0.0,
+            'header_band_h': 0.0,
+            'header_icon_count': 0,
+            **d['cards'],
+        }
+        cards = CardsSpec(**cards_payload)
     stats = None
     if d.get('stats'):
         stats = StatsSpec(**d['stats'])

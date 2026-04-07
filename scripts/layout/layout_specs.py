@@ -11,7 +11,7 @@ Usage in generated code:
 
     spec = PRECOMPUTED_LAYOUT_SPECS[slide_index]
     title = spec.title_rect          # RectSpec(x, y, w, h)
-    cards = spec.cards               # CardsSpec(columns, card_w, ...)
+    cards = spec.cards               # CardsSpec(columns, card_w, pattern, ...)
 """
 
 from __future__ import annotations
@@ -55,6 +55,10 @@ class CardsSpec:
     start_y: float
     gap_x: float
     gap_y: float
+    pattern: str = 'standard'
+    icon_size: float = 0.0
+    header_band_h: float = 0.0
+    header_icon_count: int = 0
 
     def card_rect(self, index: int) -> RectSpec:
         col = index % self.columns

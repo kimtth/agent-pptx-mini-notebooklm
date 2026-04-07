@@ -1,4 +1,4 @@
-export type WorkflowId = 'prestaging' | 'create-pptx'
+export type WorkflowId = 'prestaging' | 'create-pptx' | 'poststaging'
 
 export type WorkflowMode = 'story' | 'pptx'
 
@@ -51,6 +51,25 @@ export const WORKFLOW_CONFIGS: Record<WorkflowId, WorkflowConfig> = {
     ],
     agentDirective: 'Use this workflow for final PPTX creation only. Output the final python-pptx code block. If layout validation fails, use patch_layout_infrastructure and rerun_pptx to fix it.',
     triggerPrompt: 'Run the create PPTX workflow now. Use the approved slides, theme, icons, colors, and attached images. Generate the final python-pptx code block. If layout validation fails, use patch_layout_infrastructure to fix the layout specs and rerun_pptx to re-execute.',
+  },
+  poststaging: {
+    id: 'poststaging',
+    label: 'Post-Staging QA Workflow',
+    triggerLabel: 'Post-Stage QA',
+    mode: 'pptx',
+    instructionFile: 'poststaging.md',
+    summary: 'Automated QA pass after PPTX generation — checks contrast, missing icons/images, overlap, and text overflow.',
+    goal: 'Review the structured QA report from the PPTX pipeline and either confirm the deck is ready or drive a targeted corrective retry.',
+    steps: [
+      'Receive the structured QA report injected by the app after deck generation.',
+      'Classify each finding as blocking, actionable, or informational.',
+      'Present a concise per-slide QA summary to the user.',
+      'If blocking issues exist (missing images/icons, ERROR-level overlap/overflow), output corrective code or use patch_layout_infrastructure + rerun_pptx.',
+      'If only actionable contrast issues remain, regenerate affected slide code with explicit ensure_contrast() calls.',
+      'If all findings are clear, confirm the deck is ready.',
+    ],
+    agentDirective: 'Use this workflow for post-generation QA only. Inspect the QA report, summarize findings, and either confirm success or output a minimal corrective fix. Do not regenerate the entire deck — target only the affected slides.',
+    triggerPrompt: 'Run the post-staging QA workflow now. Review the QA report below for contrast violations, missing icons/images, layout overlaps, and text overflows. Summarize findings per slide, then either confirm the deck is ready or output the minimal corrective action needed.',
   },
 }
 

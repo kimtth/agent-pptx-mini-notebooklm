@@ -42,6 +42,7 @@ export default defineConfig({
   renderer: {
     root: '.',
     build: {
+      copyPublicDir: true,
       rollupOptions: {
         input: { index: path.resolve(__dirname, 'index.html') },
       },

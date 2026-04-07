@@ -7,6 +7,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   DesignStyle,
   SlideItem,
+  SlideLayout,
   SlideSelectedImage,
   SlideWork,
   ScenarioPayload,
@@ -57,8 +58,31 @@ function syncPrimaryImage(slide: SlideItem, selectedImages: SlideSelectedImage[]
 }
 
 function mapLayout(raw: string): SlideItem['layout'] {
-  const valid = ['title', 'agenda', 'section', 'bullets', 'cards', 'stats', 'comparison', 'timeline', 'diagram', 'summary', 'chart', 'closing', 'photo_fullbleed', 'multi_column'] as const;
-  return valid.includes(raw as SlideItem['layout']) ? (raw as SlideItem['layout']) : 'bullets';
+  const valid: readonly SlideLayout[] = [
+    'title',
+    'agenda',
+    'section',
+    'bullets',
+    'cards',
+    'stats',
+    'comparison',
+    'timeline',
+    'diagram',
+    'summary',
+    'chart',
+    'closing',
+    'photo_fullbleed',
+    'multi_column',
+    'content_caption',
+    'picture_caption',
+    'two_content',
+    'title_only',
+    'quote',
+    'big_number',
+    'process',
+    'pyramid',
+  ];
+  return valid.includes(raw as SlideLayout) ? (raw as SlideLayout) : 'bullets';
 }
 
 const ACCENT_CYCLE: SlideItem['accent'][] = ['blue', 'green', 'purple', 'teal', 'orange'];
@@ -74,6 +98,7 @@ interface SlidesStore {
   setIncludeImagesInLayout(v: boolean): void;
   setDesignStyle(style: DesignStyle | null): void;
   setFramework(fw: FrameworkType): void;
+  setCustomFrameworkPrompt(prompt: string | null): void;
   setTemplatePath(path: string | null): void;
   setTemplateMeta(meta: TemplateMeta | null): void;
   setStreaming(v: boolean): void;
@@ -95,6 +120,7 @@ const initial: SlideWork = {
   designBrief: null,
   designStyle: null,
   framework: null,
+  customFrameworkPrompt: null,
   templatePath: null,
   templateMeta: null,
   slides: [],
@@ -257,6 +283,12 @@ export const useSlidesStore = create<SlidesStore>()(persist(
   setFramework(fw) {
     set((state) => ({
       work: { ...state.work, framework: fw, phase: state.work.phase === 'empty' ? 'planning' : state.work.phase },
+    }));
+  },
+
+  setCustomFrameworkPrompt(customFrameworkPrompt) {
+    set((state) => ({
+      work: { ...state.work, customFrameworkPrompt, phase: state.work.phase === 'empty' ? 'planning' : state.work.phase },
     }));
   },
 

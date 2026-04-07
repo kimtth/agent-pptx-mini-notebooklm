@@ -23,6 +23,7 @@ export interface WorkspaceContext {
   designBrief: DesignBrief | null;
   designStyle: DesignStyle | null;
   framework: FrameworkType | null;
+  customFrameworkPrompt: string | null;
   templateMeta: TemplateMeta | null;
   pptxBuildError: string | null;
   theme: ThemeTokens | null;

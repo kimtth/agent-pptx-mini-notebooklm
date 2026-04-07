@@ -104,7 +104,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     save: (projectData: unknown, suggestedName: string) =>
       ipcRenderer.invoke('project:save', projectData, suggestedName),
     load: () => ipcRenderer.invoke('project:load'),
-      listWorkspaceFiles: () => ipcRenderer.invoke('project:listWorkspaceFiles'),
+    listWorkspaceFiles: () => ipcRenderer.invoke('project:listWorkspaceFiles'),
+    openBrandStyleSamples: () => ipcRenderer.invoke('project:openBrandStyleSamples'),
   },
 
   notebooklm: {

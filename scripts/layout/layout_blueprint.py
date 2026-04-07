@@ -89,6 +89,10 @@ class CardsVariant:
     columns: int = 2
     gap_x: float = 0.32
     gap_y: float = 0.28
+    pattern: str = 'standard'
+    icon_size: float = 0.0
+    header_band_h: float = 0.0
+    header_icon_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -205,7 +209,7 @@ _CARDS_BLUEPRINT = LayoutBlueprint(
     layout_type='cards',
     zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
     icon_size=2.1,
-    cards=CardsVariant(columns=2, gap_x=0.32, gap_y=0.28),
+    cards=CardsVariant(columns=2, gap_x=0.32, gap_y=0.28, pattern='icon_card', icon_size=0.56),
 )
 
 # -- stats ------------------------------------------------------------------
@@ -295,7 +299,7 @@ _MULTI_COLUMN_BLUEPRINT = LayoutBlueprint(
     layout_type='multi_column',
     zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
     icon_size=1.6,
-    cards=CardsVariant(columns=3, gap_x=0.30, gap_y=0.25),
+    cards=CardsVariant(columns=3, gap_x=0.30, gap_y=0.25, pattern='header_icon_card', icon_size=0.18, header_band_h=0.34, header_icon_count=3),
 )
 
 
@@ -391,7 +395,7 @@ _PROCESS_BLUEPRINT = LayoutBlueprint(
     layout_type='process',
     zones=(*_standard_header(), _ZONE_CONTENT, _ZONE_NOTES),
     icon_size=1.6,
-    cards=CardsVariant(columns=4, gap_x=0.30, gap_y=0.25),
+    cards=CardsVariant(columns=4, gap_x=0.30, gap_y=0.25, pattern='header_icon_card', icon_size=0.18, header_band_h=0.30, header_icon_count=1),
 )
 
 # -- pyramid (funnel / pyramid visualisation) --------------------------------

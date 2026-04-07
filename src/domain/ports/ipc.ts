@@ -82,6 +82,7 @@ export interface IpcChatAPI {
       designBrief: import('../entities/slide-work').DesignBrief | null;
       designStyle: import('../entities/slide-work').DesignStyle | null;
       framework: import('../entities/slide-work').FrameworkType | null;
+      customFrameworkPrompt: string | null;
       templateMeta: import('../entities/slide-work').TemplateMeta | null;
       pptxBuildError: string | null;
       theme: ThemeTokens | null;
@@ -131,7 +132,7 @@ export interface IpcPptxAPI {
     iconCollection?: string,
     slides?: Array<{ number: number; title: string; layout: string; icon?: string | null; imageQuery?: string | null; imageQueries?: string[]; imagePath?: string | null; selectedImages?: Array<{ id: string; imageQuery?: string | null; imageUrl?: string | null; imagePath?: string | null; thumbnailUrl?: string | null }> }>,
     templateMeta?: TemplateMeta | null,
-  ): Promise<{ success: boolean; imagePaths?: string[]; error?: string; warning?: string }>;
+  ): Promise<{ success: boolean; imagePaths?: string[]; error?: string; warning?: string; qa?: { contrastFixes: number; missingIcons: Array<{ icon: string; reason: string }>; missingImages: string[]; layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }> } }>;
   readExistingPreviews(): Promise<{ success: boolean; imagePaths: string[] }>;
   importTemplate(): Promise<{ success: boolean; templatePath?: string; meta?: TemplateMeta; error?: string; warning?: string }>;
   removeTemplate(): Promise<{ success: boolean }>;
@@ -241,6 +242,7 @@ export interface IpcProjectAPI {
   save(projectData: PptAppProject, suggestedName: string): Promise<{ success: boolean; path?: string }>;
   load(): Promise<{ data: PptAppProject; path: string } | null>;
   listWorkspaceFiles(): Promise<Array<{ name: string; path: string }>>;
+  openBrandStyleSamples(): Promise<{ success: boolean; path?: string; error?: string }>;
 }
 
 /** Matches window.electronAPI exposed by preload.ts */

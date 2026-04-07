@@ -461,6 +461,10 @@ def _build_cards(
         start_y=content.y,
         gap_x=variant.gap_x,
         gap_y=variant.gap_y,
+        pattern=variant.pattern,
+        icon_size=variant.icon_size,
+        header_band_h=variant.header_band_h,
+        header_icon_count=variant.header_icon_count,
     )
 
 

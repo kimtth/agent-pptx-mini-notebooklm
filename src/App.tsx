@@ -20,6 +20,32 @@ import type { FrameworkType } from './domain/entities/slide-work'
 
 const MAX_AUTO_RETRIES = 3
 
+interface QaReport {
+  contrastFixes: number
+  missingIcons: Array<{ icon: string; reason: string }>
+  missingImages: string[]
+  layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }>
+}
+
+function hasBlockingQaFindings(qa: QaReport): boolean {
+  if (qa.missingIcons.length > 0) return true
+  if (qa.missingImages.length > 0) return true
+  if (qa.layoutIssues.some((i) => i.severity === 'error')) return true
+  return false
+}
+
+function formatQaSummary(qa: QaReport): string {
+  const parts: string[] = []
+  if (qa.contrastFixes > 0) parts.push(`Contrast: ${qa.contrastFixes} fix(es) applied automatically.`)
+  if (qa.missingIcons.length > 0) parts.push(`Missing icons: ${qa.missingIcons.map((i) => i.icon).join(', ')}.`)
+  if (qa.missingImages.length > 0) parts.push(`Missing images: ${qa.missingImages.join('; ')}.`)
+  const errors = qa.layoutIssues.filter((i) => i.severity === 'error')
+  const warnings = qa.layoutIssues.filter((i) => i.severity === 'warning')
+  if (errors.length > 0) parts.push(`Layout errors (${errors.length}): ${errors.map((i) => `Slide ${i.slide} — ${i.message}`).join('; ')}.`)
+  if (warnings.length > 0) parts.push(`Layout warnings (${warnings.length}): ${warnings.map((i) => `Slide ${i.slide} — ${i.message}`).join('; ')}.`)
+  return parts.length > 0 ? parts.join('\n') : 'No QA issues found.'
+}
+
 export default function App() {
   const messages = useChatStore((s) => s.messages)
   const work = useSlidesStore((s) => s.work)
@@ -62,6 +88,7 @@ export default function App() {
       designBrief: work.designBrief,
       designStyle: work.designStyle,
       framework: work.framework,
+      customFrameworkPrompt: work.customFrameworkPrompt,
       templateMeta: work.templateMeta,
       pptxBuildError: errMsg,
       theme: applyThemeColorTreatment(
@@ -78,6 +105,50 @@ export default function App() {
     }
 
     window.electronAPI.chat.send(retryPrompt, historyToIpc([...useChatStore.getState().messages]), workspaceContext)
+  }
+
+  const triggerPostStaging = (qa: QaReport) => {
+    const summary = formatQaSummary(qa)
+    const workflow = getWorkflowConfig('poststaging')
+
+    useChatStore.getState().addMessage(
+      createAssistantMessage(`🔍 Running post-staging QA…\n\n${summary}`),
+    )
+
+    const prompt = `${workflow.triggerPrompt}\n\n## QA Report\n\n${summary}`
+    const userMsg = createUserMessage(prompt)
+    useChatStore.getState().addMessage(userMsg)
+    useSlidesStore.getState().setStreaming(true)
+    useSlidesStore.getState().setPptxBusy(true)
+
+    const { work } = useSlidesStore.getState()
+    const { tokens, selectedFont, selectedColorTreatment, selectedIconCollection } = usePaletteStore.getState()
+    const { files: dataSources, urls: urlSources } = useDataSourcesStore.getState()
+    const availableIcons = getAvailableIconChoices(selectedIconCollection)
+
+    const workspaceContext: WorkspaceContext = {
+      title: work.title,
+      slides: work.slides,
+      designBrief: work.designBrief,
+      designStyle: work.designStyle,
+      framework: work.framework,
+      customFrameworkPrompt: work.customFrameworkPrompt,
+      templateMeta: work.templateMeta,
+      pptxBuildError: null,
+      theme: applyThemeColorTreatment(
+        applyThemeFontFamily(tokens, selectedFont),
+        selectedColorTreatment,
+      ),
+      workflow,
+      dataSources,
+      urlSources,
+      iconProvider: 'iconify',
+      iconCollection: selectedIconCollection,
+      availableIcons,
+      includeImagesInLayout: work.includeImagesInLayout,
+    }
+
+    window.electronAPI.chat.send(prompt, historyToIpc([...useChatStore.getState().messages]), workspaceContext)
   }
 
   useEffect(() => {
@@ -157,12 +228,26 @@ export default function App() {
                   window.dispatchEvent(new CustomEvent('pptx-preview-ready', {
                     detail: { imagePaths: result.imagePaths ?? [] },
                   }))
-                  const warningNote = result.warning ? `\n\n⚠️ ${result.warning}` : ''
-                  useChatStore.getState().addMessage(
-                    createAssistantMessage(`✅ Deck generated! Preview images are ready.${warningNote}`),
-                  )
-                  useSlidesStore.getState().setStreaming(false)
-                  useSlidesStore.getState().setPptxBusy(false)
+
+                  // Check QA report — trigger post-staging if blocking findings exist
+                  const qa = result.qa as QaReport | undefined
+                  if (qa && hasBlockingQaFindings(qa)) {
+                    const summary = formatQaSummary(qa)
+                    useChatStore.getState().addMessage(
+                      createAssistantMessage(`✅ Deck generated, but post-staging QA found issues:\n\n${summary}`),
+                    )
+                    triggerPostStaging(qa)
+                  } else {
+                    const warningNote = result.warning ? `\n\n⚠️ ${result.warning}` : ''
+                    const qaSuffix = qa && qa.contrastFixes > 0
+                      ? `\n\nℹ️ Post-staging QA: ${qa.contrastFixes} contrast fix(es) applied automatically.`
+                      : ''
+                    useChatStore.getState().addMessage(
+                      createAssistantMessage(`✅ Deck generated! Preview images are ready.${warningNote}${qaSuffix}`),
+                    )
+                    useSlidesStore.getState().setStreaming(false)
+                    useSlidesStore.getState().setPptxBusy(false)
+                  }
                 } else {
                   const errMsg = result.error ?? result.warning ?? 'Unknown error'
                   useSlidesStore.getState().setPptxBuildError(errMsg)

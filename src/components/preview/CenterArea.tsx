@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Download, Palette, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { Download, Palette, ChevronLeft, ChevronRight, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react'
 import { useSlidesStore } from '../../stores/slides-store'
 import { usePaletteStore } from '../../stores/palette-store'
 import { useChatStore } from '../../stores/chat-store'
@@ -12,12 +12,18 @@ import { PptxPreviewCard } from './PptxPreviewCard.tsx'
 import { createAssistantMessage } from '../../application/chat-use-case'
 import { applyThemeColorTreatment, applyThemeFontFamily } from '../../application/palette-use-case'
 
+const DEFAULT_PREVIEW_SCALE = 0.55
+const MIN_PREVIEW_SCALE = 0.35
+const MAX_PREVIEW_SCALE = 0.9
+const PREVIEW_SCALE_STEP = 0.05
+
 export function CenterArea() {
   const { work } = useSlidesStore()
   const { tokens, selectedFont, selectedColorTreatment } = usePaletteStore()
   const { addMessage } = useChatStore()
   const { workspaceDir } = useProjectStore()
   const [selected, setSelected] = useState(0)
+  const [previewScale, setPreviewScale] = useState(DEFAULT_PREVIEW_SCALE)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [previewWarning, setPreviewWarning] = useState<string | null>(null)
@@ -130,6 +136,10 @@ export function CenterArea() {
     await window.electronAPI.theme.exportThmx(tokens)
   }
 
+  const zoomOutDisabled = previewScale <= MIN_PREVIEW_SCALE
+  const zoomInDisabled = previewScale >= MAX_PREVIEW_SCALE
+  const previewZoomPercent = Math.round((previewScale / DEFAULT_PREVIEW_SCALE) * 100)
+
   return (
     <div className="flex flex-col h-full gap-3 p-3" style={{ background: 'var(--panel-bg)' }}>
       {/* Toolbar */}
@@ -146,6 +156,34 @@ export function CenterArea() {
           )}
         </span>
         <div className="flex items-center gap-2">
+          {previewImages.length > 0 && (
+            <div
+              className="flex h-8 items-center gap-1 border px-1"
+              style={{ background: 'var(--surface-hover)', color: 'var(--text-primary)', borderColor: 'var(--panel-border)' }}
+            >
+              <button
+                onClick={() => setPreviewScale((current) => Math.max(MIN_PREVIEW_SCALE, Number((current - PREVIEW_SCALE_STEP).toFixed(2))))}
+                disabled={zoomOutDisabled}
+                className="flex h-6 w-6 items-center justify-center transition-colors disabled:opacity-40"
+                aria-label="Zoom out"
+                title="Zoom out"
+              >
+                <ZoomOut size={14} />
+              </button>
+              <span className="min-w-11 text-center text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                {previewZoomPercent}%
+              </span>
+              <button
+                onClick={() => setPreviewScale((current) => Math.min(MAX_PREVIEW_SCALE, Number((current + PREVIEW_SCALE_STEP).toFixed(2))))}
+                disabled={zoomInDisabled}
+                className="flex h-6 w-6 items-center justify-center transition-colors disabled:opacity-40"
+                aria-label="Zoom in"
+                title="Zoom in"
+              >
+                <ZoomIn size={14} />
+              </button>
+            </div>
+          )}
           {(work.pptxCode || previewImages.length > 0) && (
             <button
               onClick={() => void refreshPreview()}
@@ -243,7 +281,7 @@ export function CenterArea() {
               title={slides[selected]?.title ?? `Slide ${selected + 1}`}
               imagePath={previewImages[selected]}
               cacheKey={`${previewCacheToken}:${previewImages[selected]}`}
-              scale={0.55}
+              scale={previewScale}
               selected
             />
 

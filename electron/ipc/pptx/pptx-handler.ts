@@ -81,6 +81,13 @@ async function checkPythonSyntax(python: string, sourcePath: string): Promise<vo
 // Completion report — structured JSON emitted by Python scripts to stdout
 // ---------------------------------------------------------------------------
 
+export interface PptxQaReport {
+  contrastFixes: number
+  missingIcons: Array<{ icon: string; reason: string }>
+  missingImages: string[]
+  layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }>
+}
+
 export interface PptxCompletionReport {
   status: 'success' | 'warning' | 'error'
   outputPath?: string
@@ -90,6 +97,7 @@ export interface PptxCompletionReport {
   partialCount?: number
   warnings: string[]
   error?: string
+  qa?: PptxQaReport
 }
 
 /**
@@ -1030,7 +1038,7 @@ export function registerPptxHandlers(): void {
           await removeStaleTimestampedPptx(previewRoot, 'presentation-preview.pptx')
           await removePreviewImages(renderDir)
           await fs.mkdir(previewRoot, { recursive: true })
-          await executeGeneratedPythonCodeToFileInternal(code, themeTokens, title, outputPath, {
+          const completionReport = await executeGeneratedPythonCodeToFileInternal(code, themeTokens, title, outputPath, {
             renderDir,
             iconCollection,
             templateMeta,
@@ -1045,11 +1053,13 @@ export function registerPptxHandlers(): void {
           } catch { /* ignore */ }
 
           const imagePaths = await readPreviewImagePaths(renderDir)
+          const qa = completionReport.qa ?? undefined
 
           if (imagePaths.length === 0) {
             return {
               success: !!actualPptx,
               imagePaths: [],
+              qa,
               warning: actualPptx
                 ? 'PPTX generated successfully but slide preview images could not be rendered. PowerPoint desktop may be required.'
                 : 'Preview rendering completed but no output was generated.',
@@ -1060,6 +1070,7 @@ export function registerPptxHandlers(): void {
           return {
             success: true,
             imagePaths,
+            qa,
             ...(wasRenamed ? { warning: `The previous PPTX was locked. New file saved as ${path.basename(actualPptx!)}.  Close the old file in PowerPoint to avoid mismatches.` } : {}),
           }
         } catch (error) {

@@ -9,7 +9,9 @@ This app aims to create a local, NotebookLM-style workflow for PPTX generation. 
 ## Documentation Index
 
 - [Layout Engine Whitepaper](./LAYOUT_ENGINE.md)
-- [Sample PPTX English (Web Viewer)](https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2Fkimtth%2Fagent-cowork-pptx-creator%2Fmain%2Fsamples%2Fen%2Fpreviews%2Fpresentation-preview.pptx)
+- [Sample PPTX Slides (Web Viewer)](https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2Fkimtth%2Fagent-pptx-mini-notebooklm%2Fmain%2Fsamples%2Fen%2Fpreviews%2Fpresentation-preview.pptx)
+- [Layout Blueprint](https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2Fkimtth%2Fagent-pptx-mini-notebooklm%2Fmain%2Fsamples%2Flayout_blueprint.pptx)
+- [Brand Style Samples](./public/brand-style-samples.html)
 
 ## Getting Started
 
@@ -196,6 +198,7 @@ Prompt workflow files live here:
 
 - [workflows/prestaging.md](workflows/prestaging.md)
 - [workflows/create-pptx.md](workflows/create-pptx.md)
+- [workflows/poststaging.md](workflows/poststaging.md)
 
 Workflow loading is provider-neutral. The provider-specific runtime wiring lives in [electron/ipc/llm](electron/ipc/llm).
 

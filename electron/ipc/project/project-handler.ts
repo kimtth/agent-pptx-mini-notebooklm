@@ -2,7 +2,8 @@
  * IPC Handler: Project — workspace directory management and .pptapp save/load
  */
 
-import { ipcMain, dialog, BrowserWindow } from 'electron';
+import { ipcMain, dialog, BrowserWindow, app, shell } from 'electron';
+import { existsSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { readWorkspaceDir, writeWorkspaceDir } from './workspace-utils.ts';
@@ -21,6 +22,15 @@ function openDialog(win: BrowserWindow | null, opts: OpenOpts) {
 
 function saveDialog(win: BrowserWindow | null, opts: SaveOpts) {
   return win ? dialog.showSaveDialog(win, opts) : dialog.showSaveDialog(opts);
+}
+
+function resolveBrandStyleSamplesPath(): string {
+  const candidates = [
+    path.join(app.getAppPath(), 'out', 'renderer', 'brand-style-samples.html'),
+    path.join(process.cwd(), 'public', 'brand-style-samples.html'),
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -105,5 +115,12 @@ export function registerProjectHandlers(): void {
     } catch {
       return [];
     }
+  });
+
+  ipcMain.handle('project:openBrandStyleSamples', async () => {
+    const samplePath = resolveBrandStyleSamplesPath();
+    const error = await shell.openPath(samplePath);
+    if (error) return { success: false, path: samplePath, error };
+    return { success: true, path: samplePath };
   });
 }

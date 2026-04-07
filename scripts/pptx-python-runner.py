@@ -160,6 +160,12 @@ def _recolor_png(png_path: str, color_hex: str) -> str:
         return png_path
 
 
+# ---------------------------------------------------------------------------
+# Icon fetch tracking — records missing icons for post-staging QA
+# ---------------------------------------------------------------------------
+_MISSING_ICONS: list[dict[str, str]] = []
+
+
 def fetch_icon(name: str, color_hex: str = '000000', size: int = 256) -> str | None:
     """Load an icon PNG from the local cache, recolor via Pillow if needed."""
     if ':' not in name:
@@ -169,6 +175,7 @@ def fetch_icon(name: str, color_hex: str = '000000', size: int = 256) -> str | N
     png_name = f'{icon_name}.png'
 
     if PPTX_ICON_COLLECTION != 'all' and prefix != PPTX_ICON_COLLECTION:
+        _MISSING_ICONS.append({'icon': f'{prefix}:{icon_name}', 'reason': 'outside selected collection'})
         print(f'[icon] REJECTED: {prefix}:{icon_name} is outside selected collection {PPTX_ICON_COLLECTION}', file=sys.stderr)
         return None
 
@@ -177,8 +184,14 @@ def fetch_icon(name: str, color_hex: str = '000000', size: int = 256) -> str | N
         if os.path.isfile(cached):
             return _recolor_png(cached, color_hex)
 
+    _MISSING_ICONS.append({'icon': f'{prefix}:{icon_name}', 'reason': 'not found in cache'})
     print(f'[icon] NOT FOUND: {prefix}:{icon_name} (looked in {ICON_CACHE_DIR}/{prefix}/)', file=sys.stderr)
     return None
+
+
+def get_missing_icons() -> list[dict[str, str]]:
+    """Return a copy of the missing-icon audit list."""
+    return list(_MISSING_ICONS)
 
 
 def _load_theme() -> dict[str, str]:
@@ -744,8 +757,20 @@ def finalize_output(output_path: Path, namespace: dict[str, object]) -> None:
         raise RuntimeError('Generated python-pptx code completed without creating the PPTX output file.')
 
 
-def _build_completion_report(output_path: Path, *, warnings: list[str] | None = None) -> dict:
-    """Build a structured completion report for the TypeScript caller."""
+def _build_completion_report(
+    output_path: Path,
+    *,
+    warnings: list[str] | None = None,
+    contrast_fixes: int = 0,
+    missing_icons: list[dict[str, str]] | None = None,
+    missing_images: list[str] | None = None,
+    layout_issues: list[dict[str, str]] | None = None,
+) -> dict:
+    """Build a structured completion report for the TypeScript caller.
+
+    Includes a ``qa`` sub-object with post-staging QA findings so the
+    renderer can decide whether to trigger the poststaging workflow.
+    """
     report: dict = {
         'status': 'error',
         'outputPath': str(output_path),
@@ -753,6 +778,12 @@ def _build_completion_report(output_path: Path, *, warnings: list[str] | None = 
         'slideCount': 0,
         'fileSizeBytes': 0,
         'warnings': warnings or [],
+        'qa': {
+            'contrastFixes': contrast_fixes,
+            'missingIcons': missing_icons or [],
+            'missingImages': missing_images or [],
+            'layoutIssues': layout_issues or [],
+        },
     }
 
     if not output_path.exists():
@@ -1333,17 +1364,22 @@ def _check_missing_images(output_path: Path) -> list[str]:
     return details
 
 
-def validate_and_fix_output(output_path: Path, *, run_com_layout_fix: bool = True) -> None:
+def validate_and_fix_output(output_path: Path, *, run_com_layout_fix: bool = True) -> dict:
     """Run image enforcement, optional COM layout fix, contrast fix, then validation on the generated PPTX.
+
+    Returns a dict with structured QA findings:
+        contrast_fixes (int), missing_images (list[str]), layout_issues (list[dict]).
 
     Raises RuntimeError when images were omitted by the generated code.  The
     error propagates to the TypeScript caller which marks the generation as
     failed and triggers an automatic retry — giving the LLM a chance to
     include ALL images with proper layout-aware positioning in code.
     """
+    qa: dict = {'contrast_fixes': 0, 'missing_images': [], 'layout_issues': []}
 
     # Step 0: Check for missing approved images (detect only, no injection)
     missing_details = _check_missing_images(output_path)
+    qa['missing_images'] = missing_details
     if missing_details:
         summary = '; '.join(missing_details)
         raise RuntimeError(
@@ -1370,6 +1406,7 @@ def validate_and_fix_output(output_path: Path, *, run_com_layout_fix: bool = Tru
 
     # Step 2: Fix low-contrast text on glass panels / cards
     contrast_fixes = _fix_low_contrast_text(output_path)
+    qa['contrast_fixes'] = contrast_fixes
     if contrast_fixes > 0:
         print(f'[contrast] Fixed {contrast_fixes} low-contrast text/fill issue(s).', file=sys.stderr)
 
@@ -1378,7 +1415,19 @@ def validate_and_fix_output(output_path: Path, *, run_com_layout_fix: bool = Tru
     issues = validate_presentation(prs)
     if not issues:
         print('[layout-validator] All slides passed layout validation.', file=sys.stderr)
-        return
+        return qa
+
+    # Capture structured layout issues for post-staging QA
+    qa['layout_issues'] = [
+        {
+            'slide': issue.slide_index + 1,
+            'type': issue.issue_type.value,
+            'severity': issue.severity.value,
+            'message': issue.message,
+        }
+        for issue in issues
+        if issue.severity.value != 'info'
+    ]
 
     report = report_issues(issues)
     print(report, file=sys.stderr)
@@ -1395,7 +1444,7 @@ def validate_and_fix_output(output_path: Path, *, run_com_layout_fix: bool = Tru
                 'PPTX generated with incomplete layout details.',
                 file=sys.stderr,
             )
-            return
+            return qa
 
         hints: list[str] = []
         if has_overlap:
@@ -1599,13 +1648,17 @@ def main() -> int:
         post_warnings.append(msg)
         print(f'[WARNING] {msg}', file=sys.stderr)
 
+    qa_findings: dict = {'contrast_fixes': 0, 'missing_images': [], 'layout_issues': []}
     try:
         skip_com_layout_fix = render_dir is not None and os.environ.get('PPTX_SKIP_COM_LAYOUT_FIX') == '1'
-        validate_and_fix_output(output_path, run_com_layout_fix=not skip_com_layout_fix)
+        qa_findings = validate_and_fix_output(output_path, run_com_layout_fix=not skip_com_layout_fix)
     except Exception as exc:  # noqa: BLE001
         msg = f'Layout validation failed: {exc}'
         post_warnings.append(msg)
         print(f'[layout-validator] {msg}', file=sys.stderr)
+
+    # Collect missing icons accumulated during code execution
+    missing_icons = get_missing_icons()
 
     if render_dir is not None:
         try:
@@ -1615,7 +1668,14 @@ def main() -> int:
             post_warnings.append(msg)
             print(f'[WARNING] {msg}', file=sys.stderr)
 
-    report = _build_completion_report(output_path, warnings=post_warnings)
+    report = _build_completion_report(
+        output_path,
+        warnings=post_warnings,
+        contrast_fixes=qa_findings.get('contrast_fixes', 0),
+        missing_icons=missing_icons,
+        missing_images=qa_findings.get('missing_images', []),
+        layout_issues=qa_findings.get('layout_issues', []),
+    )
     print(json.dumps(report))
     return 0 if report['status'] in ('success', 'warning') else 1
 

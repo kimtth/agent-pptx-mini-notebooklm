@@ -36,6 +36,11 @@ export const FRAMEWORK_OPTIONS: Array<{ value: FrameworkType; label: string; des
     label: 'Executive Summary First',
     description: 'Puts the headline conclusion and recommendation upfront for decision makers.',
   },
+  {
+    value: 'custom-prompt',
+    label: 'Custom Prompt',
+    description: 'Use your own framework instructions for how the story should be structured and written.',
+  },
 ]
 
 export function getFrameworkMeta(value: FrameworkType | null) {

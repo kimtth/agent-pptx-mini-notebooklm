@@ -40,6 +40,9 @@ CARD_FILL_ALT = rgb('C7DCCF')
 CARD_FILL_LIGHT = rgb('E8E1CD')
 ACCENT = rgb('B8643C')
 TIMELINE = rgb('6588A6')
+PATTERN_HEADER = rgb('9BBBAF')
+PATTERN_ICON = rgb('7A9FB4')
+PATTERN_TAG = rgb('E9E2CF')
 
 
 def _set_slide_background(slide, color: RGBColor) -> None:
@@ -100,6 +103,10 @@ def _add_label_tag(slide, x: float, y: float, label: str, *, fill_color: RGBColo
     _set_text(shape, label, 10)
 
 
+def _add_slide_stamp(slide, label: str, *, fill_color: RGBColor) -> None:
+    _add_label_tag(slide, SLIDE_WIDTH_IN - 1.78, 0.16, label, fill_color=fill_color)
+
+
 def _add_accent(slide, rect: RectSpec) -> None:
     shape = slide.shapes.add_shape(
         MSO_AUTO_SHAPE_TYPE.RECTANGLE,
@@ -125,6 +132,105 @@ def _add_icon(slide, rect: RectSpec) -> None:
     shape.fill.solid()
     shape.fill.fore_color.rgb = CARD_FILL_ALT
     _set_text(shape, 'icon', 16, bold=True)
+
+
+def _add_card_pattern(
+    slide,
+    rect: RectSpec,
+    *,
+    label: str,
+    fill_color: RGBColor,
+    pattern: str,
+    icon_size: float,
+    header_band_h: float,
+    header_icon_count: int,
+) -> None:
+    _add_box(slide, rect, '', fill_color=fill_color, font_size=14, rounded=True)
+
+    title_rect = RectSpec(rect.x + 0.18, rect.y + rect.h - 0.46, max(rect.w - 0.36, 0.6), 0.24)
+    _add_label_tag(slide, title_rect.x, title_rect.y, label, fill_color=PATTERN_TAG)
+
+    if pattern == 'icon_card':
+        icon_w = min(max(icon_size, 0.42), rect.w * 0.34)
+        icon_rect = RectSpec(rect.x + 0.22, rect.y + 0.22, icon_w, min(icon_w, rect.h * 0.4))
+        _add_icon(slide, icon_rect)
+
+        line_top = rect.y + 0.34
+        for index, width in enumerate((rect.w * 0.42, rect.w * 0.5, rect.w * 0.36)):
+            line = slide.shapes.add_shape(
+                MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
+                Inches(rect.x + icon_w + 0.4),
+                Inches(line_top + index * 0.24),
+                Inches(max(width - icon_w, 0.55)),
+                Inches(0.11),
+            )
+            line.fill.solid()
+            line.fill.fore_color.rgb = INK if index == 0 else MUTED
+            line.line.fill.background()
+    elif pattern == 'header_icon_card':
+        band_h = min(max(header_band_h, 0.26), rect.h * 0.28)
+        band = slide.shapes.add_shape(
+            MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
+            Inches(rect.x + 0.12),
+            Inches(rect.y + 0.12),
+            Inches(rect.w - 0.24),
+            Inches(band_h),
+        )
+        band.fill.solid()
+        band.fill.fore_color.rgb = PATTERN_HEADER
+        band.line.fill.background()
+
+        icon_count = max(header_icon_count, 1)
+        icon_d = min(max(icon_size, 0.12), band_h * 0.7)
+        step = min(0.24, max((rect.w - 0.7) / max(icon_count, 1), 0.16))
+        for index in range(icon_count):
+            icon_rect = RectSpec(rect.x + 0.22 + index * step, rect.y + 0.16, icon_d, icon_d)
+            icon = slide.shapes.add_shape(
+                MSO_AUTO_SHAPE_TYPE.OVAL,
+                Inches(icon_rect.x),
+                Inches(icon_rect.y),
+                Inches(icon_rect.w),
+                Inches(icon_rect.h),
+            )
+            icon.fill.solid()
+            icon.fill.fore_color.rgb = PATTERN_ICON
+            icon.line.fill.background()
+
+        divider = slide.shapes.add_shape(
+            MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+            Inches(rect.x + 0.16),
+            Inches(rect.y + band_h + 0.16),
+            Inches(rect.w - 0.32),
+            Inches(0.03),
+        )
+        divider.fill.solid()
+        divider.fill.fore_color.rgb = LINE
+        divider.line.fill.background()
+
+        for index, width in enumerate((rect.w - 0.5, rect.w - 0.72, rect.w - 1.0)):
+            line = slide.shapes.add_shape(
+                MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
+                Inches(rect.x + 0.2),
+                Inches(rect.y + band_h + 0.3 + index * 0.22),
+                Inches(max(width, 0.5)),
+                Inches(0.1),
+            )
+            line.fill.solid()
+            line.fill.fore_color.rgb = MUTED if index else INK
+            line.line.fill.background()
+    else:
+        _add_label_tag(slide, rect.x + 0.18, rect.y + 0.18, label, fill_color=PATTERN_TAG)
+        for index, width in enumerate((rect.w - 0.42, rect.w - 0.72, rect.w - 1.0)):
+            line = slide.shapes.add_shape(
+                MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
+                Inches(rect.x + 0.2),
+                Inches(rect.y + 0.62 + index * 0.24),
+                Inches(max(width, 0.5)),
+                Inches(0.1),
+            )
+            line.fill.solid()
+            line.fill.fore_color.rgb = MUTED if index else INK
+            line.line.fill.background()
 
 
 def _add_timeline(slide, spec, *, label: str) -> None:
@@ -156,6 +262,7 @@ def _add_timeline(slide, spec, *, label: str) -> None:
 
 def _render_spec_slide(slide, spec: LayoutSpec) -> None:
     _set_slide_background(slide, BG_SPEC)
+    _add_slide_stamp(slide, f'solver · {spec.layout_type}', fill_color=CARD_FILL_LIGHT)
 
     if spec.title_rect is not None:
         _add_box(slide, spec.title_rect, 'title', fill_color=CARD_FILL, font_size=22, rounded=True)
@@ -183,13 +290,15 @@ def _render_spec_slide(slide, spec: LayoutSpec) -> None:
 
     if spec.cards is not None:
         for index in range(min(spec.max_items, 4)):
-            _add_box(
+            _add_card_pattern(
                 slide,
                 spec.cards.card_rect(index),
-                'cards',
+                label=spec.cards.pattern,
                 fill_color=rgb('D9E8E1'),
-                font_size=16,
-                rounded=True,
+                pattern=spec.cards.pattern,
+                icon_size=spec.cards.icon_size,
+                header_band_h=spec.cards.header_band_h,
+                header_icon_count=spec.cards.header_icon_count,
             )
 
     if spec.stats is not None:
@@ -307,6 +416,7 @@ def _render_blueprint_slide(slide, layout_type: str) -> None:
     _set_slide_background(slide, BG_BLUEPRINT)
     blueprint = get_blueprint(layout_type)
     rects, extras = _build_blueprint_rects(layout_type)
+    _add_slide_stamp(slide, f'blueprint · {layout_type}', fill_color=rgb('DDE8E1'))
 
     if ZoneRole.TITLE in rects:
         _add_box(slide, rects[ZoneRole.TITLE], 'title', fill_color=rgb('CFE0D2'), font_size=22, rounded=True)
@@ -347,7 +457,16 @@ def _render_blueprint_slide(slide, layout_type: str) -> None:
                     w=card_w,
                     h=card_h,
                 )
-                _add_box(slide, rect, 'cards', fill_color=rgb('D6E6DE'), font_size=15, rounded=True)
+                _add_card_pattern(
+                    slide,
+                    rect,
+                    label=blueprint.cards.pattern,
+                    fill_color=rgb('D6E6DE'),
+                    pattern=blueprint.cards.pattern,
+                    icon_size=blueprint.cards.icon_size,
+                    header_band_h=blueprint.cards.header_band_h,
+                    header_icon_count=blueprint.cards.header_icon_count,
+                )
 
     if blueprint.stats is not None:
         box_w = (content_rect.w - (blueprint.stats.gap_x * (blueprint.stats.columns - 1))) / blueprint.stats.columns
@@ -404,8 +523,12 @@ def build_presentation(output_path: Path) -> Path:
         'title': 0, 'section': 0, 'agenda': 5, 'bullets': 6,
         'cards': 4, 'stats': 3, 'comparison': 6, 'timeline': 5,
         'summary': 3, 'diagram': 5, 'chart': 1,
-        'closing': 0, 'photo_fullbleed': 0, 'multi_column': 5,
+        'closing': 0, 'photo_fullbleed': 0, 'multi_column': 5, 'process': 4,
+        'content_caption': 4, 'picture_caption': 0, 'two_content': 4,
+        'title_only': 0, 'quote': 0, 'big_number': 0, 'pyramid': 4,
     }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     for layout_type in list_layout_types():
         bp = get_blueprint(layout_type)

@@ -52,7 +52,8 @@ export type FrameworkType =
   | 'mece'
   | 'action-title'
   | 'assertion-evidence'
-  | 'exec-summary-first';
+  | 'exec-summary-first'
+  | 'custom-prompt';
 
 export interface SlideSelectedImage {
   id: string;
@@ -105,6 +106,7 @@ export interface SlideWork {
   designBrief: DesignBrief | null;
   designStyle: DesignStyle | null;
   framework: FrameworkType | null;
+  customFrameworkPrompt: string | null;
   templatePath: string | null;
   templateMeta: TemplateMeta | null;
   slides: SlideItem[];
