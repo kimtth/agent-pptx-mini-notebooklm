@@ -6,6 +6,39 @@ Electron desktop app for generating PowerPoint decks from chat, files, and URLs 
 
 This app aims to create a local, NotebookLM-style workflow for PPTX generation. It ingests source materials, grounds the content in them, and produces presentation-ready slides complete with layout, text, images, icons, and charts. Unlike NotebookLM, which generates AI images into slides, this app produces fully **editable slides** grounded in user-provided sources. The app uses **constraint-based layout computation** (via the Kiwi solver in 🦋 Flutter) and **🦖 RAPTOR-style hierarchical retrieval and summarization** to structure the final output.
 
+```mermaid
+graph LR
+
+    classDef context fill:#E6E6FA,stroke:#9370DB,color:#000;
+    classDef llmLogic fill:#FFFACD,stroke:#DAA520,color:#000;
+    classDef agentCore fill:#89CFF0,stroke:#4682B4,stroke-width:2px,color:#000,font-weight:bold;
+    classDef layout fill:#98FF98,stroke:#3CB371,color:#000;
+    classDef render fill:#FFDAB9,stroke:#CD5C5C,color:#000;
+    classDef final fill:#FFC0CB,stroke:#DB7093,stroke-width:2px,color:#000;
+
+    subgraph Inputs ["Source Ingestion"]
+        direction TB
+        A[Raw Documents]:::context
+        B[NotebookLM - Notes and Images]:::context
+    end
+
+    C[RAPTOR Engine - Tree RAG]:::llmLogic
+    D{{Agent Workflow - Slide Planner}}:::agentCore
+    E[Kiwi Solver - Layout Engine]:::layout
+    F[PPTX Renderer - python-pptx or COM]:::render
+    G[Final PPTX]:::final
+
+    A --> C
+    C --> D
+    B -. optional .-> D
+    D -->|Slide JSON| E
+    E -->|Layout Geometry| F
+    F --> G
+
+    linkStyle 2 stroke:#9370DB,stroke-dasharray:5 5;
+    linkStyle 3 stroke:#4682B4,stroke-width:2px;
+```
+
 ## Documentation Index
 
 - [Layout Engine Whitepaper](./LAYOUT_ENGINE.md)
