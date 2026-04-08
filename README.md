@@ -2,9 +2,11 @@
 
 Electron desktop app for generating PowerPoint decks from chat, files, and URLs with support for GitHub Copilot, OpenAI, Azure OpenAI, and Claude.
 
-<img src="./samples/main.png" alt="main screen" width="500" />
+<p align="center">
+    <img src="./samples/main.png" alt="main screen" width="500" />
+</p>
 
-This app aims to create a local, NotebookLM-style workflow for PPTX generation. It ingests source materials, grounds the content in them, and produces presentation-ready slides complete with layout, text, images, icons, and charts. Unlike NotebookLM, which generates AI images into slides, this app produces fully **editable slides** grounded in user-provided sources. The app uses **constraint-based layout computation** (via the Kiwi solver in 🦋 Flutter) and **🦖 RAPTOR-style hierarchical retrieval and summarization** to structure the final output.
+This app aims to create a local, NotebookLM-style workflow for PPTX generation. It ingests source materials, grounds the content in them, and produces presentation-ready slides complete with layout, text, images, icons, and charts. Unlike NotebookLM, which generates AI images into slides, this app produces fully **editable slides** grounded in user-provided sources.   
 
 ```mermaid
 graph LR
@@ -38,6 +40,8 @@ graph LR
     linkStyle 2 stroke:#9370DB,stroke-dasharray:5 5;
     linkStyle 3 stroke:#4682B4,stroke-width:2px;
 ```
+
+The app uses **constraint-based layout computation** (via the Kiwi solver 🦋, an implementation of the Cassowary algorithm; **Matplotlib** uses kiwisolver internally in a limited subset of layout calculations). and **🦖 RAPTOR-style hierarchical retrieval and summarization** to structure the final output.
 
 ## Documentation Index
 
@@ -130,7 +134,9 @@ For packaged builds, `.venv` is bundled into the app's `resources` directory. `p
 
 https://python-pptx.readthedocs.io/
 
-PPTX generation runs through a bundled Python runner at [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py), which executes agent-generated `python-pptx` code with the runtime variables `OUTPUT_PATH`, `PPTX_TITLE`, and `PPTX_THEME`.
+PPTX generation runs through a bundled Python runner at [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py), which executes agent-generated `python-pptx` code with runtime variables including `OUTPUT_PATH`, `PPTX_TITLE`, `PPTX_THEME`, `PPTX_COLOR_TREATMENT`, and `PPTX_TEXT_BOX_STYLE`.
+
+In the Palette panel, `Mixed` is the default for both `Text Box Type` and `Text Box Fill Style`; it adaptively chooses icon usage and fill treatment by slide context.
 
 ### Embedding Model & RAPTOR Retrieval
 
@@ -161,8 +167,8 @@ pptx-handler.ts
   │       ↓
   │     hybrid_layout.py               Orchestrator (CLI entry point)
   │       ├─ layout_blueprint.py       Load declarative zone definitions
-  │       ├─ com_text_measure.py       Measure text heights via PowerPoint COM (Windows only)
   │       ├─ font_text_measure.py      Measure text heights via Pillow font metrics (cross-platform)
+  │       ├─ com_text_measure.py       Measure text heights via PowerPoint COM (Windows only - Optional)
   │       └─ constraint_solver.py      Solve zone positions with kiwisolver
   │             └─ layout_specs.py     Emit LayoutSpec / RectSpec dataclasses
   │       ↓
@@ -179,15 +185,15 @@ pptx-handler.ts
 
 | Module | Role |
 |--------|------|
-| `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point; selects measurement backend (COM → Pillow → heuristic) |
+| `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point; selects measurement backend (Pillow-first by default, or COM-first via setting) |
 | `layout_blueprint.py` | Declarative zone definitions for 14 layout types |
-| `com_text_measure.py` | Text height measurement via PowerPoint COM (Windows only, highest accuracy) |
 | `font_text_measure.py` | Text height measurement via Pillow font metrics (cross-platform, ~90–95% accuracy) |
+| `com_text_measure.py` | Text height measurement via PowerPoint COM (Windows only, highest accuracy, optional) |
 | `constraint_solver.py` | Kiwisolver (Cassowary) constraint solver → `LayoutSpec` |
 | `layout_specs.py` | `LayoutSpec` / `RectSpec` dataclasses and `flow_layout_spec()` cascade helper |
 | `layout_validator.py` | Post-generation validation (overlap, bounds, text overflow) |
 
-Pre-computed specs are injected as `PRECOMPUTED_LAYOUT_SPECS` into the generated code namespace. Requires `kiwisolver`; `pywin32` and PowerPoint are optional — text height measurement falls back through COM → Pillow → auto-size.
+Pre-computed specs are injected as `PRECOMPUTED_LAYOUT_SPECS` into the generated code namespace. Requires `kiwisolver`; `pywin32` and PowerPoint are optional — text height measurement using Pillow by default.
 
 Hybrid layout artifacts are stored in the active workspace under `previews/`:
 - `layout-input.json` — the storyboard-derived `SlideContent[]` payload written immediately when `set_scenario` runs and refreshed again before layout computation
@@ -195,8 +201,8 @@ Hybrid layout artifacts are stored in the active workspace under `previews/`:
 
 ##### Text height measurement
 
-- **COM** (PowerPoint on Windows) — WYSIWYG: renders a real textbox and reads back the exact shape height *(highest accuracy)*
 - **Pillow font-metrics** — cross-platform: simulates word-wrap via TrueType glyph metrics; accurate but not pixel-perfect *(~90–95% accuracy)*
+- **COM** (PowerPoint on Windows) — WYSIWYG: renders a real textbox and reads back the exact shape height *(highest accuracy)*
 - **Auto-size** — last resort: sets `TEXT_TO_FIT_SHAPE` on shapes and lets PowerPoint shrink text at open time; no pre-measured height *(lowest accuracy — text may be visibly scaled down)*
 
 ## Persistent Storage

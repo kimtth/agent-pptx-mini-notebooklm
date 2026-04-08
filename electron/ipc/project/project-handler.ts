@@ -2,7 +2,7 @@
  * IPC Handler: Project — workspace directory management and .pptapp save/load
  */
 
-import { ipcMain, dialog, BrowserWindow, app, shell } from 'electron';
+import { ipcMain, dialog, BrowserWindow, app } from 'electron';
 import { existsSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
@@ -119,8 +119,16 @@ export function registerProjectHandlers(): void {
 
   ipcMain.handle('project:openBrandStyleSamples', async () => {
     const samplePath = resolveBrandStyleSamplesPath();
-    const error = await shell.openPath(samplePath);
-    if (error) return { success: false, path: samplePath, error };
+    if (!existsSync(samplePath)) {
+      return { success: false, path: samplePath, error: 'File not found' };
+    }
+    const win = new BrowserWindow({
+      width: 1100,
+      height: 800,
+      title: 'Brand Style Samples',
+      autoHideMenuBar: true,
+    });
+    win.loadFile(samplePath);
     return { success: true, path: samplePath };
   });
 }

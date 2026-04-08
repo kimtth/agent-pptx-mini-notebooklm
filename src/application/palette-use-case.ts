@@ -3,7 +3,7 @@
  * Assembles ThemeTokens from slots + colors (renderer-side).
  */
 
-import type { PaletteColor, ThemeColorTreatment, ThemeSlots, ThemeTokens } from '../domain/entities/palette';
+import type { PaletteColor, ThemeColorTreatment, ThemeSlots, ThemeTextBoxStyle, ThemeTokens } from '../domain/entities/palette';
 
 export function buildThemeTokens(
   name: string,
@@ -55,13 +55,28 @@ export function applyThemeColorTreatment(
   colorTreatment?: ThemeColorTreatment | null,
 ): ThemeTokens | null {
   if (!tokens) return null;
-  const nextColorTreatment = colorTreatment ?? 'solid';
+  const nextColorTreatment = colorTreatment ?? 'mixed';
   if (tokens.colorTreatment === nextColorTreatment) {
     return tokens;
   }
   return {
     ...tokens,
     colorTreatment: nextColorTreatment,
+  };
+}
+
+export function applyThemeTextBoxStyle(
+  tokens: ThemeTokens | null,
+  textBoxStyle?: ThemeTextBoxStyle | null,
+): ThemeTokens | null {
+  if (!tokens) return null;
+  const nextTextBoxStyle = textBoxStyle ?? 'mixed';
+  if (tokens.textBoxStyle === nextTextBoxStyle) {
+    return tokens;
+  }
+  return {
+    ...tokens,
+    textBoxStyle: nextTextBoxStyle,
   };
 }
 

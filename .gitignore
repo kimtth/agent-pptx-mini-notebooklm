@@ -367,12 +367,6 @@ __marimo__/
 ref/
 .python-version
 temp/
-/skills/iconfy-list/cache/fluent
-/skills/iconfy-list/cache/fa6-solid
-/skills/iconfy-list/cache/lucide
-/skills/iconfy-list/cache/mdi
-/skills/iconfy-list/cache/ph
-/skills/iconfy-list/cache/tabler
 .vscode/settings.json
 build-log.txt
 /samples/test

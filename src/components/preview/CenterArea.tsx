@@ -10,7 +10,7 @@ import { useChatStore } from '../../stores/chat-store'
 import { useProjectStore } from '../../stores/project-store'
 import { PptxPreviewCard } from './PptxPreviewCard.tsx'
 import { createAssistantMessage } from '../../application/chat-use-case'
-import { applyThemeColorTreatment, applyThemeFontFamily } from '../../application/palette-use-case'
+import { applyThemeColorTreatment, applyThemeFontFamily, applyThemeTextBoxStyle } from '../../application/palette-use-case'
 
 const DEFAULT_PREVIEW_SCALE = 0.55
 const MIN_PREVIEW_SCALE = 0.35
@@ -19,7 +19,7 @@ const PREVIEW_SCALE_STEP = 0.05
 
 export function CenterArea() {
   const { work } = useSlidesStore()
-  const { tokens, selectedFont, selectedColorTreatment } = usePaletteStore()
+  const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle } = usePaletteStore()
   const { addMessage } = useChatStore()
   const { workspaceDir } = useProjectStore()
   const [selected, setSelected] = useState(0)
@@ -103,9 +103,12 @@ export function CenterArea() {
     setExporting(true)
     setExportError(null)
     try {
-      const effectiveTheme = applyThemeColorTreatment(
-        applyThemeFontFamily(tokens, selectedFont),
-        selectedColorTreatment,
+      const effectiveTheme = applyThemeTextBoxStyle(
+        applyThemeColorTreatment(
+          applyThemeFontFamily(tokens, selectedFont),
+          selectedColorTreatment,
+        ),
+        selectedTextBoxStyle,
       )
       const result = await window.electronAPI.pptx.generate(
         work.pptxCode ?? '',

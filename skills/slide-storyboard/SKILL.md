@@ -195,7 +195,7 @@ N+1. Appendix section (layout: section)
 
 ## Available Icons
 
-Icons are provided by **Iconify**. Use Iconify icon IDs (e.g., `mdi:brain`, `lucide:rocket`) or legacy aliases (e.g., `brain`, `rocket`). The available icon names are supplied in the workspace context at runtime. Assign one icon per slide as a design hint.
+Icons are fetched live from the **Iconify** public API. Use any valid Iconify icon ID from the selected collection (e.g., `mdi:brain`, `lucide:rocket`). Invalid or unavailable icons are omitted gracefully. Assign one icon per slide as a design hint.
 
 ## Language Rules
 

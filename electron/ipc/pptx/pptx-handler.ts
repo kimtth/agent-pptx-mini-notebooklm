@@ -27,8 +27,14 @@ function resolveThemeFontFamily(theme: ThemeTokens | null | undefined): string {
   return fontFamily && fontFamily.length > 0 ? fontFamily : 'Calibri'
 }
 
-function resolveThemeColorTreatment(theme: ThemeTokens | null | undefined): 'solid' | 'gradient' {
-  return theme?.colorTreatment === 'gradient' ? 'gradient' : 'solid'
+function resolveThemeColorTreatment(theme: ThemeTokens | null | undefined): 'solid' | 'gradient' | 'mixed' {
+  const v = theme?.colorTreatment
+  return v === 'gradient' || v === 'mixed' ? v : 'mixed'
+}
+
+function resolveThemeTextBoxStyle(theme: ThemeTokens | null | undefined): 'plain' | 'with-icons' | 'mixed' {
+  const v = theme?.textBoxStyle
+  return v === 'with-icons' || v === 'mixed' ? v : 'mixed'
 }
 
 function applyLayoutFontFamily(slides: LayoutInputSlide[], fontFamily?: string): LayoutInputSlide[] {
@@ -317,11 +323,6 @@ async function ensureCleanDirectory(dirPath: string): Promise<void> {
   await fs.mkdir(dirPath, { recursive: true })
 }
 
-/** Resolve the icon PNG cache directory inside the app bundle (single source of truth). */
-function getAppIconCacheDir(): string {
-  return resolveBundledPath('skills', 'iconfy-list', 'cache')
-}
-
 function buildLayoutArtifactPaths(workspaceDir: string) {
   const layoutDir = path.join(workspaceDir, 'previews')
   return {
@@ -548,6 +549,7 @@ async function executeGeneratedPythonCodeToFileInternal(
   const themePayload = JSON.stringify(theme?.C ?? DEFAULT_THEME_C)
   const fontFamily = resolveThemeFontFamily(theme)
   const colorTreatment = resolveThemeColorTreatment(theme)
+  const textBoxStyle = resolveThemeTextBoxStyle(theme)
   const workspaceDir = await readWorkspaceDir()
   await assertValidLayoutInputArtifact(workspaceDir)
   let layoutSpecsJson = opts?.layoutSpecsJson?.trim() ?? ''
@@ -560,7 +562,6 @@ async function executeGeneratedPythonCodeToFileInternal(
     }
     layoutSpecsJson = computed.specs.trim()
   }
-  const iconCacheDir = getAppIconCacheDir()
   const { slideAssetsPath } = buildLayoutArtifactPaths(workspaceDir)
   const slideAssetsJson = existsSync(slideAssetsPath)
     ? await fs.readFile(slideAssetsPath, 'utf-8').catch(() => '')
@@ -608,9 +609,9 @@ async function executeGeneratedPythonCodeToFileInternal(
             PPTX_TITLE: title || 'Presentation',
             PPTX_FONT_FAMILY: fontFamily,
             PPTX_COLOR_TREATMENT: colorTreatment,
-            ICON_CACHE_DIR: iconCacheDir,
+            PPTX_TEXT_BOX_STYLE: textBoxStyle,
             PPTX_ICON_COLLECTION: opts?.iconCollection ?? 'all',
-            ...(opts?.renderDir ? { PPTX_SKIP_COM_LAYOUT_FIX: '1' } : {}),
+            ...(opts?.renderDir ? { PPTX_SKIP_TEXT_OVERFLOW_FIX: '1' } : {}),
             ...(slideAssetsJson.trim() ? { PPTX_SLIDE_ASSETS_JSON: slideAssetsJson } : {}),
             ...(templatePath ? { PPTX_TEMPLATE_PATH: templatePath } : {}),
             ...(templateMetaJson ? { PPTX_TEMPLATE_META_JSON: templateMetaJson } : {}),
@@ -684,9 +685,8 @@ export async function executeChunkedPptxGeneration(
   const themePayload = JSON.stringify(theme?.C ?? DEFAULT_THEME_C)
   const fontFamily = resolveThemeFontFamily(theme)
   const colorTreatment = resolveThemeColorTreatment(theme)
+  const textBoxStyle = resolveThemeTextBoxStyle(theme)
   const workspaceDir = await readWorkspaceDir()
-  const iconCacheDir = getAppIconCacheDir()
-
   let templatePath = opts.templatePath
   if (!templatePath) {
     const candidate = path.join(workspaceDir, 'template', 'template.pptx')
@@ -750,7 +750,7 @@ export async function executeChunkedPptxGeneration(
           PPTX_TITLE: title || 'Presentation',
           PPTX_FONT_FAMILY: fontFamily,
           PPTX_COLOR_TREATMENT: colorTreatment,
-          ICON_CACHE_DIR: iconCacheDir,
+          PPTX_TEXT_BOX_STYLE: textBoxStyle,
           PPTX_ICON_COLLECTION: opts.iconCollection ?? 'all',
           PPTX_LAYOUT_SPECS_JSON: chunkLayoutSpecs,
           ...(chunkSlideAssets.trim() ? { PPTX_SLIDE_ASSETS_JSON: chunkSlideAssets } : {}),
@@ -821,7 +821,7 @@ export async function executeChunkedPptxGeneration(
     env: {
       ...process.env,
       PYTHONIOENCODING: 'utf-8',
-      PPTX_SKIP_COM_LAYOUT_FIX: '1',
+      PPTX_SKIP_TEXT_OVERFLOW_FIX: '1',
       ...(opts.slideAssetsJson?.trim() ? { PPTX_SLIDE_ASSETS_JSON: opts.slideAssetsJson } : {}),
       ...(notebookLMInfographicsJson ? { PPTX_NOTEBOOKLM_INFOGRAPHICS: notebookLMInfographicsJson } : {}),
       WORKSPACE_DIR: workspaceDir,
@@ -872,7 +872,7 @@ async function findMostRecentPptx(dirPath: string): Promise<string | null> {
     const entries = await fs.readdir(dirPath, { withFileTypes: true })
     let best: { path: string; mtime: number } | null = null
     for (const entry of entries) {
-      if (!entry.isFile() || !/\.pptx$/i.test(entry.name)) continue
+      if (!entry.isFile() || !/\.pptx$/i.test(entry.name) || entry.name.startsWith('~$')) continue
       const fullPath = path.join(dirPath, entry.name)
       const stat = await fs.stat(fullPath)
       if (!best || stat.mtimeMs > best.mtime) {
