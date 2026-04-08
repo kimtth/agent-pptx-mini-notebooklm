@@ -9,7 +9,7 @@ import { usePaletteStore } from '../../stores/palette-store.ts'
 import { PaletteCanvas } from './PaletteCanvas.tsx'
 import { ThemeSlotEditor } from './ThemeSlotEditor.tsx'
 import { getIconifyCollectionById, getIconifyCollectionOptions, getIconifyExamples } from '../../domain/icons/iconify.ts'
-import type { ThemeColorTreatment } from '../../domain/entities/palette.ts'
+import type { ThemeColorTreatment, ThemeTextBoxStyle } from '../../domain/entities/palette.ts'
 
 const COLOR_TREATMENT_OPTIONS: Array<{
   value: ThemeColorTreatment;
@@ -17,6 +17,12 @@ const COLOR_TREATMENT_OPTIONS: Array<{
   description: string;
   preview: string;
 }> = [
+  {
+    value: 'mixed',
+    label: 'Mixed',
+    description: 'Adaptive by context.',
+    preview: 'linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 45%, white) 50%, var(--accent) 100%)',
+  },
   {
     value: 'solid',
     label: 'Solid',
@@ -30,6 +36,37 @@ const COLOR_TREATMENT_OPTIONS: Array<{
     preview: 'linear-gradient(135deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 45%, white) 100%)',
   },
 ]
+
+const TEXT_BOX_STYLE_OPTIONS: Array<{
+  value: ThemeTextBoxStyle;
+  label: string;
+  description: string;
+  preview: string;
+}> = [
+  {
+    value: 'mixed',
+    label: 'Mixed',
+    description: 'Adaptive by context.',
+    preview: 'linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.05)), radial-gradient(circle at 82% 30%, color-mix(in srgb, var(--accent) 50%, white) 0, color-mix(in srgb, var(--accent) 50%, white) 12%, transparent 13%)',
+  },
+  {
+    value: 'plain',
+    label: 'Plain Text Box',
+    description: 'Use text-only panels without decorative icons.',
+    preview: 'linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.05))',
+  },
+  {
+    value: 'with-icons',
+    label: 'Text Box with Icons',
+    description: 'Prefer text panels paired with a supporting icon when the layout allows it.',
+    preview: 'linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.05)), radial-gradient(circle at 78% 34%, color-mix(in srgb, var(--accent) 72%, white) 0, color-mix(in srgb, var(--accent) 72%, white) 16%, transparent 17%)',
+  },
+]
+
+const MIXED_TEXT_BOX_STYLE_OPTION = TEXT_BOX_STYLE_OPTIONS.find((option) => option.value === 'mixed')
+const PRIMARY_TEXT_BOX_STYLE_OPTIONS = TEXT_BOX_STYLE_OPTIONS.filter((option) => option.value !== 'mixed')
+const MIXED_COLOR_TREATMENT_OPTION = COLOR_TREATMENT_OPTIONS.find((option) => option.value === 'mixed')
+const PRIMARY_COLOR_TREATMENT_OPTIONS = COLOR_TREATMENT_OPTIONS.filter((option) => option.value !== 'mixed')
 
 export function PalettePanel() {
   const {
@@ -47,6 +84,8 @@ export function PalettePanel() {
     setSelectedFont,
     selectedColorTreatment,
     setSelectedColorTreatment,
+    selectedTextBoxStyle,
+    setSelectedTextBoxStyle,
     selectedIconCollection,
     setSelectedIconCollection,
   } = usePaletteStore()
@@ -218,39 +257,118 @@ export function PalettePanel() {
         <div className="flex items-center px-4 border-b text-xs font-semibold uppercase tracking-wider"
           style={{ color: 'var(--text-secondary)', borderColor: 'var(--panel-border)', height: 40, minHeight: 40 }}
         >
-          Coloring
+          Palette Styling
         </div>
         <div className="px-4 py-4 flex flex-col gap-3">
           <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
-            Text Box Fill Style
+            Text Box Type
           </span>
           <div className="grid gap-3 md:grid-cols-2">
-            {COLOR_TREATMENT_OPTIONS.map((option) => {
-              const active = option.value === selectedColorTreatment
+            {PRIMARY_TEXT_BOX_STYLE_OPTIONS.map((option) => {
+              const active = option.value === selectedTextBoxStyle
               return (
                 <button
                   key={option.value}
                   type="button"
-                  onClick={() => { setSelectedColorTreatment(option.value); commitTokens(); }}
-                  className="border p-3 text-left transition-colors"
+                  onClick={() => { setSelectedTextBoxStyle(option.value); commitTokens(); }}
+                  className="border px-3 py-2.5 text-left transition-colors"
                   style={{
                     borderColor: active ? 'var(--accent)' : 'var(--panel-border)',
                     background: active ? 'color-mix(in srgb, var(--accent) 10%, var(--surface))' : 'var(--surface)',
                     color: 'var(--text-primary)',
                   }}
                 >
-                  <div className="mb-3 h-12 border" style={{ borderColor: 'rgba(255,255,255,0.18)', background: option.preview }} />
-                  <div className="text-sm font-semibold">{option.label}</div>
-                  <p className="mt-1 text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
+                  <div className="mb-2 flex h-9 items-center justify-between border px-2.5" style={{ borderColor: 'rgba(255,255,255,0.18)', background: option.preview }}>
+                    <div className="h-2 w-12 rounded-full" style={{ background: 'rgba(255,255,255,0.85)' }} />
+                    {option.value === 'with-icons' && (
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full border text-[9px] font-semibold" style={{ borderColor: 'rgba(255,255,255,0.28)', color: '#fff', background: 'rgba(15, 23, 42, 0.24)' }}>
+                        Ic
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-[13px] font-semibold leading-4">{option.label}</div>
+                  <p className="mt-1 text-xs leading-4" style={{ color: 'var(--text-muted)' }}>
                     {option.description}
                   </p>
                 </button>
               )
             })}
           </div>
-          <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
-            Gradient mode tells PPTX generation to prefer tonal blends on cards, banners, and background panels instead of flat fills.
-          </p>
+          {MIXED_TEXT_BOX_STYLE_OPTION && (
+            <button
+              type="button"
+              onClick={() => { setSelectedTextBoxStyle(MIXED_TEXT_BOX_STYLE_OPTION.value); commitTokens(); }}
+              className="border px-3 py-2 text-left transition-colors"
+              style={{
+                borderColor: MIXED_TEXT_BOX_STYLE_OPTION.value === selectedTextBoxStyle ? 'var(--accent)' : 'var(--panel-border)',
+                background: MIXED_TEXT_BOX_STYLE_OPTION.value === selectedTextBoxStyle
+                  ? 'color-mix(in srgb, var(--accent) 10%, var(--surface))'
+                  : 'var(--surface)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-7 w-16 shrink-0 border" style={{ borderColor: 'rgba(255,255,255,0.18)', background: MIXED_TEXT_BOX_STYLE_OPTION.preview }} />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold leading-4">{MIXED_TEXT_BOX_STYLE_OPTION.label}</div>
+                  <p className="mt-0.5 text-xs leading-4" style={{ color: 'var(--text-muted)' }}>
+                    {MIXED_TEXT_BOX_STYLE_OPTION.description}
+                  </p>
+                </div>
+              </div>
+            </button>
+          )}
+          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+            Text Box Fill Style
+          </span>
+          <div className="grid gap-3 md:grid-cols-2">
+            {PRIMARY_COLOR_TREATMENT_OPTIONS.map((option) => {
+              const active = option.value === selectedColorTreatment
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => { setSelectedColorTreatment(option.value); commitTokens(); }}
+                  className="border px-3 py-2.5 text-left transition-colors"
+                  style={{
+                    borderColor: active ? 'var(--accent)' : 'var(--panel-border)',
+                    background: active ? 'color-mix(in srgb, var(--accent) 10%, var(--surface))' : 'var(--surface)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <div className="mb-2 h-9 border" style={{ borderColor: 'rgba(255,255,255,0.18)', background: option.preview }} />
+                  <div className="text-[13px] font-semibold leading-4">{option.label}</div>
+                  <p className="mt-1 text-xs leading-4" style={{ color: 'var(--text-muted)' }}>
+                    {option.description}
+                  </p>
+                </button>
+              )
+            })}
+          </div>
+          {MIXED_COLOR_TREATMENT_OPTION && (
+            <button
+              type="button"
+              onClick={() => { setSelectedColorTreatment(MIXED_COLOR_TREATMENT_OPTION.value); commitTokens(); }}
+              className="border px-3 py-2 text-left transition-colors"
+              style={{
+                borderColor: MIXED_COLOR_TREATMENT_OPTION.value === selectedColorTreatment ? 'var(--accent)' : 'var(--panel-border)',
+                background: MIXED_COLOR_TREATMENT_OPTION.value === selectedColorTreatment
+                  ? 'color-mix(in srgb, var(--accent) 10%, var(--surface))'
+                  : 'var(--surface)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <div className="h-7 w-16 shrink-0 border" style={{ borderColor: 'rgba(255,255,255,0.18)', background: MIXED_COLOR_TREATMENT_OPTION.preview }} />
+                <div className="min-w-0">
+                  <div className="text-[13px] font-semibold leading-4">{MIXED_COLOR_TREATMENT_OPTION.label}</div>
+                  <p className="mt-0.5 text-xs leading-4" style={{ color: 'var(--text-muted)' }}>
+                    {MIXED_COLOR_TREATMENT_OPTION.description}
+                  </p>
+                </div>
+              </div>
+            </button>
+          )}
         </div>
       </section>
 

@@ -498,7 +498,18 @@ async function buildPrompt(
     parts.push('## Active Theme Palette\n');
     parts.push(`Theme name: ${workspace.theme.name}`);
     parts.push(`Font family: ${workspace.theme.fontFamily || 'Calibri'} (this is the ONLY font for the deck. Set run.font.name = PPTX_FONT_FAMILY on every text run. PowerPoint handles glyph substitution for non-Latin scripts automatically. Do NOT introduce any other font families in generated code.)`);
-    parts.push(`Color treatment: ${workspace.theme.colorTreatment || 'solid'} (${workspace.theme.colorTreatment === 'gradient' ? 'Prefer gradient fills on large cards, ribbons, and background panels.' : 'Prefer solid fills unless the chosen design style explicitly needs a gradient accent.'})`);
+    const colorTreatmentHint = workspace.theme.colorTreatment === 'gradient'
+      ? 'Use visible gradient fills on major text-bearing panels, ribbons, or hero/background surfaces. Do not leave the deck effectively solid.'
+      : workspace.theme.colorTreatment === 'solid'
+        ? 'Use solid fills for text-bearing panels and cards. Do not apply decorative gradients to core reading surfaces.'
+        : 'Adaptive: prefer gradient fills on hero, title, and large visual surfaces for dramatic effect; prefer solid fills on dense reading surfaces, data cards, and small panels for clarity. Decide per-slide based on the panel role.';
+    parts.push(`Color treatment: ${workspace.theme.colorTreatment || 'mixed'} (${colorTreatmentHint})`);
+    const textBoxStyleHint = workspace.theme.textBoxStyle === 'with-icons'
+      ? 'Text panels and cards should visibly pair text with readable side icons, icon chips, or icon badges when space allows. Choose the icon from each text box or card heading/body meaning; do not reuse one slide-level icon across every box. Avoid tiny decorative icons that read as visual noise.'
+      : workspace.theme.textBoxStyle === 'plain'
+        ? 'Keep text panels plain and text-led. Avoid decorative icon chips embedded inside text boxes unless the slide explicitly needs one.'
+        : 'Adaptive: use icon companions on cards, callouts, and feature panels where the icon adds semantic anchoring; keep dense prose panels, narrow sidebars, and minimalist reading surfaces plain. Decide per-panel based on whether an icon genuinely aids comprehension.';
+    parts.push(`Text box style: ${workspace.theme.textBoxStyle || 'mixed'} (${textBoxStyleHint})`);
     const slots = workspace.theme.slots;
     parts.push(`OOXML slots: dk1=#${slots.dk1}, lt1=#${slots.lt1}, dk2=#${slots.dk2}, lt2=#${slots.lt2}, accent1=#${slots.accent1}, accent2=#${slots.accent2}, accent3=#${slots.accent3}, accent4=#${slots.accent4}, accent5=#${slots.accent5}, accent6=#${slots.accent6}, hlink=#${slots.hlink}, folHlink=#${slots.folHlink}`);
     parts.push(`Semantic colors: PRIMARY=#${workspace.theme.C.PRIMARY}, SECONDARY=#${workspace.theme.C.SECONDARY}, BG=#${workspace.theme.C.BG}, TEXT=#${workspace.theme.C.TEXT}, ACCENT3=#${workspace.theme.C.ACCENT3}, ACCENT4=#${workspace.theme.C.ACCENT4}, ACCENT5=#${workspace.theme.C.ACCENT5}, ACCENT6=#${workspace.theme.C.ACCENT6}`);
@@ -506,6 +517,8 @@ async function buildPrompt(
       parts.push(`Palette colors: ${workspace.theme.colors.slice(0, 20).map((color) => `${color.name} ${color.hex}`).join(' | ')}`);
     }
     parts.push('CRITICAL: The palette colors above are the ONLY color source for this deck. Use OOXML slot and palette hex values exclusively in python-pptx code. Do NOT use any hardcoded hex colors from the design style spec — those are overridden by this palette. Readability is mandatory: when text sits on any colored or image background, call ensure_contrast(fg_hex, bg_hex). If style conflicts with readability, readability wins.');
+    parts.push('CRITICAL: These style controls are not advisory only. Respect them in generated code. If PPTX_COLOR_TREATMENT == "gradient", use apply_gradient_fill() on at least one major panel, ribbon, or hero surface per slide when that slide uses filled surfaces. If PPTX_COLOR_TREATMENT == "solid", use solid fills for those reading surfaces. If PPTX_COLOR_TREATMENT == "mixed", decide per-slide: prefer gradients on hero, title, and large accent surfaces; prefer solid fills on dense reading surfaces and small cards. If PPTX_TEXT_BOX_STYLE == "with-icons", major text panels should include a visible, readable icon companion when space allows, and the icon should match that panel\'s own content rather than repeating one slide-level icon across all boxes. Do not use tiny decorative icons. If PPTX_TEXT_BOX_STYLE == "plain", keep major text panels free of decorative icon chips/badges. If PPTX_TEXT_BOX_STYLE == "mixed", add icon companions to cards, callouts, and feature panels where the icon adds semantic anchoring, but keep dense prose panels and narrow sidebars plain.');
+    parts.push('CRITICAL: Horizontally aligned card/stat/process/comparison rows MUST stay within slide bounds. Use the pre-computed spec geometry (spec.cards.card_rect, spec.stats.box_rect, spec.comparison.left/right) without adding offsets that push the last item past the right edge. If content exceeds the available width, reduce copy instead of widening boxes.');
     parts.push('');
   }
 
@@ -557,10 +570,7 @@ async function buildPrompt(
     parts.push('## Icon Constraints\n');
     parts.push(`Icon provider: ${workspace.iconProvider}`);
     parts.push(`Preferred icon set: ${collection.label} (${collection.id})`);
-    if (workspace.availableIcons.length > 0) {
-      parts.push(`Approved icon hints currently attached to the workspace: ${workspace.availableIcons.length}`);
-    }
-    parts.push('Use explicit Iconify IDs only. Prefer icon names already attached to slides or provided by slide_assets(slide_index). Do not invent icon names, and do not use icons outside the selected collection because fetch_icon() enforces that constraint at runtime.');
+    parts.push('Icons are fetched live from the Iconify public API at runtime. Use any valid Iconify ID from the selected collection. Prefer icon names already attached to slides for slide-level hero/anchor icons, but for text-box companions choose icons that match each box\'s own content. Do not invent icon names — fetch_icon() will return None for invalid IDs. If network is unavailable, icons are omitted gracefully.');
     parts.push('');
   }
 
@@ -607,7 +617,7 @@ async function buildChunkPrompt(
     '- apply_widescreen(prs) → prs',
     '- set_fill_transparency(shape, value)',
     '- apply_gradient_fill(shape, color_stops, angle_degrees=0)',
-    '- PRECOMPUTED_LAYOUT_SPECS, OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_FONT_FAMILY, PPTX_COLOR_TREATMENT, WORKSPACE_DIR, IMAGES_DIR',
+    '- PRECOMPUTED_LAYOUT_SPECS, OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_FONT_FAMILY, PPTX_COLOR_TREATMENT, PPTX_TEXT_BOX_STYLE, WORKSPACE_DIR, IMAGES_DIR',
     'Do NOT invent helpers such as _txb, _rect, _oval, _shape, or any other shorthand.',
   ].join('\n');
 
@@ -1008,14 +1018,17 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
             await fs.unlink(outputPath).catch(() => { });
 
             const report = await executeGeneratedPythonCodeToFile(code, theme, title, outputPath, {
+              renderDir: previewRoot,
               iconCollection: workspace.iconCollection,
               layoutSpecsJson,
               includeImagesInLayout: workspace.includeImagesInLayout,
             });
 
+            sendToWindow(win, 'chat:chunked-pptx-ready', { code });
+
             return {
               success: true,
-              message: `PPTX re-generated successfully (${report.slideCount} slides). Layout validation passed.`,
+              message: `PPTX re-generated successfully (${report.slideCount} slides). Preview images updated.`,
               slideCount: report.slideCount,
               warnings: report.warnings,
             };

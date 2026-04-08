@@ -4,7 +4,7 @@ Electron desktop app for generating PowerPoint decks from chat, files, and URLs 
 
 <img src="./samples/main.png" alt="main screen" width="500" />
 
-This app aims to create a local, NotebookLM-style workflow for PPTX generation. It ingests source materials, grounds the content in them, and produces presentation-ready slides complete with layout, text, images, icons, and charts. Unlike NotebookLM, which generates AI images into slides, this app produces fully **editable slides** grounded in user-provided sources. The app uses **constraint-based layout computation** (via the Kiwi solver in 🦋 Flutter) and **🦖 RAPTOR-style hierarchical retrieval and summarization** to structure the final output.
+This app aims to create a local, NotebookLM-style workflow for PPTX generation. It ingests source materials, grounds the content in them, and produces presentation-ready slides complete with layout, text, images, icons, and charts. Unlike NotebookLM, which generates AI images into slides, this app produces fully **editable slides** grounded in user-provided sources. The app uses **constraint-based layout computation** (via the Kiwi solver 🦋, an implementation of the Cassowary algorithm used in systems like Auto Layout) and **🦖 RAPTOR-style hierarchical retrieval and summarization** to structure the final output.
 
 ## Documentation Index
 
@@ -97,7 +97,9 @@ For packaged builds, `.venv` is bundled into the app's `resources` directory. `p
 
 https://python-pptx.readthedocs.io/
 
-PPTX generation runs through a bundled Python runner at [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py), which executes agent-generated `python-pptx` code with the runtime variables `OUTPUT_PATH`, `PPTX_TITLE`, and `PPTX_THEME`.
+PPTX generation runs through a bundled Python runner at [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py), which executes agent-generated `python-pptx` code with runtime variables including `OUTPUT_PATH`, `PPTX_TITLE`, `PPTX_THEME`, `PPTX_COLOR_TREATMENT`, and `PPTX_TEXT_BOX_STYLE`.
+
+In the Palette panel, `Mixed` is the default for both `Text Box Type` and `Text Box Fill Style`; it adaptively chooses icon usage and fill treatment by slide context.
 
 ### Embedding Model & RAPTOR Retrieval
 
@@ -146,7 +148,7 @@ pptx-handler.ts
 
 | Module | Role |
 |--------|------|
-| `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point; selects measurement backend (COM → Pillow → heuristic) |
+| `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point; selects measurement backend (Pillow-first by default, or COM-first via setting) |
 | `layout_blueprint.py` | Declarative zone definitions for 14 layout types |
 | `com_text_measure.py` | Text height measurement via PowerPoint COM (Windows only, highest accuracy) |
 | `font_text_measure.py` | Text height measurement via Pillow font metrics (cross-platform, ~90–95% accuracy) |

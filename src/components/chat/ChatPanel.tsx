@@ -7,7 +7,7 @@ import { useSlidesStore } from '../../stores/slides-store'
 import { usePaletteStore } from '../../stores/palette-store'
 import { useDataSourcesStore } from '../../stores/data-sources-store'
 import { createUserMessage, historyToIpc, stripPythonCodeForDisplay } from '../../application/chat-use-case'
-import { applyThemeColorTreatment, applyThemeFontFamily } from '../../application/palette-use-case'
+import { applyThemeColorTreatment, applyThemeFontFamily, applyThemeTextBoxStyle } from '../../application/palette-use-case'
 import type { WorkspaceContext } from '../../application/chat-use-case'
 import { getAvailableIconChoices } from '../../domain/icons/iconify'
 import { getWorkflowConfig, type WorkflowId } from '../../domain/workflows/workflow-config'
@@ -155,7 +155,7 @@ export function ChatPanel() {
   const hasSlides = useSlidesStore((s) => s.work.slides.length > 0)
   const setStreaming = useSlidesStore((s) => s.setStreaming)
   const setPptxBusy = useSlidesStore((s) => s.setPptxBusy)
-  const { tokens, selectedFont, selectedColorTreatment, selectedIconCollection } = usePaletteStore()
+  const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore()
   const { files: dataSources, urls: urlSources } = useDataSourcesStore()
   const busy = streaming || pptxBusy
 
@@ -193,9 +193,12 @@ export function ChatPanel() {
     const work = useSlidesStore.getState().work
     const availableIcons = getAvailableIconChoices(selectedIconCollection)
     const workflow = options?.workflowId ? getWorkflowConfig(options.workflowId) : null
-    const effectiveTheme = applyThemeColorTreatment(
-      applyThemeFontFamily(tokens, selectedFont),
-      selectedColorTreatment,
+    const effectiveTheme = applyThemeTextBoxStyle(
+      applyThemeColorTreatment(
+        applyThemeFontFamily(tokens, selectedFont),
+        selectedColorTreatment,
+      ),
+      selectedTextBoxStyle,
     )
 
     const workspaceContext: WorkspaceContext = {

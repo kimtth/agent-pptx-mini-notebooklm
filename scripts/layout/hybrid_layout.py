@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -123,14 +124,15 @@ def _column_width(blueprint: LayoutBlueprint, content_w: float) -> float | None:
 
     Returns None for non-columnar layouts.
     """
+    import math as _math
     if blueprint.cards:
         v = blueprint.cards
-        return round((content_w - (v.columns - 1) * v.gap_x) / v.columns, 2)
+        return _math.floor(((content_w - (v.columns - 1) * v.gap_x) / v.columns) * 100) / 100
     if blueprint.stats:
         v = blueprint.stats
-        return round((content_w - (v.columns - 1) * v.gap_x) / v.columns, 2)
+        return _math.floor(((content_w - (v.columns - 1) * v.gap_x) / v.columns) * 100) / 100
     if blueprint.comparison:
-        return round((content_w - blueprint.comparison.gap_x) / 2, 2)
+        return _math.floor(((content_w - blueprint.comparison.gap_x) / 2) * 100) / 100
     if blueprint.timeline:
         # Timeline text starts at text_x; content zone starts at margin_x
         margin_x = blueprint.tokens.margin_x
@@ -147,27 +149,40 @@ def _get_measure_backend() -> tuple[type, callable]:
 
     Returns ``(TextMeasureRequest_class, measure_text_heights_func)``.
 
-    Priority:
-    1. PowerPoint COM (Windows + PowerPoint installed) — gold standard
-    2. Pillow font metrics (cross-platform) — good accuracy
-    3. Heuristic estimator (always available) — last resort
+    The order is controlled by the ``PPTX_FONT_METRICS_BACKEND`` env var:
+      - ``pillow-first`` (default): Pillow → COM → heuristic
+      - ``com-first``: COM → Pillow → heuristic
     """
-    # 1. Try COM (Windows only)
-    if sys.platform == 'win32':
+    backend_pref = os.environ.get('PPTX_FONT_METRICS_BACKEND', 'pillow-first').strip().lower()
+
+    if backend_pref == 'com-first':
+        # Legacy order: COM first (Windows), then Pillow, then heuristic
+        if sys.platform == 'win32':
+            try:
+                from com_text_measure import TextMeasureRequest, measure_text_heights
+                return TextMeasureRequest, measure_text_heights
+            except (ImportError, OSError):
+                pass
         try:
-            from com_text_measure import TextMeasureRequest, measure_text_heights
+            from font_text_measure import TextMeasureRequest, measure_text_heights
             return TextMeasureRequest, measure_text_heights
-        except (ImportError, OSError):
+        except ImportError:
             pass
+    else:
+        # Default: Pillow first, then COM, then heuristic
+        try:
+            from font_text_measure import TextMeasureRequest, measure_text_heights
+            return TextMeasureRequest, measure_text_heights
+        except ImportError:
+            pass
+        if sys.platform == 'win32':
+            try:
+                from com_text_measure import TextMeasureRequest, measure_text_heights
+                return TextMeasureRequest, measure_text_heights
+            except (ImportError, OSError):
+                pass
 
-    # 2. Try Pillow font-metrics backend
-    try:
-        from font_text_measure import TextMeasureRequest, measure_text_heights
-        return TextMeasureRequest, measure_text_heights
-    except ImportError:
-        pass
-
-    # 3. Heuristic fallback — synthesise a compatible measure function
+    # Heuristic fallback — synthesise a compatible measure function
     from font_text_measure import TextMeasureRequest
     from layout_specs import estimate_text_height_in
 

@@ -334,7 +334,7 @@ def validate_slide(slide, slide_index: int, *, include_images: bool | None = Non
                 ),
                 shape_a=box.shape_name,
             ))
-        elif ratio > 0.92:
+        elif ratio > 1.06:
             issues.append(LayoutIssue(
                 slide_index=slide_index,
                 issue_type=IssueType.TEXT_OVERFLOW,
@@ -358,10 +358,12 @@ def validate_slide(slide, slide_index: int, *, include_images: bool | None = Non
         if box.bottom > SLIDE_HEIGHT_EMU + OVERLAP_TOLERANCE_EMU:
             oob_parts.append('extends below slide')
         if oob_parts:
+            # Promote right-edge overflow to ERROR so it's actionable
+            severity = IssueSeverity.ERROR if 'extends right of slide' in oob_parts else IssueSeverity.WARNING
             issues.append(LayoutIssue(
                 slide_index=slide_index,
                 issue_type=IssueType.OUT_OF_BOUNDS,
-                severity=IssueSeverity.WARNING,
+                severity=severity,
                 message=f'Shape "{box.shape_name}" {", ".join(oob_parts)}',
                 shape_a=box.shape_name,
             ))

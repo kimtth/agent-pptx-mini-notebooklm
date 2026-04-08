@@ -55,7 +55,7 @@ After the create-pptx workflow produces a deck, inspect the structured QA report
 
 - When all findings are clear: output a short confirmation message summarizing the QA pass (e.g. "All 8 slides passed post-staging QA — deck is ready.").
 - When corrective action is needed: output either:
-  - A corrected python-pptx code block targeting the affected slides, OR
+  - A complete, self-contained python-pptx code block targeting the affected slides. Do not output a partial snippet or diff. The block must be executable as-is so the app can detect it and regenerate the deck.
   - A `patch_layout_infrastructure` + `rerun_pptx` tool sequence for layout issues.
 
 ## Success Criteria

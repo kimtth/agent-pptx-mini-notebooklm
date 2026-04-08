@@ -125,6 +125,16 @@ const FIELDS: SettingsField[] = [
     hint: 'Number of slides per parallel generation chunk. Set to 0 to disable chunking. Default: 0 (disabled).',
     optional: true,
   },
+  {
+    key: 'PPTX_FONT_METRICS_BACKEND',
+    label: 'Font Metrics Backend',
+    hint: 'Controls text-measurement engine for layout computation and overflow repair. Pillow-first is cross-platform; COM-first uses PowerPoint (Windows only).',
+    options: [
+      { value: 'pillow-first', label: 'Pillow-first (default)' },
+      { value: 'com-first', label: 'COM-first (PowerPoint)' },
+    ],
+    optional: true,
+  },
 ]
 
 export function SettingsModal({ onClose }: Props) {
