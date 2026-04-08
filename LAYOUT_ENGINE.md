@@ -437,11 +437,11 @@ Generated python-pptx code
         ▼
   validate_and_fix_output(output_path)
         │
-    ├── COM layout fix (normal PPTX export path)
-    │     Measure overflow and repair text-bearing shapes when PowerPoint COM is available
+    ├── Text overflow fix (normal PPTX export path)
+    │     Measure overflow and repair text-bearing shapes using the configured backend
     │     Runs in up to 2 bounded passes, becoming slightly more aggressive on the second pass
     │
-    ├── Auto-size fallback (when COM is unavailable)
+    ├── Auto-size fallback (when no measurement backend is available)
     │     Enable `TEXT_TO_FIT_SHAPE` on panel/card shapes only
     │
     ├── Contrast fix
@@ -460,13 +460,13 @@ Generated python-pptx code
 
     `pptx-python-runner.py` performs post-generation steps in this order:
 
-    1. COM-based overflow repair when available
-    2. Fallback auto-size flags when COM repair is unavailable
+    1. Text overflow repair when a measurement backend is available
+    2. Fallback auto-size flags when no measurement backend is available
     3. Contrast repair
     4. Layout validation
     5. Preview image rendering when requested
 
-There is one preview-specific exception: when the Electron app is generating local preview PNGs, it sets `PPTX_SKIP_COM_LAYOUT_FIX=1`. In that path the runner skips the COM overflow-repair phase and keeps only contrast repair + validation before `render_preview_images()`. This avoids opening PowerPoint twice during preview generation while preserving the normal export path's stricter repair behavior.
+  There is one preview-specific exception: when the Electron app is generating local preview PNGs, it sets `PPTX_SKIP_TEXT_OVERFLOW_FIX=1` and still honors `PPTX_SKIP_COM_LAYOUT_FIX=1` for backward compatibility. In that path the runner skips the overflow-repair phase and keeps only contrast repair + validation before `render_preview_images()`. This avoids doing a second measurement-and-fix pass during preview generation while preserving the normal export path's stricter repair behavior.
 
     If validation still finds blocking issues that exceed tolerance, or any blocking text-overflow issue, the runner raises a `RuntimeError`.
 
@@ -493,9 +493,10 @@ The final generated Python code does not talk to the layout engine directly. Ins
 | `OUTPUT_PATH` | Absolute path where the generated PPTX is written |
 | `PPTX_TITLE` | Presentation title string |
 | `PPTX_THEME` | Serialized theme palette JSON |
+| `PPTX_COLOR_TREATMENT` | Fill behavior: `solid`, `gradient`, or `mixed` |
+| `PPTX_TEXT_BOX_STYLE` | Panel behavior: `plain`, `with-icons`, or `mixed` |
 | `WORKSPACE_DIR` | Absolute path to the active workspace directory |
 | `IMAGES_DIR` | Absolute path to `<workspace>/images/` |
-| `ICON_CACHE_DIR` | Absolute path to the local icon cache directory |
 | `TEMPLATE_PATH` | Path to the user-supplied custom PPTX template, or `None` when no template is active |
 
 ### Content / Asset Helpers Injected at Runtime
@@ -504,7 +505,7 @@ The final generated Python code does not talk to the layout engine directly. Ins
 |--------|-----------|---------|
 | `safe_add_picture()` | `(shapes, path, left_emu, top_emu, width_emu, height_emu) → Picture` | Adds images safely preserving aspect ratio and handling icon scaling. **First arg must be `slide.shapes`**, never `slide`. |
 | `safe_image_path()` | `(path) → str` | Validates and normalizes image paths |
-| `fetch_icon()` | `(icon_id, color_hex) → path_or_None` | Loads an icon from the local icon cache; rejects names outside the selected icon collection |
+| `fetch_icon()` | `(icon_id, color_hex) → path_or_None` | Fetches an icon from Iconify at runtime; rejects names outside the selected icon collection |
 | `resolve_font()` | `(text, fallback_name) → font_name_str` | Selects `PPTX_FONT_FAMILY` (user-selected, default Calibri) for Latin or the appropriate Noto Sans family for non-Latin text |
 | `ensure_noto_fonts()` | `() → None` | Downloads and installs missing Noto fonts on demand |
 | `estimate_text_height_in()` | `(text, width_in, font_size_pt) → float` | Fallback text height heuristic (CJK-aware) used by generated code and validator |

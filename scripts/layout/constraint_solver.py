@@ -448,7 +448,13 @@ def _build_cards(
     cols = variant.columns
     eff_items = max(item_count, 1)
     rows = max(math.ceil(eff_items / cols), 1)
-    card_w = round((content.w - (cols - 1) * variant.gap_x) / cols, 2)
+    # Use floor to prevent cumulative rounding from exceeding content width
+    card_w = math.floor(((content.w - (cols - 1) * variant.gap_x) / cols) * 100) / 100
+    # Clamp: ensure last card's right edge does not exceed content area
+    last_right = content.x + (cols - 1) * (card_w + variant.gap_x) + card_w
+    max_right = round(content.x + content.w, 4)
+    if last_right > max_right + 0.01:
+        card_w = round((content.w - (cols - 1) * variant.gap_x) / cols - 0.01, 2)
     if per_card_h is not None and per_card_h > 0:
         card_h = round(per_card_h, 2)
     else:
@@ -477,7 +483,13 @@ def _build_stats(
     if content is None:
         return None
     cols = variant.columns
-    box_w = round((content.w - (cols - 1) * variant.gap_x) / cols, 2)
+    # Use floor to prevent cumulative rounding from exceeding content width
+    box_w = math.floor(((content.w - (cols - 1) * variant.gap_x) / cols) * 100) / 100
+    # Clamp: ensure last box's right edge does not exceed content area
+    last_right = content.x + (cols - 1) * (box_w + variant.gap_x) + box_w
+    max_right = round(content.x + content.w, 4)
+    if last_right > max_right + 0.01:
+        box_w = round((content.w - (cols - 1) * variant.gap_x) / cols - 0.01, 2)
     return StatsSpec(
         start_x=content.x,
         start_y=content.y,
@@ -516,9 +528,12 @@ def _build_comparison(
 ) -> ComparisonSpec | None:
     if content is None:
         return None
-    half_w = round((content.w - variant.gap_x) / 2, 2)
+    # Use floor to prevent cumulative rounding from exceeding content width
+    half_w = math.floor(((content.w - variant.gap_x) / 2) * 100) / 100
     right_x = round(content.x + half_w + variant.gap_x, 2)
+    # Clamp right half width so it doesn't exceed content area
+    right_w = min(half_w, round(content.x + content.w - right_x, 2))
     return ComparisonSpec(
         left=RectSpec(content.x, content.y, half_w, content.h),
-        right=RectSpec(right_x, content.y, half_w, content.h),
+        right=RectSpec(right_x, content.y, right_w, content.h),
     )

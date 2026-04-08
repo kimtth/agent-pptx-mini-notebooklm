@@ -1,3 +1,9 @@
+export const ICONIFY_API_HOSTS = [
+  'https://api.iconify.design',
+  'https://api.simplesvg.com',
+  'https://api.unisvg.com',
+] as const
+
 export const ICONIFY_COLLECTIONS = [
   {
     id: 'all',
@@ -84,7 +90,7 @@ export function getAvailableIconChoices(collectionId: IconifyCollectionId = DEFA
   return [...new Set([...getIconifyExamples(collectionId)])]
 }
 
-export function buildIconifySvgUrl(iconName: string, colorHex?: string): string {
+export function buildIconifySvgUrl(iconName: string, colorHex?: string, hostIndex?: number): string {
   const normalized = normalizeIconName(iconName)
   if (!normalized) throw new Error('Icon name is required')
   const [prefix, ...nameParts] = normalized.split(':')
@@ -97,5 +103,6 @@ export function buildIconifySvgUrl(iconName: string, colorHex?: string): string 
     query.set('color', colorHex.startsWith('#') ? colorHex : `#${colorHex}`)
   }
 
-  return `https://api.iconify.design/${encodeURIComponent(prefix)}/${encodeURIComponent(name)}.svg?${query.toString()}`
+  const host = ICONIFY_API_HOSTS[Math.min(hostIndex ?? 0, ICONIFY_API_HOSTS.length - 1)]
+  return `${host}/${encodeURIComponent(prefix)}/${encodeURIComponent(name)}.svg?${query.toString()}`
 }

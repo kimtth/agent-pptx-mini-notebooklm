@@ -80,6 +80,8 @@ Also available at runtime:
 - `rgb_color()`, `apply_widescreen()`, `safe_image_path()`, `safe_add_picture()`, `ensure_contrast()`, `set_fill_transparency()`
 - `resolve_font(text, base_font)` — returns the correct Noto Sans font for non-Latin text (default base_font = `PPTX_FONT_FAMILY`)
 - `PPTX_FONT_FAMILY` — the user-selected base font (e.g., `'Calibri'`, `'Arial'`); use instead of hardcoding
+- `PPTX_COLOR_TREATMENT` — `'solid'`, `'gradient'`, or `'mixed'`; this is a hard requirement for how filled panels/cards should be rendered
+- `PPTX_TEXT_BOX_STYLE` — `'plain'`, `'with-icons'`, or `'mixed'`; this is a hard requirement for whether major text panels should visibly pair with icons
 - `ensure_noto_fonts(text)` — downloads missing Noto Sans fonts (called automatically at startup)
 
 When referencing slide images, prefer `os.path.join(IMAGES_DIR, filename)` over hardcoded absolute paths.
@@ -133,15 +135,36 @@ The design style defines mood, layout technique, and visual structure. The theme
 - Do not access `shape.fill._fill` or other private python-pptx fill proxy internals. They are proxy objects, not XML nodes.
 - If direct OOXML access is required, work from `shape._element.spPr` / `shape._element.findall(...)`, not `shape.fill._fill`.
 
-### Icon Usage (MANDATORY)
+### Text Box Style Contract
 
-Icons are provided by **Iconify**. The workspace context supplies the icon provider, preferred collection, and available icon names at runtime.
+- `PPTX_TEXT_BOX_STYLE == 'plain'`: major text panels, cards, and callouts should be text-led and free of decorative icon chips/badges inside the panel.
+- `PPTX_TEXT_BOX_STYLE == 'with-icons'`: major text panels, cards, and callouts should visibly pair text with an icon companion when space allows, such as a side icon, icon chip, or icon badge. Choose the icon from that panel's own heading/body meaning; do not reuse one slide-level icon across every panel. Keep the icon readable at presentation distance; avoid tiny decorative icons.
+- `PPTX_TEXT_BOX_STYLE == 'mixed'`: adaptive — add icon companions to cards, callouts, and feature panels where the icon adds semantic anchoring and visual variety; keep dense prose panels, narrow sidebars, and minimalist reading surfaces plain. Decide per-panel based on whether an icon genuinely aids comprehension.
+- Do not treat this as a weak preference. The user expects a visible difference between the modes.
 
-**Every slide MUST include at least one icon.** A deck without icons looks like a wall of text. Icons add visual anchoring, improve scannability, and reinforce the message.
+### Fill Style Contract
+
+- `PPTX_COLOR_TREATMENT == 'solid'`: use solid fills for major reading surfaces such as cards, sidebars, ribbons, and text panels.
+- `PPTX_COLOR_TREATMENT == 'gradient'`: use `apply_gradient_fill(...)` on at least one major panel, ribbon, hero surface, or background treatment per slide when that slide contains filled surfaces.
+- `PPTX_COLOR_TREATMENT == 'mixed'`: adaptive — prefer gradient fills on hero, title, and large accent surfaces for dramatic effect; prefer solid fills on dense reading surfaces and small cards for clarity. Decide per-slide based on the panel's role.
+- Do not leave `gradient` mode looking effectively identical to `solid` mode.
+
+### Horizontal Row Bounds Safety
+
+- Horizontally aligned card/stat/process/comparison rows MUST stay within slide bounds (13.333" wide).
+- Always use the pre-computed spec geometry (`spec.cards.card_rect`, `spec.stats.box_rect`, `spec.comparison.left/right`) without adding decorative offsets that push the last item past the right edge.
+- If content exceeds the available width, reduce copy or item count instead of widening boxes.
+- **Preserve alignment intentionally.** Do not introduce per-box compensating offsets that break the equal-width grid.
+
+### Icon Usage
+
+Icons are fetched live from the **Iconify** public API. Use any valid ID from the selected collection (e.g., `mdi:brain`, `lucide:rocket`).
+
+**Every slide SHOULD include at least one icon when a relevant icon exists.** If `fetch_icon()` returns `None`, continue without the icon. Icons add visual anchoring, improve scannability, and reinforce the message.
 
 Legacy aliases (e.g., `brain`, `rocket`) are automatically resolved to Iconify IDs (e.g., `mdi:brain`, `mdi:rocket-outline`). The generated code may also use full Iconify IDs from any supported collection (`mdi`, `lucide`, `tabler`, `ph`, `fa6-solid`, `fluent`).
 
-To use an icon in python-pptx, use the pre-injected `fetch_icon()` function, which loads from the local icon cache:
+To use an icon in python-pptx, use the pre-injected `fetch_icon()` function, which fetches from the Iconify API:
 
 ```python
 # fetch_icon is already available in the execution namespace — do NOT redefine it.
@@ -152,16 +175,17 @@ if icon_path:
                      width=spec.icon_rect.w_emu, height=spec.icon_rect.h_emu)
 ```
 
-**Important:** `fetch_icon(name, color_hex, size)` is pre-injected into the execution namespace. Do NOT redefine it. It checks the local icon cache (`ICON_CACHE_DIR`) and returns `None` if the requested icon is unavailable.
+**Important:** `fetch_icon(name, color_hex, size)` is pre-injected into the execution namespace. Do NOT redefine it. It fetches the icon from the Iconify API and returns `None` if the icon is unavailable.
 
 **Icon enforcement rules:**
-- **Every slide MUST call `fetch_icon()` at least once** to add a visual icon
+- **Every slide MUST call `fetch_icon()` at least once** to attempt adding a visual icon — if it returns `None`, continue without it
 - Title slide: place a prominent icon in the hero zone or as a visual anchor (1.5–2.5 in)
 - Section/diagram slides: icon should be 1.2–1.8 in, placed in sidebar or icon_rect
-- Cards/bullets slides: place one thematic icon per slide in the sidebar or icon_rect area
+- Cards/bullets slides: choose icons per card/text box content. Different cards or callouts should usually use different icons when their meanings differ; do not stamp the same icon into every box by default.
 - Stats slides: place an icon representing the metric theme
 - Summary slides: place a concluding icon in the summary box or as an accent
 - Choose icons that reinforce the slide's topic (e.g., `mdi:chart-line` for analytics, `mdi:shield-check` for security)
+- If a slide has multiple text boxes with icons, each icon should reflect that specific box's content, not just the overall slide title.
 - Color icons using theme accent colors (pass `color_hex=colors['accent4']` etc.)
 - If `spec.icon_rect` is available, use it; otherwise place the icon in an appropriate zone
 

@@ -69,7 +69,7 @@ export const WORKFLOW_CONFIGS: Record<WorkflowId, WorkflowConfig> = {
       'If all findings are clear, confirm the deck is ready.',
     ],
     agentDirective: 'Use this workflow for post-generation QA only. Inspect the QA report, summarize findings, and either confirm success or output a minimal corrective fix. Do not regenerate the entire deck — target only the affected slides.',
-    triggerPrompt: 'Run the post-staging QA workflow now. Review the QA report below for contrast violations, missing icons/images, layout overlaps, and text overflows. Summarize findings per slide, then either confirm the deck is ready or output the minimal corrective action needed.',
+    triggerPrompt: 'Run the post-staging QA workflow now. Review the QA report below for contrast violations, missing icons/images, layout overlaps, and text overflows. Summarize findings per slide, then either confirm the deck is ready or output the minimal corrective action needed. IMPORTANT: If you output corrective python-pptx code, it MUST be a complete, self-contained script so the app can execute it and regenerate the deck.',
   },
 }
 

@@ -222,6 +222,7 @@ export interface PptAppProject {
     themeName: string;
     selectedFont?: string;
     selectedColorTreatment?: import('../entities/palette').ThemeColorTreatment;
+    selectedTextBoxStyle?: import('../entities/palette').ThemeTextBoxStyle;
     styleTone?: 'dark' | 'light' | null;
     iconDir?: string | null;
     selectedIconCollection?: IconifyCollectionId;

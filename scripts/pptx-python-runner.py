@@ -47,12 +47,7 @@ from layout_validator import (  # type: ignore
 SLIDE_WIDTH_IN = 13.333
 SLIDE_HEIGHT_IN = 7.5
 
-ICON_CACHE_DIR = os.environ.get('ICON_CACHE_DIR', '')
 PPTX_ICON_COLLECTION = (os.environ.get('PPTX_ICON_COLLECTION', 'all') or 'all').strip()
-if not ICON_CACHE_DIR:
-    _default_cache = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'skills', 'iconfy-list', 'cache')
-    if os.path.isdir(_default_cache):
-        ICON_CACHE_DIR = os.path.normpath(_default_cache)
 
 # ---------------------------------------------------------------------------
 # Font resolution
@@ -161,32 +156,114 @@ def _recolor_png(png_path: str, color_hex: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Icon fetch tracking — records missing icons for post-staging QA
+# Icon fetch — downloads from Iconify public API with host redundancy
 # ---------------------------------------------------------------------------
 _MISSING_ICONS: list[dict[str, str]] = []
 
+ICONIFY_API_HOSTS = [
+    'https://api.iconify.design',
+    'https://api.simplesvg.com',
+    'https://api.unisvg.com',
+]
+
+_ICON_TEMP_DIR: str | None = None
+
+
+def _get_icon_temp_dir() -> str:
+    global _ICON_TEMP_DIR
+    if _ICON_TEMP_DIR is None:
+        import tempfile
+        _ICON_TEMP_DIR = tempfile.mkdtemp(prefix='pptx_icons_')
+    return _ICON_TEMP_DIR
+
+
+def _download_svg(prefix: str, icon_name: str) -> bytes | None:
+    import urllib.request
+    import urllib.error
+    for host in ICONIFY_API_HOSTS:
+        url = f'{host}/{prefix}/{icon_name}.svg?box=1'
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'pptx-slide-agent/1.0'})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                if resp.status == 200:
+                    data = resp.read()
+                    if data and b'<svg' in data.lower():
+                        print(f'[icon] fetched {prefix}:{icon_name} from {host}', file=sys.stderr)
+                        return data
+        except Exception as exc:
+            print(f'[icon] {host} failed for {prefix}:{icon_name}: {exc}', file=sys.stderr)
+    return None
+
+
+def _svg_to_png(svg_data: bytes, size: int = 256) -> bytes | None:
+    try:
+        import importlib
+        cairosvg = importlib.import_module('cairosvg')
+        return cairosvg.svg2png(bytestring=svg_data, output_width=size, output_height=size)
+    except ImportError:
+        pass
+    try:
+        import io
+        import tempfile as _tf
+        from svglib.svglib import svg2rlg
+        from reportlab.graphics import renderPM
+        # svglib requires a file path, write SVG to a temp file
+        with _tf.NamedTemporaryFile(suffix='.svg', delete=False) as tmp:
+            tmp.write(svg_data)
+            tmp_path = tmp.name
+        try:
+            drawing = svg2rlg(tmp_path)
+        finally:
+            os.unlink(tmp_path)
+        if drawing is None:
+            return None
+        scale_x = size / drawing.width if drawing.width else 1
+        scale_y = size / drawing.height if drawing.height else 1
+        scale = min(scale_x, scale_y)
+        drawing.width = size
+        drawing.height = size
+        drawing.scale(scale, scale)
+        buf = io.BytesIO()
+        renderPM.drawToFile(drawing, buf, fmt='PNG')
+        return buf.getvalue()
+    except Exception as exc:
+        print(f'[icon] svglib/reportlab conversion failed: {exc}', file=sys.stderr)
+        return None
+
 
 def fetch_icon(name: str, color_hex: str = '000000', size: int = 256) -> str | None:
-    """Load an icon PNG from the local cache, recolor via Pillow if needed."""
+    """Fetch an icon from the Iconify public API, convert to PNG, recolor."""
     if ':' not in name:
         default_prefix = PPTX_ICON_COLLECTION if PPTX_ICON_COLLECTION and PPTX_ICON_COLLECTION != 'all' else 'mdi'
         name = f'{default_prefix}:{name}'
     prefix, icon_name = name.split(':', 1)
-    png_name = f'{icon_name}.png'
 
     if PPTX_ICON_COLLECTION != 'all' and prefix != PPTX_ICON_COLLECTION:
-        _MISSING_ICONS.append({'icon': f'{prefix}:{icon_name}', 'reason': 'outside selected collection'})
-        print(f'[icon] REJECTED: {prefix}:{icon_name} is outside selected collection {PPTX_ICON_COLLECTION}', file=sys.stderr)
+        _MISSING_ICONS.append({'icon': f'{prefix}:{icon_name}', 'reason': 'outside_selected_collection'})
+        print(f'[icon] REJECTED: {prefix}:{icon_name} outside collection {PPTX_ICON_COLLECTION}', file=sys.stderr)
         return None
 
-    if ICON_CACHE_DIR:
-        cached = os.path.join(ICON_CACHE_DIR, prefix, png_name)
-        if os.path.isfile(cached):
-            return _recolor_png(cached, color_hex)
+    # Check temp dir for already-fetched icon this run
+    temp_dir = _get_icon_temp_dir()
+    png_path = os.path.join(temp_dir, prefix, f'{icon_name}.png')
+    if os.path.isfile(png_path):
+        return _recolor_png(png_path, color_hex)
 
-    _MISSING_ICONS.append({'icon': f'{prefix}:{icon_name}', 'reason': 'not found in cache'})
-    print(f'[icon] NOT FOUND: {prefix}:{icon_name} (looked in {ICON_CACHE_DIR}/{prefix}/)', file=sys.stderr)
-    return None
+    svg_data = _download_svg(prefix, icon_name)
+    if svg_data is None:
+        _MISSING_ICONS.append({'icon': f'{prefix}:{icon_name}', 'reason': 'network_all_hosts_failed'})
+        return None
+
+    png_data = _svg_to_png(svg_data, size)
+    if png_data is None:
+        _MISSING_ICONS.append({'icon': f'{prefix}:{icon_name}', 'reason': 'svg_conversion_failed'})
+        return None
+
+    os.makedirs(os.path.join(temp_dir, prefix), exist_ok=True)
+    with open(png_path, 'wb') as f:
+        f.write(png_data)
+
+    return _recolor_png(png_path, color_hex)
 
 
 def get_missing_icons() -> list[dict[str, str]]:
@@ -333,14 +410,15 @@ def safe_image_path(value: str | None) -> str | None:
     return str(candidate)
 
 
-ICON_INSERT_SCALE = 0.4  # Scale factor for icons inserted into fixed-size placeholders (e.g. title slide) to prevent overflow
+ICON_MAX_RENDER_DIMENSION_IN = 1.5
+ICON_MAX_RENDER_DIMENSION_EMU = int(ICON_MAX_RENDER_DIMENSION_IN * 914400)
 
 
 def _is_icon_asset(path: str) -> bool:
-    if not ICON_CACHE_DIR:
+    if _ICON_TEMP_DIR is None:
         return False
     normalized = os.path.normcase(os.path.normpath(path))
-    return normalized.startswith(os.path.normcase(os.path.normpath(ICON_CACHE_DIR)) + os.sep)
+    return normalized.startswith(os.path.normcase(os.path.normpath(_ICON_TEMP_DIR)) + os.sep)
 
 
 def safe_add_picture(shapes, image_path: str | None, left, top, width=None, height=None):
@@ -351,12 +429,15 @@ def safe_add_picture(shapes, image_path: str | None, left, top, width=None, heig
     if not resolved:
         return None
     if width is not None and height is not None and _is_icon_asset(resolved):
-        scaled_width = max(1, int(width * ICON_INSERT_SCALE))
-        scaled_height = max(1, int(height * ICON_INSERT_SCALE))
-        left = left + int((width - scaled_width) / 2)
-        top = top + int((height - scaled_height) / 2)
-        width = scaled_width
-        height = scaled_height
+        max_requested_dim = max(int(width), int(height))
+        if max_requested_dim > ICON_MAX_RENDER_DIMENSION_EMU:
+            icon_scale = ICON_MAX_RENDER_DIMENSION_EMU / max_requested_dim
+            scaled_width = max(1, int(width * icon_scale))
+            scaled_height = max(1, int(height * icon_scale))
+            left = left + int((width - scaled_width) / 2)
+            top = top + int((height - scaled_height) / 2)
+            width = scaled_width
+            height = scaled_height
     # Preserve aspect ratio when both width and height are specified
     if width is not None and height is not None:
         try:
@@ -597,6 +678,7 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
     title = os.environ.get('PPTX_TITLE', 'Presentation')
     base_font_family = os.environ.get('PPTX_FONT_FAMILY', 'Calibri')
     color_treatment = (os.environ.get('PPTX_COLOR_TREATMENT', 'solid') or 'solid').strip().lower()
+    text_box_style = (os.environ.get('PPTX_TEXT_BOX_STYLE', 'plain') or 'plain').strip().lower()
     if not workspace_dir:
         workspace_dir = os.environ.get('WORKSPACE_DIR', '')
     images_dir = os.path.join(workspace_dir, 'images') if workspace_dir else ''
@@ -660,7 +742,6 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
         '_pptx_theme': theme,
         '_pptx_title': title,
         'fetch_icon': fetch_icon,
-        'ICON_CACHE_DIR': ICON_CACHE_DIR,
         'PPTX_ICON_COLLECTION': PPTX_ICON_COLLECTION,
         'SLIDE_ASSETS': SLIDE_ASSETS,
         'slide_assets': slide_assets,
@@ -669,7 +750,8 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
         'slide_icon_collection': slide_icon_collection,
         'resolve_font': lambda text, base_font=base_font_family: resolve_font(text, base_font),
         'PPTX_FONT_FAMILY': base_font_family,
-        'PPTX_COLOR_TREATMENT': 'gradient' if color_treatment == 'gradient' else 'solid',
+        'PPTX_COLOR_TREATMENT': color_treatment if color_treatment in ('solid', 'gradient', 'mixed') else 'mixed',
+        'PPTX_TEXT_BOX_STYLE': text_box_style if text_box_style in ('plain', 'with-icons', 'mixed') else 'mixed',
         'contrast_ratio': contrast_ratio,
         'ensure_contrast': ensure_contrast,
         'set_fill_transparency': set_fill_transparency,
@@ -1059,22 +1141,121 @@ def _collect_com_overflows(output_path: Path) -> list[dict[str, object]] | None:
     return overflows
 
 
-def _com_fix_layout(output_path: Path) -> int:
-    """Measure text overflow via PowerPoint COM, then repair text-bearing shapes.
+def _collect_pillow_overflows(output_path: Path) -> list[dict[str, object]] | None:
+    """Return Pillow-measured overflow metadata, or None if Pillow is unavailable."""
+    try:
+        from font_text_measure import TextMeasureRequest, measure_text_heights  # type: ignore
+    except ImportError:
+        return None
 
-    The repair runs in bounded passes. Each pass measures final overflow via COM,
+    prs = Presentation(str(output_path))
+    overflows: list[dict[str, object]] = []
+
+    for si, slide in enumerate(prs.slides):
+        shapes_list = list(slide.shapes)
+        for shi, shape in enumerate(shapes_list):
+            if not shape.has_text_frame:
+                continue
+            text = shape.text_frame.text
+            if not text or not text.strip():
+                continue
+
+            # Collect dominant font properties across all paragraphs/runs
+            max_font_size_pt = 18.0
+            font_family = 'Calibri'
+            is_bold = False
+            for para in shape.text_frame.paragraphs:
+                for run in para.runs:
+                    if run.font.size is not None:
+                        size_pt = run.font.size.pt
+                        if size_pt > max_font_size_pt:
+                            max_font_size_pt = size_pt
+                            if run.font.name:
+                                font_family = run.font.name
+                            is_bold = bool(run.font.bold)
+
+            # Shape dimensions in inches (EMU → inches)
+            shape_width_in = shape.width / 914400.0
+            shape_height_in = shape.height / 914400.0
+
+            # Internal margins (EMU → inches, default ~0.05in each side)
+            tf = shape.text_frame
+            margin_left = (tf.margin_left if tf.margin_left is not None else 91440) / 914400.0
+            margin_right = (tf.margin_right if tf.margin_right is not None else 91440) / 914400.0
+            margin_top = (tf.margin_top if tf.margin_top is not None else 45720) / 914400.0
+            margin_bottom = (tf.margin_bottom if tf.margin_bottom is not None else 45720) / 914400.0
+
+            text_width_in = max(shape_width_in - margin_left - margin_right, 0.2)
+            usable_height_in = max(shape_height_in - margin_top - margin_bottom, 0.1)
+
+            normalized_text = _normalize_shape_text(text)
+            is_textbox = (shape.shape_type is not None and int(shape.shape_type) == 17)
+
+            req = TextMeasureRequest(
+                text=text,
+                width_in=text_width_in,
+                font_family=font_family,
+                font_size_pt=max_font_size_pt,
+                bold=is_bold,
+            )
+            heights = measure_text_heights([req])
+            required_height_in = heights[0] if heights else usable_height_in
+
+            # 5% tolerance (same as COM collector)
+            if required_height_in > usable_height_in * 1.05:
+                scale = min(usable_height_in / required_height_in, 1.0)
+                overflows.append({
+                    'slide_idx': si,
+                    'shape_idx': shi,
+                    'shape_id': getattr(shape, 'shape_id', None),
+                    'shape_name': str(getattr(shape, 'name', '') or ''),
+                    'shape_text': normalized_text,
+                    'scale': scale,
+                    'is_textbox': is_textbox,
+                })
+                print(
+                    f'[layout] Slide {si + 1}, "{shape.name}": '
+                    f'need {required_height_in:.2f}in, have {usable_height_in:.2f}in '
+                    f'(scale={scale:.0%}, {"textbox" if is_textbox else "shape"}) [pillow]',
+                    file=sys.stderr,
+                )
+
+    return overflows
+
+
+def _fix_text_overflow(output_path: Path) -> int:
+    """Measure text overflow and repair text-bearing shapes.
+
+    Uses the backend selected by ``PPTX_FONT_METRICS_BACKEND`` env var:
+      - ``pillow-first`` (default): Pillow → COM fallback
+      - ``com-first``: COM → Pillow fallback
+
+    The repair runs in bounded passes. Each pass measures overflow,
     then applies python-pptx fixes. Textboxes are manually shrunk because
     PowerPoint ignores TEXT_TO_FIT_SHAPE for them. Auto shapes also get manual
     shrink in addition to TEXT_TO_FIT_SHAPE because the auto-size flag alone has
     proven insufficient for some dense card/footer compositions.
 
-    Returns the number of fixes applied, or -1 if COM is unavailable.
+    Returns the number of fixes applied, or -1 if no backend is available.
     """
+    backend_pref = os.environ.get('PPTX_FONT_METRICS_BACKEND', 'pillow-first').strip().lower()
+
+    def _collect_overflows(path: Path) -> list[dict[str, object]] | None:
+        if backend_pref == 'com-first':
+            result = _collect_com_overflows(path)
+            if result is None:
+                result = _collect_pillow_overflows(path)
+        else:
+            result = _collect_pillow_overflows(path)
+            if result is None:
+                result = _collect_com_overflows(path)
+        return result
+
     total_fixes = 0
     max_passes = 2
 
     for pass_index in range(max_passes):
-        overflows = _collect_com_overflows(output_path)
+        overflows = _collect_overflows(output_path)
         if overflows is None:
             return -1
         if not overflows:
@@ -1364,8 +1545,8 @@ def _check_missing_images(output_path: Path) -> list[str]:
     return details
 
 
-def validate_and_fix_output(output_path: Path, *, run_com_layout_fix: bool = True) -> dict:
-    """Run image enforcement, optional COM layout fix, contrast fix, then validation on the generated PPTX.
+def validate_and_fix_output(output_path: Path, *, run_text_overflow_fix: bool = True) -> dict:
+    """Run image enforcement, optional text overflow fix, contrast fix, then validation on the generated PPTX.
 
     Returns a dict with structured QA findings:
         contrast_fixes (int), missing_images (list[str]), layout_issues (list[dict]).
@@ -1388,13 +1569,13 @@ def validate_and_fix_output(output_path: Path, *, run_com_layout_fix: bool = Tru
             f'and safe_add_picture() with layout-aware positioning. Details: {summary}'
         )
 
-    # Step 1: COM-based text overflow fix (measure + resize)
-    if run_com_layout_fix:
-        com_fixes = _com_fix_layout(output_path)
-        if com_fixes > 0:
-            print(f'[layout] COM fix applied to {com_fixes} shape(s).', file=sys.stderr)
-        elif com_fixes < 0:
-            # COM unavailable: fallback to auto-size XML flags only
+    # Step 1: Text overflow fix (measure + resize)
+    if run_text_overflow_fix:
+        overflow_fixes = _fix_text_overflow(output_path)
+        if overflow_fixes > 0:
+            print(f'[layout] Overflow fix applied to {overflow_fixes} shape(s).', file=sys.stderr)
+        elif overflow_fixes < 0:
+            # No backend available: fallback to auto-size XML flags only
             from layout_validator import _enforce_auto_size  # type: ignore
             prs = Presentation(str(output_path))
             fixes = 0
@@ -1402,7 +1583,7 @@ def validate_and_fix_output(output_path: Path, *, run_com_layout_fix: bool = Tru
                 fixes += _enforce_auto_size(slide)
             if fixes > 0:
                 prs.save(str(output_path))
-                print(f'[layout-validator] Auto-size flags set on {fixes} frame(s) (no COM).', file=sys.stderr)
+                print(f'[layout-validator] Auto-size flags set on {fixes} frame(s) (no measurement backend).', file=sys.stderr)
 
     # Step 2: Fix low-contrast text on glass panels / cards
     contrast_fixes = _fix_low_contrast_text(output_path)
@@ -1585,11 +1766,7 @@ def main() -> int:
     if isinstance(sys.stderr, io.TextIOWrapper):
         sys.stderr.reconfigure(encoding='utf-8')
 
-    if ICON_CACHE_DIR:
-        cache_exists = os.path.isdir(ICON_CACHE_DIR)
-        print(f'[icon-cache] ICON_CACHE_DIR={ICON_CACHE_DIR} (exists={cache_exists})', file=sys.stderr)
-    else:
-        print('[icon-cache] ICON_CACHE_DIR is not set — uncached icons will be unavailable', file=sys.stderr)
+    print(f'[icon] Using Iconify API hosts: {ICONIFY_API_HOSTS}', file=sys.stderr)
 
     args = parse_args()
     generated_path = Path(args.generated_code).resolve()
@@ -1650,8 +1827,11 @@ def main() -> int:
 
     qa_findings: dict = {'contrast_fixes': 0, 'missing_images': [], 'layout_issues': []}
     try:
-        skip_com_layout_fix = render_dir is not None and os.environ.get('PPTX_SKIP_COM_LAYOUT_FIX') == '1'
-        qa_findings = validate_and_fix_output(output_path, run_com_layout_fix=not skip_com_layout_fix)
+        skip_text_overflow_fix = render_dir is not None and (
+            os.environ.get('PPTX_SKIP_TEXT_OVERFLOW_FIX') == '1'
+            or os.environ.get('PPTX_SKIP_COM_LAYOUT_FIX') == '1'  # backward compat
+        )
+        qa_findings = validate_and_fix_output(output_path, run_text_overflow_fix=not skip_text_overflow_fix) or qa_findings
     except Exception as exc:  # noqa: BLE001
         msg = f'Layout validation failed: {exc}'
         post_warnings.append(msg)

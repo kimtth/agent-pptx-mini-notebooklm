@@ -12,7 +12,7 @@ import { usePaletteStore } from './stores/palette-store.ts'
 import { useProjectStore } from './stores/project-store.ts'
 import { useDataSourcesStore } from './stores/data-sources-store.ts'
 import { createAssistantMessage, createUserMessage, historyToIpc, extractPptxCodeBlock } from './application/chat-use-case.ts'
-import { applyThemeColorTreatment, applyThemeFontFamily } from './application/palette-use-case.ts'
+import { applyThemeColorTreatment, applyThemeFontFamily, applyThemeTextBoxStyle } from './application/palette-use-case.ts'
 import type { WorkspaceContext } from './application/chat-use-case.ts'
 import { getAvailableIconChoices } from './domain/icons/iconify.ts'
 import { getWorkflowConfig } from './domain/workflows/workflow-config.ts'
@@ -77,7 +77,7 @@ export default function App() {
     useSlidesStore.getState().setPptxBusy(true)
 
     const { work } = useSlidesStore.getState()
-    const { tokens, selectedFont, selectedColorTreatment, selectedIconCollection } = usePaletteStore.getState()
+    const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore.getState()
     const { files: dataSources, urls: urlSources } = useDataSourcesStore.getState()
     const availableIcons = getAvailableIconChoices(selectedIconCollection)
     const workflow = getWorkflowConfig('create-pptx')
@@ -91,9 +91,12 @@ export default function App() {
       customFrameworkPrompt: work.customFrameworkPrompt,
       templateMeta: work.templateMeta,
       pptxBuildError: errMsg,
-      theme: applyThemeColorTreatment(
-        applyThemeFontFamily(tokens, selectedFont),
-        selectedColorTreatment,
+      theme: applyThemeTextBoxStyle(
+        applyThemeColorTreatment(
+          applyThemeFontFamily(tokens, selectedFont),
+          selectedColorTreatment,
+        ),
+        selectedTextBoxStyle,
       ),
       workflow,
       dataSources,
@@ -122,7 +125,7 @@ export default function App() {
     useSlidesStore.getState().setPptxBusy(true)
 
     const { work } = useSlidesStore.getState()
-    const { tokens, selectedFont, selectedColorTreatment, selectedIconCollection } = usePaletteStore.getState()
+    const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore.getState()
     const { files: dataSources, urls: urlSources } = useDataSourcesStore.getState()
     const availableIcons = getAvailableIconChoices(selectedIconCollection)
 
@@ -135,9 +138,12 @@ export default function App() {
       customFrameworkPrompt: work.customFrameworkPrompt,
       templateMeta: work.templateMeta,
       pptxBuildError: null,
-      theme: applyThemeColorTreatment(
-        applyThemeFontFamily(tokens, selectedFont),
-        selectedColorTreatment,
+      theme: applyThemeTextBoxStyle(
+        applyThemeColorTreatment(
+          applyThemeFontFamily(tokens, selectedFont),
+          selectedColorTreatment,
+        ),
+        selectedTextBoxStyle,
       ),
       workflow,
       dataSources,
@@ -209,10 +215,13 @@ export default function App() {
             useSlidesStore.getState().setPptxBuildError(null)
 
             // Auto-execute the generated code to produce PPTX + preview PNGs in workspace
-            const { tokens, selectedFont, selectedColorTreatment, selectedIconCollection } = usePaletteStore.getState()
-            const paletteTokens = applyThemeColorTreatment(
-              applyThemeFontFamily(tokens, selectedFont),
-              selectedColorTreatment,
+            const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore.getState()
+            const paletteTokens = applyThemeTextBoxStyle(
+              applyThemeColorTreatment(
+                applyThemeFontFamily(tokens, selectedFont),
+                selectedColorTreatment,
+              ),
+              selectedTextBoxStyle,
             )
             const currentWork = useSlidesStore.getState().work
             const pptxTitle = currentWork.title || 'presentation'
