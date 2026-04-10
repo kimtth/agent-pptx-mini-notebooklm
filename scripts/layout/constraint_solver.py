@@ -13,6 +13,16 @@ four-level strength hierarchy:
 
 Horizontal layout is deterministic (computed from design tokens, not
 solved), so only vertical positions (y, h) are constraint variables.
+
+Two-pass solving (inspired by matplotlib's ``_constrained_layout.py``)
+----------------------------------------------------------------------
+After the first solve pass we check for zone compression — analogous to
+matplotlib's ``check_no_collapsed_axes()``.  If a non-stretch zone was
+squeezed below its measured/preferred height beyond a threshold, a
+second *relaxation* pass is run: non-essential zone preferred heights
+are reduced to their minimums to claw back space for the stretch
+(content) zone.  This avoids catastrophic content-area collapse when
+many zones compete for vertical space.
 """
 
 from __future__ import annotations
@@ -38,6 +48,7 @@ from layout_specs import (
     ComparisonSpec,
     LayoutSpec,
     RectSpec,
+    SolveQuality,
     StatsSpec,
     TimelineSpec,
 )
@@ -82,7 +93,176 @@ def _icon_corner_rect(
 
 
 # ---------------------------------------------------------------------------
-# Solver
+# Post-solve quality detection  (cf. matplotlib check_no_collapsed_axes)
+# ---------------------------------------------------------------------------
+
+# Compression beyond this fraction triggers a relaxation pass.
+_COMPRESSION_THRESHOLD = 0.25
+
+
+def _check_solve_quality(
+    zvs: list,  # list[_ZV]
+    measured_heights: dict[str, float],
+) -> SolveQuality:
+    """Compare solved zone heights against their targets.
+
+    Returns a ``SolveQuality`` summarising how much the solver had to
+    compress each zone.  A ``max_compression_ratio`` of 0 means the
+    layout fits perfectly; 1.0 means some zone is squashed all the way
+    down to ``min_h``.
+    """
+    compressed: list[str] = []
+    worst_ratio = 0.0
+
+    for zv in zvs:
+        zd = zv.zd
+        if zd.fixed_h is not None:
+            continue  # fixed zones aren't "compressed"
+
+        # For stretch zones, only check when a measurement exists.
+        # Stretch zones naturally fill remaining space; they're only
+        # "compressed" when measured content can't fit.
+        if zd.stretch:
+            target = measured_heights.get(zd.role.value)
+            if target is None or target <= zd.min_h:
+                continue
+        else:
+            target = measured_heights.get(zd.role.value, zd.preferred_h)
+            if target <= zd.min_h:
+                continue
+
+        solved_h = zv.h.value()
+        if solved_h < target - 0.02:
+            ratio = min((target - solved_h) / (target - zd.min_h), 1.0)
+            compressed.append(zd.role.value)
+            worst_ratio = max(worst_ratio, ratio)
+
+    is_overcrowded = worst_ratio > _COMPRESSION_THRESHOLD
+
+    return SolveQuality(
+        compressed_zones=tuple(compressed),
+        max_compression_ratio=round(worst_ratio, 4),
+        is_overcrowded=is_overcrowded,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Core kiwi solve (single pass)
+# ---------------------------------------------------------------------------
+
+class _ZV:
+    """Bundle of kiwi variables for one zone."""
+    __slots__ = ('zd', 'y', 'h')
+
+    def __init__(self, zd: ZoneDef) -> None:
+        self.zd = zd
+        self.y = kiwi.Variable(f'{zd.role.value}.y')
+        self.h = kiwi.Variable(f'{zd.role.value}.h')
+
+
+def _run_solve(
+    zones: tuple[ZoneDef, ...],
+    tokens: DesignTokens,
+    measured_heights: dict[str, float],
+) -> list:  # list[_ZV]
+    """Build constraints and solve.  Returns the list of ``_ZV`` bundles
+    with solved values available via ``.y.value()`` / ``.h.value()``.
+    """
+    solver = kiwi.Solver()
+    zvs: list[_ZV] = [_ZV(z) for z in zones]
+
+    notes_y = tokens.notes_y
+    slide_bottom = SLIDE_HEIGHT_IN
+
+    # --- required constraints ---------------------------------------------
+    for zv in zvs:
+        zd = zv.zd
+        solver.addConstraint((zv.y >= 0) | kiwi.strength.required)
+        solver.addConstraint((zv.h >= zd.min_h) | kiwi.strength.required)
+        solver.addConstraint((zv.y + zv.h <= slide_bottom) | kiwi.strength.required)
+
+        if zd.fixed_h is not None:
+            solver.addConstraint((zv.h == zd.fixed_h) | kiwi.strength.required)
+
+        mh = measured_heights.get(zd.role.value)
+        if mh is not None and mh > zd.min_h:
+            solver.addConstraint((zv.h >= mh) | kiwi.strength.strong)
+
+    # Sequential ordering
+    for i in range(1, len(zvs)):
+        prev, curr = zvs[i - 1], zvs[i]
+        gap = tokens.accent_gap if prev.zd.role == ZoneRole.ACCENT else tokens.gap_y
+        solver.addConstraint(
+            (curr.y >= prev.y + prev.h + gap) | kiwi.strength.required
+        )
+
+    if zvs:
+        solver.addConstraint(
+            (zvs[0].y >= tokens.margin_top) | kiwi.strength.required
+        )
+
+    # Notes pinned
+    for zv in zvs:
+        if zv.zd.role == ZoneRole.NOTES:
+            solver.addConstraint((zv.y == notes_y) | kiwi.strength.required)
+
+    # Content family must end before notes
+    for zv in zvs:
+        if zv.zd.role in (ZoneRole.CONTENT, ZoneRole.FOOTER, ZoneRole.CHIPS, ZoneRole.SUMMARY_BOX):
+            solver.addConstraint(
+                (zv.y + zv.h <= notes_y - tokens.gap_y) | kiwi.strength.strong
+            )
+
+    # --- strong: stretch zones fill remaining space -----------------------
+    for zv in zvs:
+        if zv.zd.stretch:
+            idx = zvs.index(zv)
+            after_zones_h: float = 0.0
+            for j in range(idx + 1, len(zvs)):
+                if zvs[j].zd.role == ZoneRole.NOTES:
+                    break
+                fixed = zvs[j].zd.fixed_h
+                after_h: float = (
+                    fixed if fixed is not None
+                    else measured_heights.get(zvs[j].zd.role.value, zvs[j].zd.preferred_h)
+                )
+                after_zones_h += after_h + tokens.gap_y
+
+            target_bottom = notes_y - tokens.gap_y - after_zones_h
+            solver.addConstraint(
+                (zv.y + zv.h == target_bottom) | kiwi.strength.strong
+            )
+
+    # --- medium: preferred heights ----------------------------------------
+    for zv in zvs:
+        if zv.zd.stretch:
+            continue
+        mh = measured_heights.get(zv.zd.role.value)
+        target_h = mh if mh is not None else zv.zd.preferred_h
+        solver.addConstraint(
+            (zv.h == target_h) | kiwi.strength.medium
+        )
+
+    # --- weak: visual balance ---------------------------------------------
+    if zvs:
+        solver.addConstraint(
+            (zvs[0].y == tokens.margin_top) | kiwi.strength.weak
+        )
+
+    content_zvs = [zv for zv in zvs if zv.zd.role != ZoneRole.NOTES]
+    for i in range(1, len(content_zvs)):
+        for j in range(i + 1, len(content_zvs)):
+            gap_i = content_zvs[i].y - (content_zvs[i - 1].y + content_zvs[i - 1].h)
+            gap_j = content_zvs[j].y - (content_zvs[j - 1].y + content_zvs[j - 1].h)
+            solver.addConstraint((gap_i == gap_j) | kiwi.strength.weak)
+
+    # --- solve ------------------------------------------------------------
+    solver.updateVariables()
+    return zvs
+
+
+# ---------------------------------------------------------------------------
+# Solver (public API)
 # ---------------------------------------------------------------------------
 
 def solve_layout(
@@ -128,8 +308,6 @@ def solve_layout(
     # If per-item measurement provided, derive CONTENT zone height from it.
     if card_measured_h is not None and card_measured_h > 0:
         if blueprint.timeline is not None:
-            # For timeline: each node_rect height = step_y * 0.85, so
-            # step_y = card_measured_h / 0.85, content_h = step_y * items
             eff_items = max(item_count, 1)
             step_y = card_measured_h / 0.85
             content_h = step_y * eff_items
@@ -144,133 +322,44 @@ def solve_layout(
                 content_h = card_measured_h * rows + gap_y * (rows - 1)
                 measured_heights = {**measured_heights, ZoneRole.CONTENT.value: content_h}
 
-    # ----- create kiwi variables for each zone ----------------------------
+    # ---- Pass 1: solve with original measurements -----------------------
+    zvs = _run_solve(zones, tokens, measured_heights)
+    quality = _check_solve_quality(zvs, measured_heights)
 
-    solver = kiwi.Solver()
+    # ---- Pass 2 (conditional): relaxation --------------------------------
+    # Inspired by matplotlib's double-pass in _constrained_layout.py.
+    # If the first pass shows severe compression, reduce non-essential zone
+    # preferred heights to their minimums and re-solve.  This claws back
+    # vertical space for the stretch (content) zone.
+    relaxation_pass = False
+    if quality.is_overcrowded:
+        relaxed = dict(measured_heights)
+        for zv in zvs:
+            zd = zv.zd
+            if zd.fixed_h is not None or zd.stretch:
+                continue
+            if zd.role.value in quality.compressed_zones:
+                continue  # already compressed — leave alone
+            if zd.role in (ZoneRole.KEY_MESSAGE, ZoneRole.CHIPS, ZoneRole.FOOTER):
+                # Relax: remove measured override so solver uses min_h
+                relaxed.pop(zd.role.value, None)
 
-    class _ZV:
-        """Bundle of kiwi variables for one zone."""
-        def __init__(self, zd: ZoneDef) -> None:
-            self.zd = zd
-            self.y = kiwi.Variable(f'{zd.role.value}.y')
-            self.h = kiwi.Variable(f'{zd.role.value}.h')
+        zvs = _run_solve(zones, tokens, relaxed)
+        quality = _check_solve_quality(zvs, relaxed)
+        relaxation_pass = True
 
-    zvs: list[_ZV] = [_ZV(z) for z in zones]
-
-    # ----- required constraints -------------------------------------------
-
-    notes_y = tokens.notes_y
-    slide_bottom = SLIDE_HEIGHT_IN
-
-    for zv in zvs:
-        zd = zv.zd
-
-        # Zone top ≥ 0
-        solver.addConstraint((zv.y >= 0) | kiwi.strength.required)
-
-        # Zone height ≥ min_h
-        solver.addConstraint((zv.h >= zd.min_h) | kiwi.strength.required)
-
-        # Zone bottom ≤ slide height
-        solver.addConstraint((zv.y + zv.h <= slide_bottom) | kiwi.strength.required)
-
-        # If fixed height, pin it
-        if zd.fixed_h is not None:
-            solver.addConstraint((zv.h == zd.fixed_h) | kiwi.strength.required)
-
-        # Measured text height as minimum — use strong (not required) so
-        # the solver can compress zones when total measured heights exceed
-        # available slide space (e.g. slides with many items).
-        mh = measured_heights.get(zd.role.value)
-        if mh is not None and mh > zd.min_h:
-            solver.addConstraint((zv.h >= mh) | kiwi.strength.strong)
-
-    # Sequential ordering (each zone starts after the previous one ends + gap)
-    for i in range(1, len(zvs)):
-        prev = zvs[i - 1]
-        curr = zvs[i]
-        gap = tokens.accent_gap if prev.zd.role == ZoneRole.ACCENT else tokens.gap_y
-        solver.addConstraint(
-            (curr.y >= prev.y + prev.h + gap) | kiwi.strength.required
-        )
-
-    # First zone starts at margin_top
-    if zvs:
-        solver.addConstraint(
-            (zvs[0].y >= tokens.margin_top) | kiwi.strength.required
-        )
-
-    # Notes zone is always pinned
-    for zv in zvs:
-        if zv.zd.role == ZoneRole.NOTES:
-            solver.addConstraint((zv.y == notes_y) | kiwi.strength.required)
-
-    # Content should end before notes zone
-    for zv in zvs:
-        if zv.zd.role in (ZoneRole.CONTENT, ZoneRole.FOOTER, ZoneRole.CHIPS, ZoneRole.SUMMARY_BOX):
-            solver.addConstraint(
-                (zv.y + zv.h <= notes_y - tokens.gap_y) | kiwi.strength.strong
-            )
-
-    # ----- strong: stretch zones fill remaining space ---------------------
-
-    for zv in zvs:
-        if zv.zd.stretch:
-            # Stretch zone should be as large as possible up to notes boundary.
-            # Compute total height consumed by zones *after* the stretch zone
-            # (but before notes) so the stretch zone can claim the remainder.
-            idx = zvs.index(zv)
-
-            after_zones_h: float = 0.0
-            for j in range(idx + 1, len(zvs)):
-                if zvs[j].zd.role == ZoneRole.NOTES:
-                    break
-                fixed = zvs[j].zd.fixed_h
-                after_h: float = fixed if fixed is not None else measured_heights.get(zvs[j].zd.role.value, zvs[j].zd.preferred_h)
-                after_zones_h += after_h + tokens.gap_y
-
-            # Target: stretch zone bottom = notes_y - gap - after_zones
-            target_bottom = notes_y - tokens.gap_y - after_zones_h
-            solver.addConstraint(
-                (zv.y + zv.h == target_bottom) | kiwi.strength.strong
-            )
-
-    # ----- medium: preferred heights --------------------------------------
-
-    for zv in zvs:
-        if zv.zd.stretch:
-            continue  # stretch zones sized by strong constraints above
-        mh = measured_heights.get(zv.zd.role.value)
-        target_h = mh if mh is not None else zv.zd.preferred_h
-        solver.addConstraint(
-            (zv.h == target_h) | kiwi.strength.medium
-        )
-
-    # ----- weak: visual balance -------------------------------------------
-
-    # First zone prefers starting exactly at margin_top
-    if zvs:
-        solver.addConstraint(
-            (zvs[0].y == tokens.margin_top) | kiwi.strength.weak
-        )
-
-    # Equal spacing between non-notes zones
-    content_zvs = [zv for zv in zvs if zv.zd.role != ZoneRole.NOTES]
-    for i in range(1, len(content_zvs)):
-        for j in range(i + 1, len(content_zvs)):
-            gap_i = content_zvs[i].y - (content_zvs[i - 1].y + content_zvs[i - 1].h)
-            gap_j = content_zvs[j].y - (content_zvs[j - 1].y + content_zvs[j - 1].h)
-            solver.addConstraint((gap_i == gap_j) | kiwi.strength.weak)
-
-    # ----- solve ----------------------------------------------------------
-
-    solver.updateVariables()
-
-    # ----- read solved values and build LayoutSpec ------------------------
-
-    solved: dict[str, tuple[float, float]] = {}  # role -> (y, h)
+    # ---- read solved values ----------------------------------------------
+    solved: dict[str, tuple[float, float]] = {}
     for zv in zvs:
         solved[zv.zd.role.value] = (round(zv.y.value(), 4), round(zv.h.value(), 4))
+
+    # Attach quality metadata
+    final_quality = SolveQuality(
+        compressed_zones=quality.compressed_zones,
+        max_compression_ratio=quality.max_compression_ratio,
+        is_overcrowded=quality.is_overcrowded,
+        relaxation_pass=relaxation_pass,
+    )
 
     return _build_layout_spec(
         blueprint=blueprint,
@@ -281,6 +370,7 @@ def solve_layout(
         item_count=item_count,
         max_items=max_items,
         card_measured_h=card_measured_h,
+        solve_quality=final_quality,
     )
 
 
@@ -298,6 +388,7 @@ def _build_layout_spec(
     item_count: int,
     max_items: int | None,
     card_measured_h: float | None = None,
+    solve_quality: SolveQuality | None = None,
 ) -> LayoutSpec:
     tokens = blueprint.tokens
     mx = tokens.margin_x
@@ -352,10 +443,31 @@ def _build_layout_spec(
         hero_h = 3.65
         hero_rect = RectSpec(hero_x, round(hero_y, 4), hero_w, hero_h)
 
+    if blueprint.layout_type == 'title' and hero_rect is not None:
+        narration_w = round(max(hero_rect.x - mx - tokens.gap_x, 3.2), 2)
+        if title_rect:
+            title_rect = RectSpec(mx, title_rect.y, narration_w, title_rect.h)
+        if key_rect:
+            key_rect = RectSpec(mx, key_rect.y, narration_w, key_rect.h)
+        if content_rect:
+            content_rect = RectSpec(mx, content_rect.y, narration_w, content_rect.h)
+        if chips_rect:
+            chips_rect = RectSpec(mx, chips_rect.y, narration_w, chips_rect.h)
+        if footer_rect:
+            footer_rect = RectSpec(mx, footer_rect.y, narration_w, footer_rect.h)
+
     # Caption layouts (content_caption, picture_caption) — left narration + right content
     # Title and key_message are narrowed to ~35%, content/hero occupies the right ~65%.
     if blueprint.layout_type in ('content_caption', 'picture_caption'):
-        narration_w = 4.30
+        narration_fraction = next(
+            (
+                zone.width_fraction
+                for zone in blueprint.zones
+                if zone.role in (ZoneRole.TITLE, ZoneRole.KEY_MESSAGE) and zone.width_fraction < 1.0
+            ),
+            None,
+        )
+        narration_w = round((SLIDE_WIDTH_IN - 2 * mx) * narration_fraction, 2) if narration_fraction else 4.30
         right_x = round(narration_w + mx + tokens.gap_x, 2)
         right_w = round(SLIDE_WIDTH_IN - right_x - mx, 2)
         body_top = title_rect.y if title_rect else mx
@@ -415,6 +527,7 @@ def _build_layout_spec(
         stats=stats_spec,
         timeline=timeline_spec,
         comparison=comp_spec,
+        solve_quality=solve_quality,
     )
 
 

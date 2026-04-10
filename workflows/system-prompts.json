@@ -40,6 +40,8 @@
           "Do not reconstruct layout input arrays or slide structure metadata inline from duplicated constants. The workspace layout-input.json file is the source of truth for layout-driven content structure.",
           "Never use literal float coordinates for positioning. Every x, y, w, h must reference a spec.* field from PRECOMPUTED_LAYOUT_SPECS[slide_index] or be computed relative to one (e.g., spec.content_rect.y + idx * row_h).",
           "For slides with title, key message, and body content, use the sub-zone rects (spec.hero_rect, spec.chips_rect, spec.footer_rect, spec.sidebar_rect) from PRECOMPUTED_LAYOUT_SPECS instead of hardcoded coordinates.",
+          "Treat spec.hero_rect, spec.chips_rect, spec.footer_rect, and spec.sidebar_rect as optional content zones, not mandatory decoration. Use spec.hero_rect only when slide_image_paths(slide_index) returns approved images. Use spec.chips_rect only when the slide has short chip-style labels. Use spec.footer_rect only when you have real footer or citation text. Do not draw placeholder panels or empty boxes just because a rect exists.",
+          "Create at most one textbox for spec.title_rect and one textbox for spec.key_message_rect on a slide. Do not restate the same title or key message inside additional panels, footer boxes, chips, or duplicate textboxes.",
           "When spec.cards is present, inspect spec.cards.pattern before drawing card interiors. 'icon_card' means each card should include one prominent icon integrated inside the card body using spec.cards.icon_size as the target scale. 'header_icon_card' means reserve a top header band using spec.cards.header_band_h and place one or more small icons in that band using spec.cards.header_icon_count as the target density.",
           "Always use PRECOMPUTED_LAYOUT_SPECS[slide_index] for layout coordinates.",
           "Prefer defining build_presentation(output_path, theme, title), and save the deck to output_path."
@@ -48,7 +50,7 @@
       {
         "title": "TEXT & OVERFLOW RULES",
         "items": [
-          "Always enable MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE on text frames. There is no runtime geometry repair pass — generated code must be overlap-safe on its own: reserve notes/footer space, reduce or split content instead of crowding, keep aligned layouts aligned, and use estimate_text_height_in() to size every paragraph-bearing box before placement.",
+          "For free textboxes placed directly in spec.title_rect, spec.key_message_rect, or spec.notes_rect, set text_frame.word_wrap = True and text_frame.auto_size = MSO_AUTO_SIZE.NONE. For fixed-height panel/card shapes, use MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE. There is no runtime geometry repair pass — generated code must be overlap-safe on its own: reserve notes/footer space, reduce or split content instead of crowding, keep aligned layouts aligned, and use estimate_text_height_in() to size every paragraph-bearing box before placement.",
           "If estimated text height consumes most of a box, the box is too small or the slide is too dense. Use fewer boxes or split the slide."
         ]
       },

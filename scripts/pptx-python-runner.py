@@ -68,6 +68,45 @@ def resolve_font(text: str, base_font: str = 'Calibri') -> str:
     return base_font
 
 
+def _has_real_transparency(image) -> bool:
+    if 'A' not in image.getbands():
+        return False
+    min_alpha, max_alpha = image.getchannel('A').getextrema()
+    return min_alpha < 255 and max_alpha > 0
+
+
+def _has_visible_alpha(image) -> bool:
+    if 'A' not in image.getbands():
+        return False
+    return image.getchannel('A').getbbox() is not None
+
+
+def _make_background_transparent(image):
+    bg_samples = [
+        image.getpixel((0, 0)),
+        image.getpixel((image.width - 1, 0)),
+        image.getpixel((0, image.height - 1)),
+        image.getpixel((image.width - 1, image.height - 1)),
+    ]
+    bg_r = sum(sample[0] for sample in bg_samples) // len(bg_samples)
+    bg_g = sum(sample[1] for sample in bg_samples) // len(bg_samples)
+    bg_b = sum(sample[2] for sample in bg_samples) // len(bg_samples)
+
+    converted = image.copy()
+    pixels = converted.load()
+    assert pixels is not None
+    for y in range(converted.height):
+        for x in range(converted.width):
+            r, g, b, _ = pixels[x, y]  # type: ignore[misc]
+            diff = max(abs(r - bg_r), abs(g - bg_g), abs(b - bg_b))
+            if diff <= 12:
+                pixels[x, y] = (0, 0, 0, 0)  # type: ignore[index]
+                continue
+            alpha = min(255, diff * 4)
+            pixels[x, y] = (0, 0, 0, alpha)  # type: ignore[index]
+    return converted
+
+
 def _make_transparent(png_path: str) -> str:
     """Convert a black-on-white RGB icon to black-on-transparent RGBA.
 
@@ -84,21 +123,16 @@ def _make_transparent(png_path: str) -> str:
 
     try:
         from PIL import Image
-        img = Image.open(png_path)
+        img = Image.open(png_path).convert('RGBA')
 
         # If image already has real transparency, skip conversion
-        if img.mode == 'RGBA':
-            arr = img.load()
-            assert arr is not None
-            # Quick sample: if corners are transparent, assume it's already good
-            w, h = img.size
-            if arr[0, 0][3] == 0 or arr[w - 1, 0][3] == 0:  # type: ignore[index]
-                return png_path
+        if _has_real_transparency(img):
+            return png_path
 
-        img = img.convert('RGBA')
-        pixels = img.load()
+        converted = img.copy()
+        pixels = converted.load()
         assert pixels is not None
-        w, h = img.size
+        w, h = converted.size
         for y in range(h):
             for x in range(w):
                 r, g, b, _ = pixels[x, y]  # type: ignore[misc]
@@ -110,7 +144,13 @@ def _make_transparent(png_path: str) -> str:
                     # Map luminance to alpha: black=255, mid-gray=partial
                     alpha = min(255, int((255 - lum) * (255 / 200)))
                     pixels[x, y] = (0, 0, 0, alpha)  # type: ignore[index]
-        img.save(transparent_path, 'PNG')
+
+        if not _has_visible_alpha(converted):
+            converted = _make_background_transparent(img)
+            if not _has_visible_alpha(converted):
+                return png_path
+
+        converted.save(transparent_path, 'PNG')
         return transparent_path
     except Exception:
         return png_path
@@ -149,6 +189,8 @@ def _recolor_png(png_path: str, color_hex: str) -> str:
                 _, _, _, a = pixels[x, y]  # type: ignore[misc]
                 if a > 0:
                     pixels[x, y] = (r_tgt, g_tgt, b_tgt, a)  # type: ignore[index]
+        if not _has_visible_alpha(img):
+            return png_path
         img.save(colored_path, 'PNG')
         return colored_path
     except Exception:
@@ -195,7 +237,23 @@ def _download_svg(prefix: str, icon_name: str) -> bytes | None:
     return None
 
 
+def _preprocess_svg(svg_data: bytes) -> bytes:
+    """Replace currentColor with black so svglib can render strokes/fills."""
+    import re
+    text = svg_data.decode('utf-8', errors='replace')
+    text = text.replace('currentColor', '#000000')
+    # Ensure stroke-only icons (fill="none") get visible strokes
+    if 'stroke=' not in text and 'fill="none"' in text:
+        text = text.replace('fill="none"', 'fill="none" stroke="#000000"')
+    # If no stroke-width is set, add a default for thin icons
+    if 'stroke-width' not in text and 'stroke=' in text:
+        text = re.sub(r'(<svg[^>]*>)', r'\1<style>*{stroke-width:2}</style>', text, count=1)
+    return text.encode('utf-8')
+
+
 def _svg_to_png(svg_data: bytes, size: int = 256) -> bytes | None:
+    # Preprocess SVG to fix currentColor and stroke visibility for svglib
+    svg_data = _preprocess_svg(svg_data)
     try:
         import importlib
         cairosvg = importlib.import_module('cairosvg')

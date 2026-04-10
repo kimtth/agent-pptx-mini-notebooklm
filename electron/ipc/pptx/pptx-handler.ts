@@ -182,6 +182,10 @@ type LayoutInputSourceSlide = {
   bullets: string[]
   notes: string
   icon?: string | null
+  imagePath?: string | null
+  selectedImages?: Array<{
+    imagePath?: string | null
+  }>
 }
 
 export interface LayoutInputSlide {
@@ -189,10 +193,22 @@ export interface LayoutInputSlide {
   title_text: string
   key_message_text: string
   bullets: string[]
+  chip_labels: string[]
+  footer_text: string
   notes: string
   item_count: number
   has_icon: boolean
+  has_hero_image: boolean
   font_family: string
+}
+
+function hasApprovedImage(slide: LayoutInputSourceSlide): boolean {
+  if (typeof slide.imagePath === 'string' && slide.imagePath.trim().length > 0) {
+    return true
+  }
+  return (slide.selectedImages ?? []).some(
+    (image) => typeof image.imagePath === 'string' && image.imagePath.trim().length > 0,
+  )
 }
 
 type SlideAssetSourceSlide = {
@@ -366,9 +382,12 @@ export function buildLayoutInputSlides(slides: LayoutInputSourceSlide[], fontFam
     title_text: slide.title,
     key_message_text: slide.keyMessage,
     bullets: slide.bullets,
+    chip_labels: slide.layout === 'title' ? slide.bullets : [],
+    footer_text: '',
     notes: slide.notes || '',
     item_count: slide.bullets.length,
     has_icon: !!slide.icon,
+    has_hero_image: hasApprovedImage(slide),
     font_family: effectiveFontFamily,
   }))
 }
@@ -462,6 +481,8 @@ async function refreshPreviewArtifacts(
     bullets: slide.bullets ?? [],
     notes: slide.notes ?? '',
     icon: slide.icon,
+    imagePath: slide.imagePath,
+    selectedImages: slide.selectedImages,
   }))
 
   const layoutSpecsResult = await computeLayoutSpecsInternal(layoutInput, fontFamily)

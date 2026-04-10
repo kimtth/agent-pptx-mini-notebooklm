@@ -116,6 +116,32 @@ class ComparisonSpec:
 
 
 @dataclass(frozen=True)
+class SolveQuality:
+    """Post-solve quality metrics from the constraint solver.
+
+    Inspired by matplotlib's ``check_no_collapsed_axes`` pattern: after the
+    solver runs, detect zones that were forcibly compressed below their
+    measured / preferred heights and surface that information so callers
+    can adapt (reduce font sizes, trim items, or warn the user).
+    """
+    compressed_zones: tuple[str, ...] = ()
+    """Zone role values that were compressed below their target height."""
+
+    max_compression_ratio: float = 0.0
+    """Worst-case compression ratio across all zones.
+
+    0.0 = no compression at all.
+    1.0 = some zone was squeezed all the way down to its ``min_h``.
+    """
+
+    is_overcrowded: bool = False
+    """True when any zone was forcibly compressed."""
+
+    relaxation_pass: bool = False
+    """True when the solver ran a second relaxation pass to recover space."""
+
+
+@dataclass(frozen=True)
 class LayoutSpec:
     layout_type: str
     title_rect: RectSpec | None = None
@@ -135,6 +161,7 @@ class LayoutSpec:
     stats: StatsSpec | None = None
     timeline: TimelineSpec | None = None
     comparison: ComparisonSpec | None = None
+    solve_quality: SolveQuality | None = None
 
 
 def _is_wide_char(cp: int) -> bool:

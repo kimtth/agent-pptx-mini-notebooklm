@@ -15,6 +15,7 @@ import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+import re
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +55,10 @@ def _is_wide_char(cp: int) -> bool:
 @lru_cache(maxsize=64)
 def _resolve_font_path(family: str, bold: bool) -> str | None:
     """Find the system font file path for a given family and weight."""
-    family_lower = family.lower().replace(' ', '')
+    family_lower = re.sub(r'[\s_\-]+', '', family.lower())
+
+    def _normalise_font_stem(value: str) -> str:
+        return re.sub(r'[\s_\-]+', '', value.lower())
 
     if sys.platform == 'win32':
         fonts_dir = Path(r'C:\Windows\Fonts')
@@ -75,6 +79,32 @@ def _resolve_font_path(family: str, bold: bool) -> str | None:
             p = fonts_dir / name
             if p.exists():
                 return str(p)
+
+        # Variable fonts and many CJK families don't follow the simple
+        # ``family[-bold].ttf`` naming convention (e.g. ``NotoSansJP-VF.ttf``).
+        # Search the installed font list by normalised stem so we resolve the
+        # real file rather than falling back to a family-name alias.
+        matching: list[Path] = []
+        for pattern in ('*.ttf', '*.ttc', '*.otf'):
+            for p in fonts_dir.glob(pattern):
+                stem = _normalise_font_stem(p.stem)
+                if family_lower in stem or stem in family_lower:
+                    matching.append(p)
+        if matching:
+            if bold:
+                weighted = [
+                    p for p in matching
+                    if any(token in _normalise_font_stem(p.stem) for token in ('bold', 'black', 'heavy', 'semibold'))
+                ]
+                if weighted:
+                    return str(weighted[0])
+            regular = [
+                p for p in matching
+                if not any(token in _normalise_font_stem(p.stem) for token in ('bold', 'black', 'heavy'))
+            ]
+            if regular:
+                return str(regular[0])
+            return str(matching[0])
 
     elif sys.platform == 'darwin':
         font_dirs = [
@@ -124,6 +154,15 @@ def _load_font(family: str, size_pt: float, bold: bool):
 
     size = int(round(size_pt))
 
+    # Prefer the concrete font file when we can resolve it. Family-name aliases
+    # on Windows can load a different face that underestimates CJK wrapping.
+    font_path = _resolve_font_path(family, bold)
+    if font_path:
+        try:
+            return ImageFont.truetype(font_path, size=size)
+        except (OSError, IOError):
+            pass
+
     # Try Pillow's built-in font-name resolution (works well on Windows)
     names: list[str] = []
     if bold:
@@ -135,14 +174,6 @@ def _load_font(family: str, size_pt: float, bold: bool):
             return ImageFont.truetype(name, size=size)
         except (OSError, IOError):
             continue
-
-    # Try explicit path resolution (cross-platform)
-    font_path = _resolve_font_path(family, bold)
-    if font_path:
-        try:
-            return ImageFont.truetype(font_path, size=size)
-        except (OSError, IOError):
-            pass
 
     # Non-bold fallback when bold file isn't found
     if bold:

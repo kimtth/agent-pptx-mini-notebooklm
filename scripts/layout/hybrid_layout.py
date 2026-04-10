@@ -39,7 +39,7 @@ import argparse
 import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -61,9 +61,12 @@ class SlideContent:
     title_text: str = ''
     key_message_text: str = ''
     bullets: list[str] | None = None
+    chip_labels: list[str] | None = None
+    footer_text: str = ''
     notes: str = ''
     item_count: int = 0
     has_icon: bool = False
+    has_hero_image: bool = False
     font_family: str = 'Calibri'
 
     @staticmethod
@@ -73,9 +76,12 @@ class SlideContent:
             title_text=d.get('title_text', ''),
             key_message_text=d.get('key_message_text', ''),
             bullets=d.get('bullets'),
+            chip_labels=d.get('chip_labels'),
+            footer_text=d.get('footer_text', ''),
             notes=d.get('notes', ''),
             item_count=d.get('item_count', 0),
             has_icon=d.get('has_icon', False),
+            has_hero_image=d.get('has_hero_image', False),
             font_family=d.get('font_family', 'Calibri'),
         )
 
@@ -90,6 +96,11 @@ def _zone_text(slide: SlideContent, role: ZoneRole) -> str:
         return slide.title_text
     if role == ZoneRole.KEY_MESSAGE:
         return slide.key_message_text
+    if role == ZoneRole.CHIPS:
+        chip_labels = [label.strip() for label in (slide.chip_labels or []) if label.strip()]
+        return '\n'.join(chip_labels)
+    if role == ZoneRole.FOOTER:
+        return slide.footer_text
     if role == ZoneRole.CONTENT:
         bullets = slide.bullets or []
         return '\n'.join(bullets) if bullets else ''
@@ -100,21 +111,57 @@ def _zone_text(slide: SlideContent, role: ZoneRole) -> str:
 
 def _zone_needs_measurement(role: ZoneRole) -> bool:
     """Only text-bearing zones need COM measurement."""
-    return role in (ZoneRole.TITLE, ZoneRole.KEY_MESSAGE, ZoneRole.CONTENT, ZoneRole.NOTES)
+    return role in (ZoneRole.TITLE, ZoneRole.KEY_MESSAGE, ZoneRole.CONTENT, ZoneRole.FOOTER, ZoneRole.NOTES)
+
+
+def _effective_blueprint(blueprint: LayoutBlueprint, slide: SlideContent) -> LayoutBlueprint:
+    """Drop optional decorative zones when the slide has no matching content.
+
+    Only the *title* layout has purely decorative CHIPS / FOOTER zones that
+    should be omitted when no chip labels or footer text were supplied.
+    Other layouts (stats, chart, quote, closing …) keep their FOOTER zone
+    unconditionally because generated code fills it with data citations at
+    runtime.
+    """
+    if blueprint.layout_type == 'title':
+        include_chips = any(label.strip() for label in (slide.chip_labels or []))
+        include_footer = bool(slide.footer_text.strip())
+
+        zones = tuple(
+            zone
+            for zone in blueprint.zones
+            if not (
+                (zone.role == ZoneRole.CHIPS and not include_chips)
+                or (zone.role == ZoneRole.FOOTER and not include_footer)
+            )
+        )
+    else:
+        zones = blueprint.zones
+
+    has_hero = blueprint.has_hero and slide.has_hero_image
+
+    if zones == blueprint.zones and has_hero == blueprint.has_hero:
+        return blueprint
+
+    return replace(blueprint, zones=zones, has_hero=has_hero)
 
 
 def _zone_width(
     blueprint: LayoutBlueprint,
+    zone,
     role: ZoneRole,
     has_icon: bool,
 ) -> float:
     """Compute the available width (inches) for a zone."""
     from layout_specs import SLIDE_WIDTH_IN
     tokens = blueprint.tokens
-    w = SLIDE_WIDTH_IN - 2 * tokens.margin_x
+    avail_w = SLIDE_WIDTH_IN - 2 * tokens.margin_x
+    w = avail_w
     if has_icon and blueprint.icon_size > 0:
         w -= blueprint.icon_size + tokens.icon_corner_margin_x
-    if role in (ZoneRole.TITLE, ZoneRole.KEY_MESSAGE):
+    if zone.width_fraction < 1.0:
+        w = avail_w * zone.width_fraction
+    elif role in (ZoneRole.TITLE, ZoneRole.KEY_MESSAGE):
         w *= tokens.header_w_ratio
     return round(w, 2)
 
@@ -208,7 +255,7 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
     from constraint_solver import solve_layout
 
     # Step 1: Load blueprints
-    blueprints = [get_blueprint(s.layout_type) for s in slides]
+    blueprints = [_effective_blueprint(get_blueprint(s.layout_type), s) for s in slides]
 
     # Step 2: Collect measurement requests
     # Each entry: (slide_index, zone_role_value, TextMeasureRequest)
@@ -221,7 +268,12 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
 
     for i, (slide, bp) in enumerate(zip(slides, blueprints)):
         # Compute full content width (needed for column width calc)
-        full_content_w = _zone_width(bp, ZoneRole.CONTENT, slide.has_icon)
+        full_content_w = _zone_width(
+            bp,
+            next((zone for zone in bp.zones if zone.role == ZoneRole.CONTENT), bp.zones[0]),
+            ZoneRole.CONTENT,
+            slide.has_icon,
+        )
         col_w = _column_width(bp, full_content_w)
 
         for zd in bp.zones:
@@ -251,7 +303,7 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
             text = _zone_text(slide, zd.role)
             if not text.strip():
                 continue  # empty text → use preferred_h
-            width = _zone_width(bp, zd.role, slide.has_icon)
+            width = _zone_width(bp, zd, zd.role, slide.has_icon)
             measure_queue.append((
                 i,
                 zd.role.value,
@@ -367,9 +419,20 @@ def _comparison_to_dict(c) -> dict | None:
     }
 
 
+def _quality_to_dict(q) -> dict | None:
+    if q is None:
+        return None
+    return {
+        'compressed_zones': list(q.compressed_zones),
+        'max_compression_ratio': q.max_compression_ratio,
+        'is_overcrowded': q.is_overcrowded,
+        'relaxation_pass': q.relaxation_pass,
+    }
+
+
 def layout_spec_to_dict(spec: LayoutSpec) -> dict:
     """Serialize a LayoutSpec to a JSON-safe dict."""
-    return {
+    d = {
         'layout_type': spec.layout_type,
         'title_rect': _rect_to_dict(spec.title_rect),
         'key_message_rect': _rect_to_dict(spec.key_message_rect),
@@ -389,6 +452,11 @@ def layout_spec_to_dict(spec: LayoutSpec) -> dict:
         'timeline': _timeline_to_dict(spec.timeline),
         'comparison': _comparison_to_dict(spec.comparison),
     }
+    # solve_quality is diagnostic metadata — only include when present
+    q = _quality_to_dict(spec.solve_quality)
+    if q is not None:
+        d['solve_quality'] = q
+    return d
 
 
 def layout_spec_from_dict(d: dict) -> LayoutSpec:
@@ -401,8 +469,21 @@ def layout_spec_from_dict(d: dict) -> LayoutSpec:
         TimelineSpec,
     )
 
+    from layout_specs import SolveQuality
+
     def _r(v: dict | None) -> 'RectSpec | None':
         return RectSpec(**v) if v else None
+
+    # Deserialize solve_quality if present
+    sq = None
+    if d.get('solve_quality'):
+        sqd = d['solve_quality']
+        sq = SolveQuality(
+            compressed_zones=tuple(sqd.get('compressed_zones', ())),
+            max_compression_ratio=sqd.get('max_compression_ratio', 0.0),
+            is_overcrowded=sqd.get('is_overcrowded', False),
+            relaxation_pass=sqd.get('relaxation_pass', False),
+        )
 
     cards = None
     if d.get('cards'):
@@ -446,6 +527,7 @@ def layout_spec_from_dict(d: dict) -> LayoutSpec:
         stats=stats,
         timeline=timeline,
         comparison=comparison,
+        solve_quality=sq,
     )
 
 

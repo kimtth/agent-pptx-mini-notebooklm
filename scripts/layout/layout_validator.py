@@ -243,6 +243,29 @@ def _max_font_size_pt(shape, fallback: float = 18.0) -> float:
     return max(sizes) if sizes else fallback
 
 
+def _dominant_font_props(shape) -> tuple[str, bool]:
+    font_family = 'Calibri'
+    is_bold = False
+    max_font_size = 0.0
+    if not getattr(shape, 'has_text_frame', False):
+        return font_family, is_bold
+    try:
+        for paragraph in shape.text_frame.paragraphs:
+            for run in paragraph.runs:
+                if run.font.size is None:
+                    continue
+                size_pt = run.font.size.pt
+                if size_pt >= max_font_size:
+                    max_font_size = size_pt
+                    if run.font.name:
+                        font_family = run.font.name
+                    if run.font.bold is not None:
+                        is_bold = bool(run.font.bold)
+    except Exception:
+        return font_family, is_bold
+    return font_family, is_bold
+
+
 def _estimate_required_text_height_in(shape, box: ShapeBox) -> float | None:
     text = _shape_text(shape)
     if not text:
@@ -267,7 +290,26 @@ def _estimate_required_text_height_in(shape, box: ShapeBox) -> float | None:
         return None
 
     font_pt = _max_font_size_pt(shape)
-    required = estimate_text_height_in(text, width_in, font_pt)
+    font_family, is_bold = _dominant_font_props(shape)
+    required = None
+    try:
+        from font_text_measure import TextMeasureRequest, measure_text_heights  # type: ignore
+
+        req = TextMeasureRequest(
+            text=text,
+            width_in=width_in,
+            font_family=font_family,
+            font_size_pt=font_pt,
+            bold=is_bold,
+        )
+        heights = measure_text_heights([req])
+        if heights:
+            required = heights[0]
+    except ImportError:
+        required = None
+
+    if required is None:
+        required = estimate_text_height_in(text, width_in, font_pt)
 
     # Add a small pad for text frame margins and bullet indentation.
     if any(line.lstrip().startswith(('-', '*', '\u2022', '\u25cf', '\u25aa', '•')) for line in text.splitlines()):
