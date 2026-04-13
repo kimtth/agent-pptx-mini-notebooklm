@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "icrawler>=0.6.10",
     "markitdown[docx,pdf]>=0.1.5",
-    "pillow>=12.1.1",
+    "pillow>=12.2.0",
     "pywin32>=311; sys_platform == 'win32'",
     "python-pptx>=1.0.2",
     "svglib>=1.6.0",
