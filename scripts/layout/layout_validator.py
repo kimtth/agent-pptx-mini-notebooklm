@@ -69,6 +69,85 @@ class IssueType(Enum):
     TEXT_OVERFLOW = 'text_overflow'
 
 
+class ShapeRole(Enum):
+    """Semantic role for validation check eligibility.
+
+    TEMPLATE_DESIGN — decorative / template shapes: checked for bounds and
+    text overflow but excluded from overlap and cramped-spacing detection.
+    LAYOUT_MANAGED — blueprint-driven content: participates in all checks.
+    """
+    TEMPLATE_DESIGN = 'template_design'
+    LAYOUT_MANAGED = 'layout_managed'
+
+
+# Shape-name prefixes that mark a shape as template/design.
+# Shapes whose lowercased name starts with any of these are automatically
+# classified as TEMPLATE_DESIGN and excluded from collision checks.
+_DESIGN_NAME_PREFIXES = ('tmpl_', 'design_', 'bg_blob', 'bg_', 'decor_')
+_ICON_NAME_PREFIXES = ('icon_', 'design_icon_', 'decor_icon_')
+
+
+def _classify_shape_role(
+    shape,
+    *,
+    include_images: bool,
+    shape_role_registry: dict[int, str] | None = None,
+    layout_specs: list | None = None,
+    slide_index: int = -1,
+) -> ShapeRole:
+    """Classify a shape's semantic role for validation purposes.
+
+    Priority:
+      1. Explicit registry entry (authoritative, set at creation time)
+      2. Blueprint geometry match (shape aligns with a known LayoutSpec rect)
+      3. Explicit name prefix (backward compat)
+      4. Heuristics (background fill, decorative frame, glow oval)
+      5. Picture shape + include_images flag
+      6. Default → LAYOUT_MANAGED
+    """
+    # 1. Registry lookup — single source of truth when available
+    if shape_role_registry:
+        shape_id = getattr(shape, 'shape_id', None)
+        if shape_id is not None and int(shape_id) in shape_role_registry:
+            role_str = shape_role_registry[int(shape_id)]
+            if role_str == 'template_design':
+                return ShapeRole.TEMPLATE_DESIGN
+            return ShapeRole.LAYOUT_MANAGED
+
+    # 2. Blueprint geometry match
+    if layout_specs and slide_index >= 0:
+        role = _match_blueprint_geometry(shape, layout_specs, slide_index)
+        if role is not None:
+            return role
+
+    name = (getattr(shape, 'name', '') or '').lower()
+
+    # 3. Explicit name-based classification (backward compat)
+    for prefix in _ICON_NAME_PREFIXES:
+        if name.startswith(prefix):
+            return ShapeRole.TEMPLATE_DESIGN
+
+    for prefix in _DESIGN_NAME_PREFIXES:
+        if name.startswith(prefix):
+            return ShapeRole.TEMPLATE_DESIGN
+
+    # 4. Heuristic classification
+    if _is_background_fill(shape):
+        return ShapeRole.TEMPLATE_DESIGN
+    if _is_decorative_frame(shape):
+        return ShapeRole.TEMPLATE_DESIGN
+    if _is_decorative_glow(shape):
+        return ShapeRole.TEMPLATE_DESIGN
+
+    # 5. Picture shapes: controlled by include_images flag
+    if _is_picture_shape(shape):
+        if not include_images:
+            return ShapeRole.TEMPLATE_DESIGN
+
+    # 6. Default
+    return ShapeRole.LAYOUT_MANAGED
+
+
 @dataclass
 class ShapeBox:
     """Bounding box for a shape in EMU."""
@@ -227,6 +306,102 @@ def _is_picture_shape(shape) -> bool:
     return shape_type is not None and int(shape_type) == 13
 
 
+# ---------------------------------------------------------------------------
+# Blueprint geometry matching
+# ---------------------------------------------------------------------------
+
+# Tolerance in EMU (≈0.12″) for matching a shape's position to a LayoutSpec rect.
+_BLUEPRINT_MATCH_TOLERANCE_EMU = int(0.12 * 914400)
+
+
+def _rect_matches(shape_box: 'ShapeBox', rect_x: float, rect_y: float, rect_w: float, rect_h: float) -> bool:
+    """Return True if *shape_box* aligns with a blueprint rect within tolerance."""
+    tol = _BLUEPRINT_MATCH_TOLERANCE_EMU
+    rx = int(rect_x * 914400)
+    ry = int(rect_y * 914400)
+    rw = int(rect_w * 914400)
+    rh = int(rect_h * 914400)
+    return (abs(shape_box.left - rx) <= tol
+            and abs(shape_box.top - ry) <= tol
+            and abs(shape_box.width - rw) <= tol
+            and abs(shape_box.height - rh) <= tol)
+
+
+def _match_blueprint_geometry(shape, layout_specs: list, slide_index: int) -> ShapeRole | None:
+    """Try to match *shape* against known LayoutSpec rects for *slide_index*.
+
+    Returns ``ShapeRole.LAYOUT_MANAGED`` if the shape's bounding box matches
+    a blueprint rect within tolerance, ``None`` otherwise (so the caller falls
+    through to further classification).  Shapes matching accent rects are not
+    positively classified here because they can be either structural or decorative.
+    """
+    if slide_index >= len(layout_specs):
+        return None
+    spec = layout_specs[slide_index]
+
+    box = _get_shape_box(shape)
+    if box is None:
+        return None
+
+    # Check each simple RectSpec field on the spec
+    _RECT_FIELDS = (
+        'title_rect', 'key_message_rect', 'icon_rect', 'content_rect',
+        'notes_rect', 'summary_box', 'hero_rect', 'chips_rect',
+        'footer_rect', 'sidebar_rect',
+    )
+    for field_name in _RECT_FIELDS:
+        rect = getattr(spec, field_name, None)
+        if rect is None:
+            continue
+        if _rect_matches(box, rect.x, rect.y, rect.w, rect.h):
+            return ShapeRole.LAYOUT_MANAGED
+
+    # Check card rects
+    cards = getattr(spec, 'cards', None)
+    if cards:
+        max_items = getattr(spec, 'max_items', 0) or 12
+        for idx in range(max_items):
+            try:
+                card_rect = cards.card_rect(idx)
+                if _rect_matches(box, card_rect.x, card_rect.y, card_rect.w, card_rect.h):
+                    return ShapeRole.LAYOUT_MANAGED
+            except (IndexError, AttributeError):
+                break
+
+    # Check stats boxes
+    stats = getattr(spec, 'stats', None)
+    if stats:
+        for idx in range(6):  # practical upper bound
+            try:
+                stat_rect = stats.box_rect(idx)
+                if _rect_matches(box, stat_rect.x, stat_rect.y, stat_rect.w, stat_rect.h):
+                    return ShapeRole.LAYOUT_MANAGED
+            except (IndexError, AttributeError):
+                break
+
+    # Check timeline nodes
+    timeline = getattr(spec, 'timeline', None)
+    if timeline:
+        max_items = getattr(spec, 'max_items', 0) or 8
+        for idx in range(max_items):
+            try:
+                node_rect = timeline.node_rect(idx)
+                if _rect_matches(box, node_rect.x, node_rect.y, node_rect.w, node_rect.h):
+                    return ShapeRole.LAYOUT_MANAGED
+            except (IndexError, AttributeError):
+                break
+
+    # Check comparison left/right
+    comparison = getattr(spec, 'comparison', None)
+    if comparison:
+        for side_field in ('left', 'right'):
+            side = getattr(comparison, side_field, None)
+            if side is not None and _rect_matches(box, side.x, side.y, side.w, side.h):
+                return ShapeRole.LAYOUT_MANAGED
+
+    return None
+
+
 def _max_font_size_pt(shape, fallback: float = 18.0) -> float:
     if not getattr(shape, 'has_text_frame', False):
         return fallback
@@ -319,37 +494,107 @@ def _estimate_required_text_height_in(shape, box: ShapeBox) -> float | None:
     return required + margin_y_in + 0.04
 
 
-def validate_slide(slide, slide_index: int, *, include_images: bool | None = None) -> list[LayoutIssue]:
+def _text_content_box(shape, outer_box: ShapeBox) -> ShapeBox | None:
+    """Approximate the usable text region inside a text-bearing shape.
+
+    This excludes text-frame margins so decorative inline icons can be allowed
+    inside a panel while still being flagged if they intrude into the area
+    where actual text is expected to render.
+    """
+    text = _shape_text(shape)
+    if not text or not getattr(shape, 'has_text_frame', False):
+        return None
+
+    try:
+        tf = shape.text_frame
+        margin_left = int(getattr(tf, 'margin_left', 0) or 0)
+        margin_right = int(getattr(tf, 'margin_right', 0) or 0)
+        margin_top = int(getattr(tf, 'margin_top', 0) or 0)
+        margin_bottom = int(getattr(tf, 'margin_bottom', 0) or 0)
+    except Exception:
+        margin_left = 0
+        margin_right = 0
+        margin_top = 0
+        margin_bottom = 0
+
+    content_left = outer_box.left + margin_left
+    content_top = outer_box.top + margin_top
+    content_width = outer_box.width - margin_left - margin_right
+    content_height = outer_box.height - margin_top - margin_bottom
+
+    if content_width <= 0 or content_height <= 0:
+        return None
+
+    return ShapeBox(
+        left=content_left,
+        top=content_top,
+        width=content_width,
+        height=content_height,
+        shape_name=outer_box.shape_name,
+        shape_id=outer_box.shape_id,
+    )
+
+
+def _is_icon_shape(shape) -> bool:
+    name = (getattr(shape, 'name', '') or '').lower()
+    return any(name.startswith(prefix) for prefix in _ICON_NAME_PREFIXES)
+
+
+def validate_slide(
+    slide,
+    slide_index: int,
+    *,
+    include_images: bool | None = None,
+    shape_role_registry: dict[int, str] | None = None,
+    layout_specs: list | None = None,
+) -> list[LayoutIssue]:
     """Validate a single slide for layout issues.
 
-    When *include_images* is False, Picture shapes are excluded from collision
-    detection (treated as decorative content rather than layout objects).
+    Shapes are classified into two semantic roles:
+
+    - **TEMPLATE_DESIGN** — decorative / background / template shapes.
+      Checked for out-of-bounds and text overflow, but excluded from
+      overlap and cramped-spacing detection.
+    - **LAYOUT_MANAGED** — blueprint-driven content shapes.
+      Participates in all validation checks including collision detection.
+
+    Classification priority (first match wins):
+      1. ``shape_role_registry`` — explicit role set at creation time
+      2. ``layout_specs`` geometry match — shape aligns with a blueprint rect
+      3. Name-prefix conventions
+      4. Heuristic detection
+      5. Picture + include_images flag
+      6. Default → LAYOUT_MANAGED
     """
     if include_images is None:
         include_images = _should_include_images_in_layout()
 
     issues: list[LayoutIssue] = []
-    boxes: list[tuple[ShapeBox, object]] = []
+
+    # Collect ALL shapes with their semantic role and bounding box.
+    all_boxes: list[tuple[ShapeBox, object, ShapeRole]] = []
 
     for shape in slide.shapes:
-        if _is_background_fill(shape):
-            continue
-        if _is_decorative_frame(shape):
-            continue
-        if _is_decorative_glow(shape):
-            continue
-        if not include_images and _is_picture_shape(shape):
-            continue
-        name = getattr(shape, 'name', '') or ''
-        if name.startswith('bg_blob'):
-            continue
         box = _get_shape_box(shape)
         if box is None:
             continue
-        boxes.append((box, shape))
+        role = _classify_shape_role(
+            shape,
+            include_images=include_images,
+            shape_role_registry=shape_role_registry,
+            layout_specs=layout_specs,
+            slide_index=slide_index,
+        )
+        all_boxes.append((box, shape, role))
 
-    # 0. Text overflow / dense text check
-    for box, shape in boxes:
+    # Only layout-managed shapes participate in collision checks.
+    collision_boxes: list[tuple[ShapeBox, object]] = [
+        (box, shape) for box, shape, role in all_boxes
+        if role == ShapeRole.LAYOUT_MANAGED
+    ]
+
+    # 0. Text overflow / dense text check  (all shapes)
+    for box, shape, _role in all_boxes:
         required_h_in = _estimate_required_text_height_in(shape, box)
         if required_h_in is None:
             continue
@@ -357,6 +602,7 @@ def validate_slide(slide, slide_index: int, *, include_images: bool | None = Non
         ratio = required_h_in / max(available_h_in, 0.01)
         if ratio > 1.12:
             overflow_sev = IssueSeverity.ERROR
+            shape_name_lower = (box.shape_name or '').strip().lower()
             # Auto-sized panel shapes may still render with visible clipping, so
             # only downgrade mild overflows. Severe overflow remains blocking.
             try:
@@ -366,6 +612,11 @@ def validate_slide(slide, slide_index: int, *, include_images: bool | None = Non
                     overflow_sev = IssueSeverity.WARNING
             except Exception:
                 pass
+            # Flow-managed top textboxes are pre-sized upstream and can read as
+            # under-height to static estimators even when the rendered result is
+            # acceptable. Keep them actionable without blocking export.
+            if shape_name_lower in {'title', 'key_message'}:
+                overflow_sev = IssueSeverity.WARNING
             issues.append(LayoutIssue(
                 slide_index=slide_index,
                 issue_type=IssueType.TEXT_OVERFLOW,
@@ -388,8 +639,8 @@ def validate_slide(slide, slide_index: int, *, include_images: bool | None = Non
                 shape_a=box.shape_name,
             ))
 
-    # 1. Out-of-bounds check
-    for box, _ in boxes:
+    # 1. Out-of-bounds check  (all shapes)
+    for box, _, _role in all_boxes:
         oob_parts = []
         if box.left < 0:
             oob_parts.append('extends left of slide')
@@ -410,11 +661,50 @@ def validate_slide(slide, slide_index: int, *, include_images: bool | None = Non
                 shape_a=box.shape_name,
             ))
 
-    # 2. Overlap check (pairwise)
-    for i in range(len(boxes)):
-        for j in range(i + 1, len(boxes)):
-            a, shape_a = boxes[i]
-            b, shape_b = boxes[j]
+    # 1.5 Decorative icon vs text-content check.
+    # Icons embedded inside text-box compositions are decorative for layout,
+    # but they still must not intrude into the textbox's usable text region.
+    icon_boxes = [
+        (box, shape) for box, shape, _role in all_boxes
+        if _is_icon_shape(shape)
+    ]
+    text_content_boxes = [
+        (content_box, shape) for outer_box, shape, _role in all_boxes
+        for content_box in [_text_content_box(shape, outer_box)]
+        if content_box is not None
+    ]
+
+    for icon_box, icon_shape in icon_boxes:
+        for text_box, text_shape in text_content_boxes:
+            if getattr(icon_shape, 'shape_id', None) == getattr(text_shape, 'shape_id', None):
+                continue
+            if not _boxes_overlap(icon_box, text_box):
+                continue
+
+            overlap_area = _overlap_area(icon_box, text_box)
+            if overlap_area <= 0:
+                continue
+
+            icon_area = max(icon_box.width * icon_box.height, 1)
+            overlap_ratio = overlap_area / icon_area
+            severity = IssueSeverity.ERROR if overlap_ratio > 0.08 else IssueSeverity.WARNING
+            issues.append(LayoutIssue(
+                slide_index=slide_index,
+                issue_type=IssueType.OVERLAP,
+                severity=severity,
+                message=(
+                    f'Decorative icon "{icon_box.shape_name}" overlaps the text area '
+                    f'of "{text_box.shape_name}" ({overlap_ratio:.0%} of icon area)'
+                ),
+                shape_a=icon_box.shape_name,
+                shape_b=text_box.shape_name,
+            ))
+
+    # 2. Overlap check  (layout-managed shapes only)
+    for i in range(len(collision_boxes)):
+        for j in range(i + 1, len(collision_boxes)):
+            a, shape_a = collision_boxes[i]
+            b, shape_b = collision_boxes[j]
             if _boxes_overlap(a, b):
                 area = _overlap_area(a, b)
                 # Only flag significant overlaps (> 5% of smaller shape area)
@@ -466,11 +756,11 @@ def validate_slide(slide, slide_index: int, *, include_images: bool | None = Non
                         shape_b=b.shape_name,
                     ))
 
-    # 3. Cramped spacing check (only between non-overlapping nearby shapes)
-    for i in range(len(boxes)):
-        for j in range(i + 1, len(boxes)):
-            a, _ = boxes[i]
-            b, _ = boxes[j]
+    # 3. Cramped spacing check  (layout-managed shapes only)
+    for i in range(len(collision_boxes)):
+        for j in range(i + 1, len(collision_boxes)):
+            a, _ = collision_boxes[i]
+            b, _ = collision_boxes[j]
             if _boxes_overlap(a, b):
                 continue  # already flagged as overlap
             # Horizontal gap
@@ -504,12 +794,23 @@ def validate_slide(slide, slide_index: int, *, include_images: bool | None = Non
     return issues
 
 
-def validate_presentation(prs) -> list[LayoutIssue]:
+def validate_presentation(
+    prs,
+    *,
+    shape_role_registry: dict[int, str] | None = None,
+    layout_specs: list | None = None,
+) -> list[LayoutIssue]:
     """Validate all slides in a presentation."""
     include_images = _should_include_images_in_layout()
     issues: list[LayoutIssue] = []
     for idx, slide in enumerate(prs.slides):
-        issues.extend(validate_slide(slide, idx, include_images=include_images))
+        issues.extend(validate_slide(
+            slide,
+            idx,
+            include_images=include_images,
+            shape_role_registry=shape_role_registry,
+            layout_specs=layout_specs,
+        ))
     return issues
 
 

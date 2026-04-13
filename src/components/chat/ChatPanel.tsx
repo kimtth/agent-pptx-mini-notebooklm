@@ -153,6 +153,7 @@ export function ChatPanel() {
   const streaming = useSlidesStore((s) => s.work.isStreaming)
   const pptxBusy = useSlidesStore((s) => s.work.isPptxBusy)
   const hasSlides = useSlidesStore((s) => s.work.slides.length > 0)
+  const initializeForBrainstorm = useSlidesStore((s) => s.initializeForBrainstorm)
   const setStreaming = useSlidesStore((s) => s.setStreaming)
   const setPptxBusy = useSlidesStore((s) => s.setPptxBusy)
   const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore()
@@ -230,6 +231,8 @@ export function ChatPanel() {
   const brainstorm = async () => {
     if (busy) return
     const workflow = getWorkflowConfig('prestaging')
+    initializeForBrainstorm()
+    window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
     let prompt = input.trim()
     if (!prompt) {
       const fw = useSlidesStore.getState().work.framework

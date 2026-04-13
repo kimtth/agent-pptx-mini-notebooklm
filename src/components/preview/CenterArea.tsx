@@ -58,11 +58,12 @@ export function CenterArea() {
 
     const handlePreviewReady = (e: Event) => {
       const paths = (e as CustomEvent<{ imagePaths?: string[] }>).detail?.imagePaths
-      if (paths && paths.length > 0) {
-        // Use the image paths carried in the event directly — no extra disk read.
+      if (Array.isArray(paths)) {
+        // Use the image paths carried in the event directly, including [] for explicit clears.
         if (!cancelled) {
           setPreviewImages(paths)
           setPreviewCacheToken((current) => current + 1)
+          setPreviewWarning(null)
         }
       } else {
         // Fallback for chunked path or manual refresh where paths aren't in the event.

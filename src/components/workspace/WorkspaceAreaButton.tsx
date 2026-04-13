@@ -79,9 +79,11 @@ export function WorkspaceAreaButton() {
     setMenuOpen(false)
   }
 
-  function handleNew() {
+  async function handleNew() {
     useSlidesStore.getState().reset()
     useChatStore.getState().clear()
+    await window.electronAPI.pptx.clearWorkspaceArtifacts().catch(() => undefined)
+    window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
     usePaletteStore.setState({
       seeds: [],
       colors: [],
@@ -163,7 +165,7 @@ export function WorkspaceAreaButton() {
               borderColor: 'var(--panel-border)',
             }}
           >
-            <MenuItem icon={<FilePlus2 size={13} />} label="New project" onClick={handleNew} />
+            <MenuItem icon={<FilePlus2 size={13} />} label="New project" onClick={() => { void handleNew() }} />
             <MenuItem icon={<Save size={13} />} label="Save project…" onClick={handleSave} />
             <MenuItem icon={<FolderInput size={13} />} label="Open project…" onClick={handleLoad} />
             <div className="my-1 border-t" style={{ borderColor: 'var(--panel-border)' }} />

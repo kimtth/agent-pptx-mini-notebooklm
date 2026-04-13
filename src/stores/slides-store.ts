@@ -90,6 +90,7 @@ const ACCENT_CYCLE: SlideItem['accent'][] = ['blue', 'green', 'purple', 'teal', 
 interface SlidesStore {
   work: SlideWork;
   applyScenario(payload: ScenarioPayload): void;
+  initializeForBrainstorm(): void;
   applySlideUpdate(update: SlideUpdatePayload): void;
   patchSlide(number: number, patch: Partial<Pick<SlideItem, 'title' | 'keyMessage' | 'bullets' | 'notes' | 'layout'>>): void;
   applyResolvedImages(images: Array<{ id: string; number: number; imageQuery: string | null; imageUrl: string | null; imagePath: string | null; imageAttribution: string | null; sourcePageUrl: string | null; thumbnailUrl: string | null }>): void;
@@ -165,6 +166,24 @@ export const useSlidesStore = create<SlidesStore>()(persist(
         pptxBuildError: null,
         designBrief: (payload.designBrief as DesignBrief | undefined) ?? state.work.designBrief,
         framework: (payload.framework as FrameworkType | undefined) ?? state.work.framework,
+      },
+    }));
+  },
+
+  initializeForBrainstorm() {
+    set((state) => ({
+      work: {
+        ...state.work,
+        phase: 'planning',
+        title: '',
+        story: null,
+        designBrief: null,
+        slides: [],
+        pptxCode: null,
+        pptxBuildError: null,
+        thinking: null,
+        isStreaming: false,
+        isPptxBusy: false,
       },
     }));
   },

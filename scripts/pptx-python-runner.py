@@ -50,6 +50,40 @@ SLIDE_HEIGHT_IN = 7.5
 PPTX_ICON_COLLECTION = (os.environ.get('PPTX_ICON_COLLECTION', 'all') or 'all').strip()
 
 # ---------------------------------------------------------------------------
+# Shape Semantic Registry — authoritative role metadata for every created shape
+# ---------------------------------------------------------------------------
+# Maps shape_id → role string ('template_design' | 'layout_managed').
+# The validator reads this registry first; name-prefix and heuristic
+# classification are retained only as a backward-compatibility fallback.
+_SHAPE_ROLE_REGISTRY: dict[int, str] = {}
+
+
+def _register_shape_role(shape, role: str) -> None:
+    """Record the semantic role for *shape* in the global registry."""
+    shape_id = getattr(shape, 'shape_id', None)
+    if shape_id is not None:
+        _SHAPE_ROLE_REGISTRY[int(shape_id)] = role
+
+
+def get_shape_role_registry() -> dict[int, str]:
+    """Return a snapshot of the current shape-role registry."""
+    return dict(_SHAPE_ROLE_REGISTRY)
+
+
+def clear_shape_role_registry() -> None:
+    """Reset the registry (called between generation runs)."""
+    _SHAPE_ROLE_REGISTRY.clear()
+
+
+# Module-level reference to the loaded layout specs (set in build_namespace).
+_LOADED_LAYOUT_SPECS: list[LayoutSpec] | None = None
+
+
+def _get_precomputed_specs_for_validation() -> list[LayoutSpec] | None:
+    """Return the layout specs loaded at namespace-build time, if any."""
+    return _LOADED_LAYOUT_SPECS
+
+# ---------------------------------------------------------------------------
 # Font resolution
 # ---------------------------------------------------------------------------
 # The user selects a font from the system font list in the palette UI.
@@ -513,12 +547,93 @@ def safe_add_picture(shapes, image_path: str | None, left, top, width=None, heig
                 height = fit_h
         except Exception:
             pass  # Fall back to stretched dimensions
-    return shapes.add_picture(resolved, left, top, width=width, height=height)
+    picture = shapes.add_picture(resolved, left, top, width=width, height=height)
+    if _is_icon_asset(resolved):
+        base_name = getattr(picture, 'name', '') or 'picture'
+        if not base_name.lower().startswith(('icon_', 'design_icon_', 'decor_icon_')):
+            picture.name = f'icon_{base_name}'
+        _register_shape_role(picture, 'template_design')
+    else:
+        _register_shape_role(picture, 'layout_managed')
+    return picture
+
+
+def tag_as_design(shape, name: str = '') -> object:
+    """Mark a shape as template/design — excluded from collision checks.
+
+    Sets a ``design_`` name prefix recognised by the layout validator and
+    registers the shape in the semantic role registry.
+    Call on any decorative shape (backgrounds, borders, accent blobs,
+    watermarks) so it does not trigger overlap warnings against
+    blueprint-managed content.
+    """
+    base = name or getattr(shape, 'name', '') or 'shape'
+    if not base.lower().startswith(('design_', 'tmpl_', 'decor_', 'bg_')):
+        shape.name = f'design_{base}'
+    else:
+        shape.name = base
+    _register_shape_role(shape, 'template_design')
+    return shape
+
+
+def safe_add_design_picture(shapes, image_path: str | None, left, top, width=None, height=None):
+    """Add an image as a template/design element — excluded from collision checks.
+
+    Identical to ``safe_add_picture`` but tags the result with ``design_`` prefix.
+    """
+    pic = safe_add_picture(shapes, image_path, left, top, width, height)
+    if pic is not None:
+        tag_as_design(pic)
+    return pic
+
+
+def add_design_shape(shapes, auto_shape_type, left, top, width, height, name: str = ''):
+    """Add an auto-shape and register it as template/design.
+
+    Use for decorative elements (backgrounds, borders, accent blobs, etc.)
+    that should not participate in collision or cramped-spacing checks.
+    """
+    if hasattr(shapes, 'shapes') and not hasattr(shapes, 'add_shape'):
+        shapes = shapes.shapes
+    shape = shapes.add_shape(auto_shape_type, left, top, width, height)
+    tag_as_design(shape, name=name)
+    return shape
+
+
+def add_managed_textbox(shapes, left, top, width, height, name: str = ''):
+    """Add a textbox and register it as layout-managed.
+
+    Use for structural content placed from PRECOMPUTED_LAYOUT_SPECS — these
+    shapes participate in all validation checks including collision detection.
+    """
+    if hasattr(shapes, 'shapes') and not hasattr(shapes, 'add_textbox'):
+        shapes = shapes.shapes
+    tb = shapes.add_textbox(left, top, width, height)
+    if name:
+        tb.name = name
+    _register_shape_role(tb, 'layout_managed')
+    return tb
+
+
+def add_managed_shape(shapes, auto_shape_type, left, top, width, height, name: str = ''):
+    """Add an auto-shape and register it as layout-managed.
+
+    Use for structural content (cards, panels, stat boxes) placed from
+    PRECOMPUTED_LAYOUT_SPECS that should participate in collision checks.
+    """
+    if hasattr(shapes, 'shapes') and not hasattr(shapes, 'add_shape'):
+        shapes = shapes.shapes
+    shape = shapes.add_shape(auto_shape_type, left, top, width, height)
+    if name:
+        shape.name = name
+    _register_shape_role(shape, 'layout_managed')
+    return shape
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument('generated_code')
+    parser.add_argument('generated_code', nargs='?', default=None,
+                        help='Path to generated Python source (unused in renderer mode)')
     parser.add_argument('output_path')
     parser.add_argument('--render-dir', default=None)
     parser.add_argument('--workspace-dir', default=None,
@@ -527,6 +642,8 @@ def parse_args() -> argparse.Namespace:
                         help='Run in chunk mode: skip post-processing (validation, preview, notebooklm)')
     parser.add_argument('--post-process-only', action='store_true',
                         help='Run only post-processing on an existing PPTX (validation, preview, notebooklm)')
+    parser.add_argument('--renderer-mode', action='store_true',
+                        help='Use deterministic slide renderer instead of exec() code generation')
     return parser.parse_args()
 
 
@@ -759,6 +876,11 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
             'Hybrid layout specs must be pre-computed before PPTX generation.'
         )
 
+    # Store for validator access and reset the shape registry for this run.
+    global _LOADED_LAYOUT_SPECS  # noqa: PLW0603
+    _LOADED_LAYOUT_SPECS = precomputed_specs
+    clear_shape_role_registry()
+
     return {
         '__name__': '__main__',
         '__file__': str(generated_path),
@@ -788,6 +910,11 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
         'get_blank_layout': get_blank_layout,
         'safe_image_path': safe_image_path,
         'safe_add_picture': safe_add_picture,
+        'tag_as_design': tag_as_design,
+        'safe_add_design_picture': safe_add_design_picture,
+        'add_design_shape': add_design_shape,
+        'add_managed_textbox': add_managed_textbox,
+        'add_managed_shape': add_managed_shape,
         'estimate_text_height_in': estimate_text_height_in,
         'flow_layout_spec': flow_layout_spec,
         'LayoutSpec': LayoutSpec,
@@ -1651,7 +1778,11 @@ def validate_and_fix_output(output_path: Path, *, run_text_overflow_fix: bool = 
 
     # Step 3: Validate (re-open the processed file so we see all fixes)
     prs = Presentation(str(output_path))
-    issues = validate_presentation(prs)
+    issues = validate_presentation(
+        prs,
+        shape_role_registry=get_shape_role_registry(),
+        layout_specs=_get_precomputed_specs_for_validation(),
+    )
     if not issues:
         print('[layout-validator] All slides passed layout validation.', file=sys.stderr)
         return qa
@@ -1827,10 +1958,10 @@ def main() -> int:
     print(f'[icon] Using Iconify API hosts: {ICONIFY_API_HOSTS}', file=sys.stderr)
 
     args = parse_args()
-    generated_path = Path(args.generated_code).resolve()
     output_path = Path(args.output_path).resolve()
     render_dir = Path(args.render_dir).resolve() if args.render_dir else None
     workspace_dir = str(Path(args.workspace_dir).resolve()) if args.workspace_dir else ''
+    renderer_mode = args.renderer_mode
 
     print(f'[workspace] WORKSPACE_DIR={workspace_dir or "(not set)"}', file=sys.stderr)
 
@@ -1839,22 +1970,90 @@ def main() -> int:
         print('[post-process-only] Running post-processing only on existing PPTX.', file=sys.stderr)
         if not output_path.exists():
             raise FileNotFoundError(f'PPTX file not found for post-processing: {output_path}')
-    else:
-        if not generated_path.exists():
-            raise FileNotFoundError(f'Generated Python source file not found: {generated_path}')
-
+    elif renderer_mode:
+        # ── Deterministic renderer path ──
+        print('[renderer-mode] Using deterministic slide renderer.', file=sys.stderr)
         output_path = _unlock_or_rename(output_path)
-        namespace = build_namespace(generated_path, output_path, workspace_dir=workspace_dir)
 
-        with _enforce_save_path(output_path):
-            run_generated_code(generated_path, namespace)
-            finalize_output(output_path, namespace)
+        # Load theme, specs, assets from env vars (same as build_namespace)
+        theme = _load_theme()
+        title = os.environ.get('PPTX_TITLE', 'Presentation')
+        base_font_family = os.environ.get('PPTX_FONT_FAMILY', 'Calibri')
+        color_treatment = (os.environ.get('PPTX_COLOR_TREATMENT', 'solid') or 'solid').strip().lower()
+        text_box_style = (os.environ.get('PPTX_TEXT_BOX_STYLE', 'plain') or 'plain').strip().lower()
+        design_style = os.environ.get('PPTX_DESIGN_STYLE', 'Blank White')
 
-        # Remove any rogue PPTX files that generated code may have created
-        # outside the monkeypatched save() (e.g. via shutil or os.rename)
+        # Layout specs
+        specs_json = os.environ.get('PPTX_LAYOUT_SPECS_JSON', '')
+        if not specs_json.strip():
+            raise RuntimeError('PPTX_LAYOUT_SPECS_JSON is required for renderer mode.')
+        from hybrid_layout import deserialize_specs  # type: ignore
+        precomputed_specs = deserialize_specs(specs_json)
+        print(f'[layout] Loaded {len(precomputed_specs)} pre-computed layout spec(s).', file=sys.stderr)
+
+        # Store for validator and reset shape registry
+        global _LOADED_LAYOUT_SPECS  # noqa: PLW0603
+        _LOADED_LAYOUT_SPECS = precomputed_specs
+        clear_shape_role_registry()
+
+        # Layout input
+        layout_input_path = os.path.join(workspace_dir, 'previews', 'layout-input.json')
+        if not os.path.exists(layout_input_path):
+            raise FileNotFoundError(f'layout-input.json not found: {layout_input_path}')
+        with open(layout_input_path, 'r', encoding='utf-8') as f:
+            layout_input = json.load(f)
+        if not isinstance(layout_input, list) or not layout_input:
+            raise ValueError('layout-input.json must contain a non-empty slide list')
+
+        # Slide assets
+        _load_slide_assets()
+
+        # Style config
+        from style_config import resolve_style_config  # type: ignore
+        style = resolve_style_config(design_style, color_treatment, text_box_style)
+        print(f'[renderer] Design style: {design_style!r}, panel_fill={style.panel_fill}, '
+              f'color_treatment={style.color_treatment}', file=sys.stderr)
+
+        # Template
+        template_path_str = TEMPLATE_PATH if TEMPLATE_PATH else None
+
+        # Render
+        from slide_renderer import render_presentation  # type: ignore
+        render_presentation(
+            layout_input=layout_input,
+            layout_specs=precomputed_specs,
+            theme=theme,
+            style=style,
+            slide_assets=SLIDE_ASSETS,
+            output_path=str(output_path),
+            template_path=template_path_str,
+            template_meta=TEMPLATE_META,
+            font_family=base_font_family,
+            title=title,
+            workspace_dir=workspace_dir,
+            # Inject utility functions
+            rgb_color=rgb_color,
+            ensure_contrast=ensure_contrast,
+            set_fill_transparency=set_fill_transparency,
+            apply_gradient_fill=apply_gradient_fill,
+            fetch_icon=fetch_icon,
+            safe_add_picture=safe_add_picture,
+            safe_add_design_picture=safe_add_design_picture,
+            add_design_shape=add_design_shape,
+            add_managed_textbox=add_managed_textbox,
+            add_managed_shape=add_managed_shape,
+            tag_as_design=tag_as_design,
+            resolve_font=lambda text, base_font=base_font_family: resolve_font(text, base_font),
+            get_blank_layout=get_blank_layout,
+            apply_widescreen=apply_widescreen,
+            slide_image_paths=slide_image_paths,
+            slide_icon_name=slide_icon_name,
+            ensure_parent_dir=ensure_parent_dir,
+            safe_image_path=safe_image_path,
+        )
+
         _cleanup_rogue_pptx(output_path.parent, output_path.name)
 
-        # In chunk mode, skip all post-processing (it runs on the merged PPTX later)
         if args.chunk_mode:
             print('[chunk-mode] Partial PPTX created — skipping post-processing.', file=sys.stderr)
             report = _build_completion_report(output_path)

@@ -13,6 +13,17 @@ import { useNotebookLMStore } from './notebooklm-store';
 import { DEFAULT_ICONIFY_COLLECTION } from '../domain/icons/iconify';
 import { applyThemeColorTreatment, applyThemeFontFamily, applyThemeTextBoxStyle } from '../application/palette-use-case';
 
+function serializeSlidesWork(work: PptAppProject['slidesWork']): PptAppProject['slidesWork'] {
+  return {
+    ...structuredClone(work),
+    framework: work.framework ?? null,
+    customFrameworkPrompt: work.customFrameworkPrompt ?? null,
+    isStreaming: false,
+    isPptxBusy: false,
+    thinking: null,
+  };
+}
+
 function normalizeLoadedSelectedImages(slide: PptAppProject['slidesWork']['slides'][number]) {
   if (Array.isArray(slide.selectedImages) && slide.selectedImages.length > 0) {
     return slide.selectedImages.map((image) => ({
@@ -44,7 +55,7 @@ function normalizeLoadedWork(work: PptAppProject['slidesWork']) {
     ...work,
     designStyle: work.designStyle ?? null,
     framework: work.framework ?? null,
-    customFrameworkPrompt: work.customFrameworkPrompt ?? null,
+    customFrameworkPrompt: typeof work.customFrameworkPrompt === 'string' ? work.customFrameworkPrompt : null,
     includeImagesInLayout: work.includeImagesInLayout ?? false,
     isStreaming: false,
     isPptxBusy: false,
@@ -126,7 +137,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       savedAt: new Date().toISOString(),
       workspaceDir,
       title: work.title || 'Untitled',
-      slidesWork: work,
+      slidesWork: serializeSlidesWork(work),
       chatMessages: messages,
       palette: { seeds, colors, slots, tokens, themeName, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection, styleTone: usePaletteStore.getState().styleTone },
       dataSources: { files, urls },

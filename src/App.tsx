@@ -11,7 +11,7 @@ import { useSlidesStore } from './stores/slides-store.ts'
 import { usePaletteStore } from './stores/palette-store.ts'
 import { useProjectStore } from './stores/project-store.ts'
 import { useDataSourcesStore } from './stores/data-sources-store.ts'
-import { createAssistantMessage, createUserMessage, historyToIpc, extractPptxCodeBlock } from './application/chat-use-case.ts'
+import { createAssistantMessage, createUserMessage, historyToIpc } from './application/chat-use-case.ts'
 import { applyThemeColorTreatment, applyThemeFontFamily, applyThemeTextBoxStyle } from './application/palette-use-case.ts'
 import type { WorkspaceContext } from './application/chat-use-case.ts'
 import { getAvailableIconChoices } from './domain/icons/iconify.ts'
@@ -25,13 +25,6 @@ interface QaReport {
   missingIcons: Array<{ icon: string; reason: string }>
   missingImages: string[]
   layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }>
-}
-
-function hasBlockingQaFindings(qa: QaReport): boolean {
-  if (qa.missingIcons.length > 0) return true
-  if (qa.missingImages.length > 0) return true
-  if (qa.layoutIssues.some((i) => i.severity === 'error')) return true
-  return false
 }
 
 function formatQaSummary(qa: QaReport): string {
@@ -193,10 +186,8 @@ export default function App() {
         useSlidesStore.getState().setPptxBusy(false)
       }),
       api.chat.onDone(() => {
-        // Flush buffered deltas first, then capture the complete content
+        // Flush buffered deltas
         useChatStore.getState().flushAssistantMessage()
-        const lastMessage = useChatStore.getState().messages.at(-1)
-        const pendingContent = lastMessage?.role === 'assistant' ? lastMessage.content : ''
 
         requestAnimationFrame(() => {
           // Chunked generation already produced the merged PPTX and previews.
@@ -207,14 +198,13 @@ export default function App() {
             return
           }
 
-          const hasCodeBlock = /```(?:python|py)?\s*[\s\S]*?```/i.test(pendingContent)
-          const code = extractPptxCodeBlock(pendingContent)
+          const currentWork = useSlidesStore.getState().work
+          const isPptxMode = currentWork.isPptxBusy
 
-          if (code) {
-            useSlidesStore.getState().setPptxCode(code)
+          if (isPptxMode && currentWork.slides.length > 0) {
             useSlidesStore.getState().setPptxBuildError(null)
 
-            // Auto-execute the generated code to produce PPTX + preview PNGs in workspace
+            // Deterministic renderer: use designStyle + layout data, no code extraction needed
             const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore.getState()
             const paletteTokens = applyThemeTextBoxStyle(
               applyThemeColorTreatment(
@@ -223,36 +213,25 @@ export default function App() {
               ),
               selectedTextBoxStyle,
             )
-            const currentWork = useSlidesStore.getState().work
             const pptxTitle = currentWork.title || 'presentation'
             useChatStore.getState().addMessage(
-              createAssistantMessage('✅ PowerPoint code is ready. Generating the deck and preview images…'),
+              createAssistantMessage('✅ Generating the deck and preview images…'),
             )
-            window.electronAPI.pptx.renderPreview(code, paletteTokens, pptxTitle, selectedIconCollection, currentWork.slides, currentWork.templateMeta)
+            window.electronAPI.pptx.renderPreview(currentWork.designStyle, paletteTokens, pptxTitle, selectedIconCollection, currentWork.slides, currentWork.templateMeta)
               .then((result) => {
                 if (result.success) {
                   autoRetryCount.current = 0
-                  // Pass the exact image paths from the renderPreview result so
-                  // CenterArea can update immediately without a second disk read.
                   window.dispatchEvent(new CustomEvent('pptx-preview-ready', {
                     detail: { imagePaths: result.imagePaths ?? [] },
                   }))
 
-                  // Check QA report — trigger post-staging if blocking findings exist
                   const qa = result.qa as QaReport | undefined
-                  if (qa && hasBlockingQaFindings(qa)) {
-                    const summary = formatQaSummary(qa)
-                    useChatStore.getState().addMessage(
-                      createAssistantMessage(`✅ Deck generated, but post-staging QA found issues:\n\n${summary}`),
-                    )
+                  if (qa) {
                     triggerPostStaging(qa)
                   } else {
                     const warningNote = result.warning ? `\n\n⚠️ ${result.warning}` : ''
-                    const qaSuffix = qa && qa.contrastFixes > 0
-                      ? `\n\nℹ️ Post-staging QA: ${qa.contrastFixes} contrast fix(es) applied automatically.`
-                      : ''
                     useChatStore.getState().addMessage(
-                      createAssistantMessage(`✅ Deck generated! Preview images are ready.${warningNote}${qaSuffix}`),
+                      createAssistantMessage(`✅ Deck generated! Preview images are ready.${warningNote}`),
                     )
                     useSlidesStore.getState().setStreaming(false)
                     useSlidesStore.getState().setPptxBusy(false)
@@ -277,13 +256,6 @@ export default function App() {
           } else {
             useSlidesStore.getState().setStreaming(false)
             useSlidesStore.getState().setPptxBusy(false)
-            const message = hasCodeBlock
-              ? 'The model returned code, but it did not match a supported python-pptx script.'
-              : null
-            useSlidesStore.getState().setPptxBuildError(message)
-            if (message) {
-              useChatStore.getState().addMessage(createAssistantMessage(message))
-            }
           }
         })
       }),

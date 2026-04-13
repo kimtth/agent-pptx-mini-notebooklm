@@ -126,7 +126,7 @@ export interface IpcPptxAPI {
     templateMeta?: TemplateMeta | null,
   ): Promise<{ success: boolean; path?: string; error?: string }>;
   renderPreview(
-    code: string,
+    designStyle: string | null,
     themeTokens: ThemeTokens | null,
     title: string,
     iconCollection?: string,
@@ -136,6 +136,7 @@ export interface IpcPptxAPI {
   readExistingPreviews(): Promise<{ success: boolean; imagePaths: string[] }>;
   importTemplate(): Promise<{ success: boolean; templatePath?: string; meta?: TemplateMeta; error?: string; warning?: string }>;
   removeTemplate(): Promise<{ success: boolean }>;
+  clearWorkspaceArtifacts(): Promise<{ success: boolean }>;
 }
 
 export interface IpcFsAPI {

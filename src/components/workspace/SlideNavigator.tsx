@@ -30,6 +30,13 @@ export function SlideNavigator() {
   const [templateLoading, setTemplateLoading] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
 
+  async function handleClearSlides() {
+    reset()
+    await window.electronAPI.pptx.clearWorkspaceArtifacts().catch(() => undefined)
+    window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
+    setConfirmClear(false)
+  }
+
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--surface)' }}>
       {/* Section header */}
@@ -53,7 +60,7 @@ export function SlideNavigator() {
             {confirmClear && (
               <span className="flex items-center gap-1 text-[10px]">
                 <button
-                  onClick={() => { reset(); setConfirmClear(false) }}
+                  onClick={() => { void handleClearSlides() }}
                   className="px-1.5 py-0.5 font-semibold border"
                   style={{ color: '#ef4444', borderColor: '#ef4444', background: 'transparent' }}
                 >
