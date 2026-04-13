@@ -350,6 +350,45 @@ function buildLayoutArtifactPaths(workspaceDir: string) {
   }
 }
 
+async function clearWorkspaceArtifactsInternal(): Promise<void> {
+  const workspaceDir = await readWorkspaceDir()
+  const { layoutDir, inputPath, outputPath, slideAssetsPath, layoutMetaPath } = buildLayoutArtifactPaths(workspaceDir)
+
+  await Promise.all([
+    fs.unlink(inputPath).catch(() => {}),
+    fs.unlink(outputPath).catch(() => {}),
+    fs.unlink(slideAssetsPath).catch(() => {}),
+    fs.unlink(layoutMetaPath).catch(() => {}),
+    fs.unlink(path.join(layoutDir, 'notebooklm-infographics.json')).catch(() => {}),
+    fs.unlink(path.join(layoutDir, 'generated-source.py')).catch(() => {}),
+    fs.rm(path.join(layoutDir, 'partials'), { recursive: true, force: true }).catch(() => {}),
+    fs.rm(path.join(layoutDir, 'charts'), { recursive: true, force: true }).catch(() => {}),
+  ])
+
+  try {
+    const entries = await fs.readdir(layoutDir, { withFileTypes: true })
+    await Promise.all(entries.map(async (entry) => {
+      if (!entry.isFile()) return
+
+      if (/^generated-source-chunk-\d+\.py$/i.test(entry.name)) {
+        await fs.unlink(path.join(layoutDir, entry.name)).catch(() => {})
+        return
+      }
+
+      if (/^presentation-preview(?:-\d+)?\.pptx$/i.test(entry.name)) {
+        await fs.unlink(path.join(layoutDir, entry.name)).catch(() => {})
+        return
+      }
+
+      if (/\.(png|jpg|jpeg)$/i.test(entry.name)) {
+        await fs.unlink(path.join(layoutDir, entry.name)).catch(() => {})
+      }
+    }))
+  } catch {
+    // ignore missing previews directory
+  }
+}
+
 async function assertValidLayoutInputArtifact(workspaceDir: string): Promise<void> {
   const { inputPath } = buildLayoutArtifactPaths(workspaceDir)
 
@@ -542,6 +581,109 @@ export async function computeLayoutSpecs(
   return queuePowerPointAutomation(() => computeLayoutSpecsInternal(slides, fontFamily))
 }
 
+async function renderPresentationInternal(
+  theme: ThemeTokens | null,
+  title: string,
+  outputPath: string,
+  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; includeImagesInLayout?: boolean; designStyle?: string },
+): Promise<PptxCompletionReport> {
+  const workDir = path.dirname(outputPath)
+  const runnerScriptPath = resolveBundledPath('scripts', 'pptx-python-runner.py')
+
+  if (!existsSync(runnerScriptPath)) {
+    throw new Error(`Python PPTX runner not found at ${runnerScriptPath}`)
+  }
+
+  await fs.mkdir(workDir, { recursive: true })
+
+  const python = await resolvePythonExecutable()
+  await ensurePythonModule(
+    python,
+    'pptx',
+    `Install python-pptx in the managed environment. ${pythonSetupHint()}`,
+  )
+
+  const themePayload = JSON.stringify(theme?.C ?? DEFAULT_THEME_C)
+  const fontFamily = resolveThemeFontFamily(theme)
+  const colorTreatment = resolveThemeColorTreatment(theme)
+  const textBoxStyle = resolveThemeTextBoxStyle(theme)
+  const workspaceDir = await readWorkspaceDir()
+  await assertValidLayoutInputArtifact(workspaceDir)
+  let layoutSpecsJson = opts?.layoutSpecsJson?.trim() ?? ''
+  if (!layoutSpecsJson) {
+    const { inputPath } = buildLayoutArtifactPaths(workspaceDir)
+    const layoutInputJson = await fs.readFile(inputPath, 'utf-8')
+    const computed = await computeLayoutSpecsInternal(layoutInputJson, fontFamily)
+    if (!computed.success || !computed.specs?.trim()) {
+      throw new Error(computed.error ?? 'Failed to compute hybrid layout specs.')
+    }
+    layoutSpecsJson = computed.specs.trim()
+  }
+  const { slideAssetsPath } = buildLayoutArtifactPaths(workspaceDir)
+  const slideAssetsJson = existsSync(slideAssetsPath)
+    ? await fs.readFile(slideAssetsPath, 'utf-8').catch(() => '')
+    : ''
+
+  let templatePath = opts?.templatePath
+  if (!templatePath) {
+    const candidate = path.join(workspaceDir, 'template', 'template.pptx')
+    if (existsSync(candidate)) templatePath = candidate
+  }
+  const templateMetaJson = opts?.templateMeta ? JSON.stringify(opts.templateMeta) : ''
+
+  const infographicManifestPath = path.join(workspaceDir, 'previews', 'notebooklm-infographics.json')
+  let notebookLMInfographicsJson = ''
+  try {
+    const raw = await fs.readFile(infographicManifestPath, 'utf-8')
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      notebookLMInfographicsJson = JSON.stringify(parsed)
+    }
+  } catch { /* no manifest or empty — skip */ }
+
+  // Renderer mode: no generated-source.py needed, pass --renderer-mode flag
+  const args = [runnerScriptPath, outputPath, '--renderer-mode']
+  if (opts?.renderDir) {
+    args.push('--render-dir', opts.renderDir)
+  }
+  args.push('--workspace-dir', workspaceDir)
+
+  const designStyle = opts?.designStyle || 'Blank White'
+
+  const { stdout } = await execFileAsync(
+    python,
+    args,
+    {
+      windowsHide: true,
+      timeout: 180_000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+        PPTX_THEME_JSON: themePayload,
+        PPTX_TITLE: title || 'Presentation',
+        PPTX_FONT_FAMILY: fontFamily,
+        PPTX_COLOR_TREATMENT: colorTreatment,
+        PPTX_TEXT_BOX_STYLE: textBoxStyle,
+        PPTX_DESIGN_STYLE: designStyle,
+        PPTX_ICON_COLLECTION: opts?.iconCollection ?? 'all',
+        ...(opts?.renderDir ? { PPTX_SKIP_TEXT_OVERFLOW_FIX: '1' } : {}),
+        ...(slideAssetsJson.trim() ? { PPTX_SLIDE_ASSETS_JSON: slideAssetsJson } : {}),
+        ...(templatePath ? { PPTX_TEMPLATE_PATH: templatePath } : {}),
+        ...(templateMetaJson ? { PPTX_TEMPLATE_META_JSON: templateMetaJson } : {}),
+        ...(notebookLMInfographicsJson ? { PPTX_NOTEBOOKLM_INFOGRAPHICS: notebookLMInfographicsJson } : {}),
+        ...(opts?.includeImagesInLayout ? { PPTX_INCLUDE_IMAGES_IN_LAYOUT: '1' } : {}),
+        WORKSPACE_DIR: workspaceDir,
+        PPTX_LAYOUT_SPECS_JSON: layoutSpecsJson,
+      },
+    },
+  )
+
+  const report = parsePptxCompletionReport(stdout)
+  assertCompletionSuccess(report, 'PPTX generation')
+  return report!
+}
+
 async function executeGeneratedPythonCodeToFileInternal(
   code: string,
   theme: ThemeTokens | null,
@@ -664,6 +806,15 @@ export async function executeGeneratedPythonCodeToFile(
   opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; includeImagesInLayout?: boolean },
 ): Promise<PptxCompletionReport> {
   return queuePowerPointAutomation(() => executeGeneratedPythonCodeToFileInternal(code, theme, title, outputPath, opts))
+}
+
+export async function renderPresentationToFile(
+  theme: ThemeTokens | null,
+  title: string,
+  outputPath: string,
+  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; includeImagesInLayout?: boolean; designStyle?: string },
+): Promise<PptxCompletionReport> {
+  return queuePowerPointAutomation(() => renderPresentationInternal(theme, title, outputPath, opts))
 }
 
 // ---------------------------------------------------------------------------
@@ -1030,15 +1181,8 @@ export function registerPptxHandlers(): void {
     }
   })
 
-  ipcMain.handle('pptx:renderPreview', async (_event, code: string, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], templateMeta?: TemplateMeta | null) => {
+  ipcMain.handle('pptx:renderPreview', async (_event, designStyle: string | null, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], templateMeta?: TemplateMeta | null) => {
     try {
-      if (!code || typeof code !== 'string' || code.trim().length === 0) {
-        return { success: false, error: 'code must not be empty' }
-      }
-      if (!isLikelyPythonPptxCode(code)) {
-        return { success: false, error: 'Only agent-generated python-pptx code is supported' }
-      }
-
       return await queuePowerPointAutomation(async () => {
         const workspaceDir = await readWorkspaceDir()
         const previewRoot = path.join(workspaceDir, 'previews')
@@ -1059,11 +1203,12 @@ export function registerPptxHandlers(): void {
           await removeStaleTimestampedPptx(previewRoot, 'presentation-preview.pptx')
           await removePreviewImages(renderDir)
           await fs.mkdir(previewRoot, { recursive: true })
-          const completionReport = await executeGeneratedPythonCodeToFileInternal(code, themeTokens, title, outputPath, {
+          const completionReport = await renderPresentationInternal(themeTokens, title, outputPath, {
             renderDir,
             iconCollection,
             templateMeta,
             layoutSpecsJson: artifactRefresh.layoutSpecsJson,
+            designStyle: designStyle ?? undefined,
           })
 
           let actualPptx: string | null = null
@@ -1176,6 +1321,15 @@ export function registerPptxHandlers(): void {
       return { success: true }
     } catch {
       return { success: true } // Best-effort cleanup
+    }
+  })
+
+  ipcMain.handle('pptx:clearWorkspaceArtifacts', async () => {
+    try {
+      await clearWorkspaceArtifactsInternal()
+      return { success: true }
+    } catch {
+      return { success: true }
     }
   })
 

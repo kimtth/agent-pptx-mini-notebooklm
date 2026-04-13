@@ -228,7 +228,7 @@ Work can be saved and loaded as `.pptapp` project files (JSON). A project snapsh
 The center preview panel renders local slide images from the generated PPTX.
 
 - Rendered preview assets are stored under `previews/` in the configured workspace directory.
-- On Windows, local preview image rendering requires Microsoft PowerPoint and the managed Python environment. Without PowerPoint, the app can still generate decks with non-COM layout fallbacks, but it cannot render local preview images.
+- On Windows, local preview image rendering requires Microsoft PowerPoint and the managed Python environment. Without PowerPoint, the app can still generate decks using the non-COM measurement path, but it cannot render local preview images.
 - `Refresh Preview` reloads preview images that already exist in the workspace.
 
 ## Agentic Workflows

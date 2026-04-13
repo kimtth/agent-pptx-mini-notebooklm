@@ -65,8 +65,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pptx: {
     generate: (code: string, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[], templateMeta?: unknown) =>
       ipcRenderer.invoke('pptx:generate', code, themeTokens, title, iconCollection, slides, templateMeta),
-    renderPreview: (code: string, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[], templateMeta?: unknown) =>
-      ipcRenderer.invoke('pptx:renderPreview', code, themeTokens, title, iconCollection, slides, templateMeta),
+    renderPreview: (designStyle: string | null, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[], templateMeta?: unknown) =>
+      ipcRenderer.invoke('pptx:renderPreview', designStyle, themeTokens, title, iconCollection, slides, templateMeta),
     readExistingPreviews: () =>
       ipcRenderer.invoke('pptx:readExistingPreviews'),
     computeLayout: (slidesJson: string) =>
@@ -75,6 +75,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('pptx:importTemplate'),
     removeTemplate: () =>
       ipcRenderer.invoke('pptx:removeTemplate'),
+    clearWorkspaceArtifacts: () =>
+      ipcRenderer.invoke('pptx:clearWorkspaceArtifacts'),
   },
 
   fs: {

@@ -24,12 +24,12 @@
           "fetch_icon(icon_id, color_hex) → path_or_None",
           "safe_add_picture(shapes, path, left_emu, top_emu, width_emu, height_emu) → Picture  [first arg MUST be slide.shapes]",
           "ensure_contrast(fg_hex, bg_hex) → hex_str",
-          "resolve_font(text, fallback_name) → font_name_str  (always returns PPTX_FONT_FAMILY — kept for backward compatibility)",
+          "resolve_font(text, fallback_name) → font_name_str  (returns the selected base font unchanged)",
           "apply_gradient_fill(shape, color_stops, angle_degrees=0) → None",
           "apply_widescreen(prs) → prs",
           "set_fill_transparency(shape, value_0_to_1) → None",
           "PRECOMPUTED_LAYOUT_SPECS: list[LayoutSpec] — indexed from 0 for this chunk's first slide",
-          "OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_FONT_FAMILY, PPTX_COLOR_TREATMENT, WORKSPACE_DIR, IMAGES_DIR, ICON_CACHE_DIR — pre-set string constants",
+          "OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_FONT_FAMILY, PPTX_COLOR_TREATMENT, WORKSPACE_DIR, IMAGES_DIR — pre-set string constants",
           "Do NOT invent helper names like _txb, _rect, _oval, _shape, _memphis, or any other shorthand."
         ]
       },
@@ -128,7 +128,7 @@
           "WORKSPACE_DIR is {{workspaceDir}}.",
           "IMAGES_DIR is {{imagesDir}}.",
           "The output PPTX file name must be \"presentation-preview.pptx\". Use OUTPUT_PATH directly — it already resolves to this name.",
-          "When referencing slide images, use os.path.join(IMAGES_DIR, filename). ICON_CACHE_DIR is also pre-set. Use fetch_icon() to load icons and do NOT construct icon paths manually."
+          "When referencing slide images, use os.path.join(IMAGES_DIR, filename). Use fetch_icon() to load icons and do NOT construct icon paths manually."
         ]
       }
     ]

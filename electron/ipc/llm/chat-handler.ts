@@ -31,7 +31,7 @@ import type { DataFile, ScrapeResult } from '../../../src/domain/ports/ipc';
 import { getIconifyCollectionById } from '../../../src/domain/icons/iconify';
 import type { IconifyCollectionId } from '../../../src/domain/icons/iconify';
 import { formatWorkflowForPrompt, getWorkflowConfig, type WorkflowConfig } from '../../../src/domain/workflows/workflow-config';
-import { executeGeneratedPythonCodeToFile, executeChunkedPptxGeneration, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace, persistLayoutMeta } from '../pptx/pptx-handler.ts';
+import { executeGeneratedPythonCodeToFile, executeChunkedPptxGeneration, renderPresentationToFile, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace, persistLayoutMeta } from '../pptx/pptx-handler.ts';
 import type { ChunkResult, PptxCompletionReport } from '../pptx/pptx-handler.ts';
 import { buildManagedSystemPrompt } from './system-prompts.ts';
 import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts';
@@ -413,6 +413,7 @@ async function buildPrompt(
         const bgImages = workspace.templateMeta.backgroundImages ?? [];
         parts.push(`Template metadata: blankLayoutIndex=${workspace.templateMeta.blankLayoutIndex}, fonts.major=${workspace.templateMeta.fonts.major}, fonts.minor=${workspace.templateMeta.fonts.minor}, extractedBackgroundImages=${bgImages.length}`);
         parts.push('Template runtime helpers available in Python: TEMPLATE_META, TEMPLATE_BACKGROUND_IMAGES, TEMPLATE_BLANK_LAYOUT_INDEX. Use the predefined font behavior unless explicitly required otherwise.');
+        parts.push('Two-phase shape model: (1) Template/design shapes (backgrounds, borders, brand elements) → use tag_as_design(), safe_add_design_picture(), or add_design_shape() — excluded from collision checks. (2) Content shapes from PRECOMPUTED_LAYOUT_SPECS → use add_managed_shape(), add_managed_textbox(), or safe_add_picture() — layout-managed and collision-checked. Every shape is registered in the semantic registry at creation time; the validator uses this as the primary classifier.');
         if (bgImages.length > 0) {
           parts.push(`Template background assets: ${bgImages.slice(0, 4).join(' | ')}`);
         }
@@ -612,8 +613,13 @@ async function buildChunkPrompt(
     'The following helpers are pre-injected by the runtime. Do NOT define, rename, or shadow them:',
     '- fetch_icon(icon_id, color_hex) → path_or_None',
     '- safe_add_picture(shapes, path, left_emu, top_emu, width_emu, height_emu)  [first arg = slide.shapes]',
+    '- tag_as_design(shape, name="") → shape  [marks shape as design-only, excluded from collision checks]',
+    '- safe_add_design_picture(shapes, path, left_emu, top_emu, w_emu, h_emu)  [like safe_add_picture but design-only]',
+    '- add_design_shape(shapes, auto_shape_type, left, top, w, h, name="")  [decorative shape — excluded from collision]',
+    '- add_managed_textbox(shapes, left, top, w, h, name="")  [content textbox — collision-checked]',
+    '- add_managed_shape(shapes, auto_shape_type, left, top, w, h, name="")  [content shape — collision-checked]',
     '- ensure_contrast(fg_hex, bg_hex) → hex_str',
-    '- resolve_font(text, fallback) → PPTX_FONT_FAMILY   (always returns the base font — kept for backward compat)',
+    '- resolve_font(text, fallback) → PPTX_FONT_FAMILY   (returns the selected base font unchanged)',
     '- apply_widescreen(prs) → prs',
     '- set_fill_transparency(shape, value)',
     '- apply_gradient_fill(shape, color_stops, angle_degrees=0)',
@@ -987,8 +993,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
       const rerunPptxTool: LLMToolDefinition = {
         name: 'rerun_pptx',
         description:
-          'Re-execute the last generated python-pptx code after patching layout infrastructure files. ' +
-          'This re-runs the previously written generated-source.py with the same theme and title. ' +
+          'Re-render the PPTX presentation using the deterministic renderer after patching layout infrastructure files. ' +
           'Use this after calling patch_layout_infrastructure to verify the fix resolves validation errors.',
         parameters: {
           type: 'object' as const,
@@ -1003,28 +1008,23 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
 
             const workspaceDir = await readWorkspaceDir();
             const previewRoot = path.join(workspaceDir, 'previews');
-            const sourcePath = path.join(previewRoot, 'generated-source.py');
             const outputPath = path.join(previewRoot, 'presentation-preview.pptx');
 
-            if (!fsExistsSync(sourcePath)) {
-              return { success: false, error: 'No generated-source.py found. Generate PPTX code first.' };
-            }
-
-            const code = await fs.readFile(sourcePath, 'utf-8');
             const theme = workspace.theme;
             const title = workspace.title || 'Presentation';
 
             // Remove old output so we get fresh validation
             await fs.unlink(outputPath).catch(() => { });
 
-            const report = await executeGeneratedPythonCodeToFile(code, theme, title, outputPath, {
+            const report = await renderPresentationToFile(theme, title, outputPath, {
               renderDir: previewRoot,
               iconCollection: workspace.iconCollection,
               layoutSpecsJson,
               includeImagesInLayout: workspace.includeImagesInLayout,
+              designStyle: workspace.designStyle ?? undefined,
             });
 
-            sendToWindow(win, 'chat:chunked-pptx-ready', { code });
+            sendToWindow(win, 'chat:chunked-pptx-ready', { code: '# Rendered via deterministic renderer' });
 
             return {
               success: true,

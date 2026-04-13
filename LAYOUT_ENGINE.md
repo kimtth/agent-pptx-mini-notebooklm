@@ -99,7 +99,7 @@ The pre-generation layout pipeline is a three-stage process that produces slide 
 ```
 
 1. **Layout Blueprint** (`layout_blueprint.py`) defines design tokens, margins, zone roles, and layout-family structure.
-2. **Text Measurement** uses the configured backend to measure text heights at the actual target widths. The default order is Pillow first, COM second on Windows, then the shared heuristic as a final fallback.
+2. **Text Measurement** uses the configured backend to measure text heights at the actual target widths. The default order is Pillow first and COM second on Windows; the shared heuristic is used only when no measurement backend is available for a given path.
 3. **Constraint Solver** (`constraint_solver.py`) feeds blueprint zones + measured heights into a Cassowary solver to produce final `LayoutSpec` coordinates.
 
 The output `LayoutSpec` provides `RectSpec(x, y, w, h)` for every element zone such as title, key message, content area, cards, icons, and footer. `hybrid_layout.py` is the orchestration layer around these stages: it batches measurement requests, solves each slide in order, then serializes the resulting specs to JSON for injection into the Python runner.
@@ -209,7 +209,7 @@ Text measurement is the bridge between declarative layout intent and the solver'
 
 - `font_text_measure.py` — default cross-platform backend using Pillow TrueType font metrics and glyph-aware word wrapping.
 - `com_text_measure.py` — optional Windows-only backend using PowerPoint COM AutoFit for WYSIWYG measurement.
-- `estimate_text_height_in()` — shared heuristic fallback used only when neither primary backend is available, plus a few narrow helper cases.
+- `estimate_text_height_in()` — shared heuristic used only when neither primary backend is available, plus a few narrow helper cases.
 
 ### Measurement Strategy by Layout Family
 
@@ -371,9 +371,8 @@ The final generated Python code does not talk to the layout engine directly. Ins
 | `safe_add_picture()` | `(shapes, path, left_emu, top_emu, width_emu, height_emu) → Picture` | Adds images safely preserving aspect ratio and handling icon scaling. First arg must be `slide.shapes`, never `slide`. |
 | `safe_image_path()` | `(path) → str` | Validates and normalizes image paths |
 | `fetch_icon()` | `(icon_id, color_hex) → path_or_None` | Fetches an icon from Iconify at runtime; rejects names outside the selected icon collection |
-| `resolve_font()` | `(text, fallback_name) → font_name_str` | Selects `PPTX_FONT_FAMILY` (user-selected, default Calibri) for Latin or the appropriate Noto Sans family for non-Latin text |
-| `ensure_noto_fonts()` | `() → None` | Downloads and installs missing Noto fonts on demand |
-| `estimate_text_height_in()` | `(text, width_in, font_size_pt) → float` | Fallback text height heuristic (CJK-aware) used by generated code and validator |
+| `resolve_font()` | `(text, fallback_name) → font_name_str` | Returns the selected base font unchanged. PowerPoint handles glyph substitution for missing characters at render time. |
+| `estimate_text_height_in()` | `(text, width_in, font_size_pt) → float` | Shared text height heuristic (CJK-aware) used by generated code and validator |
 | `contrast_ratio()` / `ensure_contrast()` | `ensure_contrast(fg_hex, bg_hex) → hex_str` | Contrast helpers for choosing readable text colors on filled panels |
 | `apply_widescreen()` | `(prs) → prs` | Forces 16:9 slide dimensions on the presentation object. Used both for blank decks (`apply_widescreen(Presentation())`) and custom templates (`apply_widescreen(Presentation(TEMPLATE_PATH))`). |
 | `set_fill_transparency()` | `(shape, value_0_to_1) → None` | Sets fill transparency without touching internal XML proxies directly |
@@ -430,7 +429,7 @@ That distinction is also enforced by the validator's auto-correction pass, which
 After the generated Python writes the PPTX file, `pptx-python-runner.py` performs post-generation steps in this order:
 
 1. Text overflow repair when a measurement backend is available.
-2. Fallback auto-size flags when no measurement backend is available.
+2. Auto-size flags when no measurement backend is available.
 3. Contrast repair.
 4. Layout validation.
 5. Preview image rendering when requested.
@@ -449,7 +448,7 @@ Generated python-pptx code
     │     Default runtime path is Pillow-first; COM is the secondary option on Windows
     │     Runs in up to 2 bounded passes, becoming slightly more aggressive on the second pass
     │
-    ├── Auto-size fallback (when no measurement backend is available)
+    ├── Auto-size path (when no measurement backend is available)
     │     Enable `TEXT_TO_FIT_SHAPE` on panel/card shapes only
     │
     ├── Contrast fix
@@ -463,7 +462,7 @@ Generated python-pptx code
       └── > 2 blocking issues → Raise runtime error
 ```
 
-There is one preview-specific exception: when the Electron app is generating local preview PNGs, it sets `PPTX_SKIP_TEXT_OVERFLOW_FIX=1` and still honors `PPTX_SKIP_COM_LAYOUT_FIX=1` for backward compatibility. In that path the runner skips the overflow-repair phase and keeps only contrast repair + validation before `render_preview_images()`. This avoids doing a second measurement-and-fix pass during preview generation while preserving the normal export path's stricter repair behavior.
+There is one preview-specific exception: when the Electron app is generating local preview PNGs, it sets `PPTX_SKIP_TEXT_OVERFLOW_FIX=1`. In that path the runner skips the overflow-repair phase and keeps only contrast repair + validation before `render_preview_images()`. This avoids doing a second measurement-and-fix pass during preview generation while preserving the normal export path's stricter repair behavior.
 
 If validation still finds blocking issues that exceed tolerance, or any blocking text-overflow issue, the runner raises a `RuntimeError`.
 
@@ -607,6 +606,148 @@ The validator then adds a small extra pad for real slide conditions:
 
 Shapes with `MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE` get a downgrade to WARNING because PowerPoint will auto-shrink the font at render time.
 
+### 7. Two-Phase Shape Model (Shape Role Classification)
+
+Shapes on a slide belong to one of two semantic roles. The validator classifies every shape before running checks, so that **template/design elements do not trigger general collision or cramped-spacing issues** against blueprint-managed content.
+
+**Architecture**
+
+The classifier uses a **layered resolution model** with three tiers. Each tier is tried in order; the first match wins:
+
+1. **Shape Semantic Registry** (authoritative) — an in-memory `Dict[int, str]` keyed by `shape.shape_id`, populated at creation time by runtime helpers (`tag_as_design`, `safe_add_picture`, `add_design_shape`, `add_managed_shape`, `add_managed_textbox`). The registry is the single source of truth when available.
+2. **Blueprint Geometry Match** — the validator compares each shape's bounding box against the `PRECOMPUTED_LAYOUT_SPECS` rects for its slide (within ±0.12″ tolerance). A match positively classifies the shape as `LAYOUT_MANAGED`.
+3. **Name-Based And Heuristic Classification** — name-prefix conventions, geometric heuristics, the `includeImagesInLayout` flag, and the default `LAYOUT_MANAGED` classification cover shapes that are not resolved by the registry or blueprint geometry.
+
+| Role | Included In | Excluded From | Examples |
+|------|-------------|---------------|----------|
+| `TEMPLATE_DESIGN` | Out-of-bounds, text overflow | General overlap, cramped spacing | Backgrounds, decorative borders, brand glyphs, watermarks, accent blobs |
+| `LAYOUT_MANAGED` | All checks | (none) | Title, key message, content cards, charts, hero images placed from `PRECOMPUTED_LAYOUT_SPECS` |
+
+**Classification priority** (first match wins):
+
+1. **Registry entry** — `_SHAPE_ROLE_REGISTRY[shape.shape_id]` → `TEMPLATE_DESIGN` or `LAYOUT_MANAGED`
+2. **Blueprint geometry match** — shape bounding box matches a `LayoutSpec` rect (±0.12″) → `LAYOUT_MANAGED`
+3. **Explicit icon prefix** — shape names starting with `icon_`, `design_icon_`, or `decor_icon_` → `TEMPLATE_DESIGN`
+4. **Explicit design prefix** — shape names starting with `tmpl_`, `design_`, `bg_blob`, `bg_`, or `decor_` → `TEMPLATE_DESIGN`
+5. **Heuristic detection** — background fills (≥95% slide area), decorative frames (unfilled, ≥50%), text-free ovals → `TEMPLATE_DESIGN`
+6. **Picture shape + `includeImagesInLayout` flag** — when the flag is off, Picture shapes default to `TEMPLATE_DESIGN`
+7. **Default** → `LAYOUT_MANAGED`
+
+**Important exception**
+
+Decorative icons embedded inside text-box compositions are not treated as layout-managed items, but they are still checked against the textbox's usable text area. In other words:
+
+- decorative icons are excluded from slide-level collision checks
+- decorative icons must still not overlap rendered text space inside a textbox
+
+### 7.1 Shape Semantic Registry
+
+The registry (`_SHAPE_ROLE_REGISTRY`) lives in [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py) as a module-level `dict[int, str]`. It is:
+
+- **Reset** at the start of every generation run (in `build_namespace()`).
+- **Populated** by every shape-creation helper as it creates or tags a shape.
+- **Consumed** by `validate_presentation()` which receives `shape_role_registry=get_shape_role_registry()`.
+
+Because classification happens via integer shape IDs rather than string names, the registry is immune to naming convention violations and works even when the LLM bypasses prefix rules.
+
+### 7.2 Blueprint Geometry Match
+
+When the registry has no entry for a shape, the validator tries to match the shape's bounding box against the `LayoutSpec` rects for its slide. This layer provides strong classification for blueprint-placed content even when shapes were created by direct `add_shape()` / `add_textbox()` calls that bypassed the wrappers.
+
+The match uses a tolerance of ±0.12″ per coordinate to absorb minor rounding effects. The following spec fields are checked:
+
+- Simple rects: `title_rect`, `key_message_rect`, `icon_rect`, `content_rect`, `notes_rect`, `summary_box`, `hero_rect`, `chips_rect`, `footer_rect`, `sidebar_rect`
+- Card grid: `cards.rects[*]`
+- Stats row: `stats.boxes[*]`
+- Timeline nodes: `timeline.nodes[*]`
+- Comparison panels: `comparison.left`, `comparison.right`
+
+`accent_rect` is deliberately excluded from positive blueprint matching because accent shapes can be either structural or purely decorative depending on context.
+
+### 7.3 Blueprint Item Mapping
+
+The table below describes the **intended classification of blueprint-resolved items**. These are the items generated from `PRECOMPUTED_LAYOUT_SPECS` and should normally be treated as `LAYOUT_MANAGED`.
+
+| Blueprint / Runtime Item | Source Field | Intended Classification | Notes |
+|--------------------------|--------------|-------------------------|-------|
+| Title textbox | `spec.title_rect` | `LAYOUT_MANAGED` | Structural text zone |
+| Key message textbox | `spec.key_message_rect` | `LAYOUT_MANAGED` | Structural text zone |
+| Accent rule / accent panel | `spec.accent_rect` | `LAYOUT_MANAGED` when used as a real structural band; otherwise `TEMPLATE_DESIGN` if purely decorative | Context-dependent — use registry to disambiguate |
+| Reserved icon zone | `spec.icon_rect` | `LAYOUT_MANAGED` for the zone itself | The icon picture inside it may still be decorative |
+| Main content zone | `spec.content_rect` | `LAYOUT_MANAGED` | Parent zone for most slide content |
+| Notes zone | `spec.notes_rect` | `LAYOUT_MANAGED` | Reserved structural text zone |
+| Summary box | `spec.summary_box` | `LAYOUT_MANAGED` | Structured content block |
+| Hero image zone | `spec.hero_rect` | `LAYOUT_MANAGED` | Usually a real content image target |
+| Chips zone | `spec.chips_rect` | `LAYOUT_MANAGED` | Structured content tokens |
+| Footer zone | `spec.footer_rect` | `LAYOUT_MANAGED` | Structural footer content |
+| Sidebar zone | `spec.sidebar_rect` | `LAYOUT_MANAGED` | Structured side content |
+| Cards grid | `spec.cards` | `LAYOUT_MANAGED` | Card rectangles are part of collision-managed layout |
+| Stats row | `spec.stats` | `LAYOUT_MANAGED` | Structured metric boxes |
+| Timeline nodes | `spec.timeline` | `LAYOUT_MANAGED` | Structured sequential content |
+| Comparison panels | `spec.comparison.left/right` | `LAYOUT_MANAGED` | Structured side-by-side content |
+
+### 7.4 Non-Blueprint Item Mapping
+
+The following items are **not** primarily determined by the constraint solver and therefore rely on the registry or validator classification logic.
+
+| Item Type | Classification | How It Is Decided |
+|-----------|----------------|-------------------|
+| Template background fills | `TEMPLATE_DESIGN` | Registry via `add_design_shape()` / `tag_as_design()`; heuristics cover unregistered shapes |
+| Decorative borders / frames | `TEMPLATE_DESIGN` | Registry via `add_design_shape()`; heuristics cover unregistered shapes |
+| Watermarks / brand marks | `TEMPLATE_DESIGN` | Registry via `tag_as_design()` |
+| Accent blobs / glow ovals | `TEMPLATE_DESIGN` | Registry via `add_design_shape()`; heuristics cover unregistered shapes |
+| Hero/content images | `LAYOUT_MANAGED` | Registry via `safe_add_picture()`; slide configuration also informs picture classification when needed |
+| Decorative inline icons | `TEMPLATE_DESIGN` | Registry via `safe_add_picture()` auto-detection of icon assets |
+| Decorative inline icons vs textbox text area | Special-case overlap validation | Decorative for layout, but still checked against text-content box |
+
+### 7.5 Runtime Helpers for Generated Code
+
+| Helper | Phase | Purpose |
+|--------|-------|---------|
+| `add_design_shape(shapes, type, left, top, w, h, name="")` | 1 | Creates an auto-shape and registers it as `TEMPLATE_DESIGN`. Use for backgrounds, borders, accent blobs. |
+| `safe_add_design_picture(shapes, path, left, top, w, h)` | 1 | Adds an image and registers it as `TEMPLATE_DESIGN`. |
+| `tag_as_design(shape, name="")` | 1 | Retroactively registers an existing shape as `TEMPLATE_DESIGN`. |
+| `add_managed_shape(shapes, type, left, top, w, h, name="")` | 2 | Creates an auto-shape and registers it as `LAYOUT_MANAGED`. Use for cards, panels, stat boxes. |
+| `add_managed_textbox(shapes, left, top, w, h, name="")` | 2 | Creates a textbox and registers it as `LAYOUT_MANAGED`. Use for title, key message, notes. |
+| `safe_add_picture(shapes, path, left, top, w, h)` | 2 | Adds a picture; auto-registers as `TEMPLATE_DESIGN` for icon assets, `LAYOUT_MANAGED` otherwise. |
+
+Generated code should follow a two-phase pattern:
+
+```
+Phase 1 — Template / design composition
+  Add background fills, decorative borders, brand elements, watermarks.
+  Use add_design_shape() or safe_add_design_picture() for each element.
+  Use tag_as_design() for shapes created by other means.
+  These do NOT need to respect PRECOMPUTED_LAYOUT_SPECS geometry.
+
+Phase 2 — Blueprint-driven content placement
+  Position title, key message, content, cards, charts, images using
+  PRECOMPUTED_LAYOUT_SPECS[slide_index].{title_rect, content_rect, ...}.
+  Use add_managed_textbox() for text zones.
+  Use add_managed_shape() for structural panels (cards, stat boxes).
+  Use safe_add_picture() for content images.
+  These shapes are LAYOUT_MANAGED and participate in collision detection.
+```
+
+### 7.6 Ownership and Data Flow
+
+```
+pptx-python-runner.py                  layout_validator.py
+┌──────────────────────┐              ┌──────────────────────────────┐
+│ _SHAPE_ROLE_REGISTRY │──────────────▶│ shape_role_registry param    │
+│ (Dict[int, str])     │              │   ↓ 1st tier: registry lookup│
+│                      │              │                              │
+│ _LOADED_LAYOUT_SPECS │──────────────▶│ layout_specs param           │
+│ (list[LayoutSpec])   │              │   ↓ 2nd tier: geometry match │
+│                      │              │                              │
+│ (name prefixes)      │ ─ ─ ─ ─ ─ ─ ▶│   ↓ 3rd tier: prefix/heur. │
+└──────────────────────┘              └──────────────────────────────┘
+```
+
+- [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py) — owns the registry and creation wrappers; passes both registry and specs to the validator
+- [scripts/layout/layout_validator.py](scripts/layout/layout_validator.py) — consumes registry + specs + classification rules; owns classification logic and validation checks
+- [electron/ipc/llm/chat-handler.ts](electron/ipc/llm/chat-handler.ts) — prompt guidance telling generated code to use the creation wrappers
+
 ---
 
 ## Auto-Correction Policy
@@ -639,25 +780,21 @@ Only vertical positions are solved by Cassowary. Horizontal placement is determi
 
 ### 2. Measurement Uses a Single Declared Font Family
 
-Measurement uses the slide's declared `font_family` (set to `PPTX_FONT_FAMILY`, user-selected, defaults to Calibri) through the active backend. Runtime rendering may later substitute Noto Sans through `resolve_font()` for non-Latin scripts. In practice this is close enough, but it can introduce small residual differences in line breaks.
+Measurement uses the slide's declared `font_family` (set to `PPTX_FONT_FAMILY`, user-selected, defaults to Calibri) through the active backend. Runtime code also keeps that selected font unchanged via `resolve_font()`. PowerPoint may still substitute missing glyphs at render time, which can introduce small residual differences in line breaks.
 
 ### 3. Post-Generation Validation Is Geometric, Not Semantic
 
 The validator knows whether two boxes overlap. It does not know whether the slide is visually elegant, whether the headline hierarchy is strong enough, or whether a chart is too small to be readable.
 
-### 4. Decorative Heuristics Are Best-Effort
+### 4. Decorative Heuristics Are a Last-Resort Classifier
 
-Shapes are excluded from collision checks based on heuristics such as shape type, fill style, and name prefixes (`Oval*`, `bg_blob*`). If generated code creates decorative shapes with unexpected names or properties, the validator may classify them as real collisions.
+Shapes are classified primarily through the semantic registry and blueprint geometry matching. Name-prefix and geometric heuristics (`Oval*`, `bg_blob*`, background fill, decorative frame) are only used for shapes that were not created through the registry-aware helpers. If generated code bypasses all wrappers and creates shapes with unexpected names, heuristics may still misclassify them.
 
 ### 5. Auto-Size Is a Safety Net, Not the Primary Layout Strategy
 
 `TEXT_TO_FIT_SHAPE` can save a deck from catastrophic overflow, but it may reduce fonts to unreadable sizes. The preferred strategy remains: measure first, solve geometry second, render third.
 
-### 6. Static Template Helpers Have Been Removed
-
-The former `get_layout_spec()` function and its static coordinate templates have been removed. All layout computation now goes through the blueprint → measurement backend → constraint solver pipeline. `PRECOMPUTED_LAYOUT_SPECS` is the only supported path for generated code.
-
-### 7. Import Path Must Use Bare Module Names
+### 6. Import Path Must Use Bare Module Names
 
 External callers must use bare imports (`from layout_blueprint import ...`) after adding `scripts/layout/` to `sys.path`. Mixing qualified paths (`scripts.layout.layout_blueprint`) with the layout modules' bare imports creates duplicate `ZoneRole` enum classes, silently disabling all role-based solver constraints. See the Import Convention section below for details.
 

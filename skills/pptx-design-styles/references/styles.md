@@ -1,6 +1,6 @@
 # 30 Modern PPTX Design Styles — Reference Guide
 
-> **Font policy:** Fonts are resolved at runtime — `PPTX_FONT_FAMILY` (user-selected, defaults to Calibri) for Latin text, `resolve_font()` for CJK/non-Latin scripts (auto-selects the correct Noto Sans variant). Use `PPTX_FONT_FAMILY` or `resolve_font()` instead of hardcoding font names in generated code.
+> **Font policy:** Fonts are resolved at runtime through the selected base font. `resolve_font()` returns `PPTX_FONT_FAMILY` unchanged, and PowerPoint handles glyph substitution for missing characters at render time. Use `PPTX_FONT_FAMILY` or `resolve_font()` instead of hardcoding font names in generated code.
 
 ## ⚠️ Theme Priority & Contrast Rules
 

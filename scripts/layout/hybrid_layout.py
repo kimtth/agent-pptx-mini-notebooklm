@@ -9,7 +9,7 @@ Pipeline
 2. Collect all text zones that need measurement
 3. Open PowerPoint COM → batch-measure all text heights → close COM
 4. For each slide: solve constraints (blueprint + measurements + content)
-5. Return ``list[LayoutSpec]`` (backward-compatible output)
+5. Return ``list[LayoutSpec]``
 
 CLI usage::
 

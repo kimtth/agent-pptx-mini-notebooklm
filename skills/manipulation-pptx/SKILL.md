@@ -78,11 +78,10 @@ Also available at runtime:
 - `SLIDE_WIDTH_IN`, `SLIDE_HEIGHT_IN`
 - `Presentation`, `Inches`, `Pt`, `RGBColor`, `PP_ALIGN`, `MSO_ANCHOR`, `MSO_AUTO_SHAPE_TYPE`
 - `rgb_color()`, `apply_widescreen()`, `safe_image_path()`, `safe_add_picture()`, `ensure_contrast()`, `set_fill_transparency()`
-- `resolve_font(text, base_font)` — returns the correct Noto Sans font for non-Latin text (default base_font = `PPTX_FONT_FAMILY`)
+- `resolve_font(text, base_font)` — returns the selected base font unchanged (default base_font = `PPTX_FONT_FAMILY`)
 - `PPTX_FONT_FAMILY` — the user-selected base font (e.g., `'Calibri'`, `'Arial'`); use instead of hardcoding
 - `PPTX_COLOR_TREATMENT` — `'solid'`, `'gradient'`, or `'mixed'`; this is a hard requirement for how filled panels/cards should be rendered
 - `PPTX_TEXT_BOX_STYLE` — `'plain'`, `'with-icons'`, or `'mixed'`; this is a hard requirement for whether major text panels should visibly pair with icons
-- `ensure_noto_fonts(text)` — downloads missing Noto Sans fonts (called automatically at startup)
 
 When referencing slide images, prefer `os.path.join(IMAGES_DIR, filename)` over hardcoded absolute paths.
 
@@ -162,7 +161,7 @@ Icons are fetched live from the **Iconify** public API. Use any valid ID from th
 
 **Every slide SHOULD include at least one icon when a relevant icon exists.** If `fetch_icon()` returns `None`, continue without the icon. Icons add visual anchoring, improve scannability, and reinforce the message.
 
-Legacy aliases (e.g., `brain`, `rocket`) are automatically resolved to Iconify IDs (e.g., `mdi:brain`, `mdi:rocket-outline`). The generated code may also use full Iconify IDs from any supported collection (`mdi`, `lucide`, `tabler`, `ph`, `fa6-solid`, `fluent`).
+Use full Iconify IDs from supported collections such as `mdi`, `lucide`, `tabler`, `ph`, `fa6-solid`, and `fluent`.
 
 To use an icon in python-pptx, use the pre-injected `fetch_icon()` function, which fetches from the Iconify API:
 
@@ -456,7 +455,7 @@ When `TEMPLATE_PATH` is set (not `None`), the user has provided a corporate PPTX
 
 ## Content Rules
 
-- **No emoji**: `💡` `🔄` `✅` cause rendering issues with Noto Sans JP
+- **No emoji**: `💡` `🔄` `✅` can render inconsistently in PowerPoint exports
 - **Arrows ok**: `→` `↑` in text fields are fine
 - **Checkmarks**: Use `✔` (U+2714) not emoji
 - **Line spacing**: Japanese text should use `lineSpacingMultiple: 1.5`
@@ -466,21 +465,21 @@ When `TEMPLATE_PATH` is set (not `None`), the user has provided a corporate PPTX
 
 ### Font Selection for Non-English Content
 
-Use `resolve_font(text, base_font)` to automatically select the correct font for CJK and other non-Latin text. This function is pre-injected into the execution namespace.
+Use `resolve_font(text, base_font)` to keep the selected presentation font consistent across all text. This function is pre-injected into the execution namespace.
 
 ```python
-# resolve_font detects script and returns the appropriate Noto Sans variant
+# resolve_font returns the selected base font unchanged
 # default base_font is PPTX_FONT_FAMILY (user-selected), NOT hardcoded 'Calibri'
-font = resolve_font(slide_data['title'])  # → 'Noto Sans JP' for Japanese, or PPTX_FONT_FAMILY for Latin
+font = resolve_font(slide_data['title'])
 run.font.name = font
 ```
 
 **Rules:**
-- For non-English body text, always use `resolve_font(text)` instead of hardcoding font names like `Yu Mincho`
+- For non-English body text, use `resolve_font(text)` or `PPTX_FONT_FAMILY` instead of hardcoding locale-specific font names like `Yu Mincho`
 - `resolve_font()` already defaults to `PPTX_FONT_FAMILY` — no need to pass `'Calibri'` explicitly
-- Display/title fonts (Georgia, Bebas Neue, etc.) may be kept for Latin text, but pass CJK text through `resolve_font()`
+- Display/title fonts (Georgia, Bebas Neue, etc.) may be kept for Latin-only slides, but multilingual decks should stay on the selected base font
 - Monospace labels (Consolas, Space Mono) are fine for Latin-only labels and numbers
-- Noto Sans fonts are auto-downloaded to workspace if not installed — no manual setup needed
+- PowerPoint handles glyph substitution for missing characters at render time
 
 ## Quality Checklist
 
