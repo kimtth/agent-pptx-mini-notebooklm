@@ -33,7 +33,6 @@ export interface WorkspaceContext {
   iconProvider: 'iconify';
   iconCollection: IconifyCollectionId;
   availableIcons: string[];
-  includeImagesInLayout?: boolean;
   chunkSize?: number;
 }
 

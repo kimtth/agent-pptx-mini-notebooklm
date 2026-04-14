@@ -33,6 +33,7 @@ export type SlideLayout =
   | 'diagram'
   | 'summary'
   | 'chart'
+  | 'table'
   | 'closing'
   | 'photo_fullbleed'
   | 'multi_column'
@@ -113,7 +114,6 @@ export interface SlideWork {
   pptxCode: string | null;
   pptxBuildError: string | null;
   thinking: string | null;
-  includeImagesInLayout: boolean;
   isStreaming: boolean;
   isPptxBusy: boolean;
 }

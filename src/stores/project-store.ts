@@ -56,7 +56,6 @@ function normalizeLoadedWork(work: PptAppProject['slidesWork']) {
     designStyle: work.designStyle ?? null,
     framework: work.framework ?? null,
     customFrameworkPrompt: typeof work.customFrameworkPrompt === 'string' ? work.customFrameworkPrompt : null,
-    includeImagesInLayout: work.includeImagesInLayout ?? false,
     isStreaming: false,
     isPptxBusy: false,
     thinking: null,

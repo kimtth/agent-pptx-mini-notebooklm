@@ -174,6 +174,7 @@ The blueprint catalog currently defines these layout families:
 | `summary` | Summary box followed by content |
 | `diagram` | Content with sidebar for diagram support |
 | `chart` | Large content zone for chart rendering + caption footer |
+| `table` | Native PowerPoint table from pipe/tab/comma-delimited bullet rows |
 | `closing` | Thank-you / end slide — centered title + footer |
 | `photo_fullbleed` | Full-bleed hero image with overlaid title |
 | `multi_column` | Three-to-five equal-width content columns |
@@ -223,6 +224,7 @@ Not every layout measures text the same way.
 | `content_caption` / `picture_caption` | Title and key-message measured at left-column width (~4.30"); content measured at right-column width (~7.16") |
 | `quote` / `big_number` | Measured at wide-margin content width (margin_x = 1.5–1.8") |
 | `chart` / `closing` / `photo_fullbleed` | Minimal measurement — header zones only; content area is fixed or absent |
+| `table` | Header zones only — table content height is determined by the stretch content zone; no per-cell measurement |
 
 This distinction matters because measuring a whole bullet list at full slide width systematically underestimates height for narrow card columns or timeline labels.
 
@@ -392,6 +394,67 @@ The following names are pre-imported in the generated code namespace for chart s
 | `plt` | `matplotlib.pyplot` | Matplotlib pyplot module |
 | `sns` | `seaborn` | Seaborn module |
 | `np` | `numpy` | NumPy module |
+
+### Table Layout
+
+The `table` layout type renders native PowerPoint tables from structured bullet data. Unlike other content layouts where bullets become text panels or cards, table slides parse each bullet line into cells and construct an `a:tbl` element directly.
+
+#### Data Encoding
+
+Table data is encoded in the slide's `bullets` array. Each bullet becomes one row. Cells within a row are delimited by one of three syntaxes (auto-detected in priority order):
+
+| Syntax | Example | When to use |
+|--------|---------|-------------|
+| Pipe-delimited | `Region \| Q1 \| Q2 \| Q3` | Preferred — markdown-compatible |
+| Tab-delimited | `Region\tQ1\tQ2\tQ3` | Useful for pasted spreadsheet data |
+| Comma-delimited | `Region, Q1, Q2, Q3` | Fallback for simple data |
+
+The first bullet is always treated as the **header row**. Markdown separator rows (e.g. `---|---|---`) are automatically skipped. Rows with fewer cells than the widest row are padded with empty strings.
+
+#### Rendering Behavior
+
+The deterministic renderer (`_render_table_slide`) produces a styled native table with these features:
+
+| Feature | Behavior |
+|---------|----------|
+| **Header row** | Accent-colored fill, centered bold text, white/contrasted font |
+| **Zebra stripes** | Alternating body rows use a 92%-lightened tint of the accent color |
+| **Auto column widths** | First column is ~25% wider (label column); remaining columns share equally |
+| **Numeric alignment** | Columns where ≥60% of data cells are numeric are right-aligned |
+| **Adaptive font sizing** | 12pt for ≤12 cells, 11pt ≤24, 10pt ≤40, 9pt for dense tables |
+| **Cell margins** | 0.10″ horizontal, 0.04″ vertical |
+| **Banded rows** | XML-level `bandRow="1"` attribute for theme-aware rendering in PowerPoint |
+
+#### Blueprint
+
+The table blueprint uses a standard header (title + key message + accent) with a stretch content zone:
+
+```text
+┌─────────────────────────────────────────────────┐
+│  Title                                          │  min_h=0.40
+├─────────────────────────────────────────────────┤
+│  Key Message                                    │  min_h=0.30
+├─────────────────────────────────────────────────┤
+│  ═══ accent rule ═══                            │  fixed_h=0.04
+├─────────────────────────────────────────────────┤
+│                                                 │
+│  ┌─────────┬────────┬────────┬────────┐         │
+│  │ Header  │ Col A  │ Col B  │ Col C  │         │
+│  ├─────────┼────────┼────────┼────────┤         │  content (stretch, min_h=2.8)
+│  │ Row 1   │  ...   │  ...   │  ...   │         │
+│  │ Row 2   │  ...   │  ...   │  ...   │         │
+│  └─────────┴────────┴────────┴────────┘         │
+│                                                 │
+├─────────────────────────────────────────────────┤
+│  Footer                                         │  fixed_h=0.22
+├─────────────────────────────────────────────────┤
+│  Notes                                          │  fixed_h=0.70
+└─────────────────────────────────────────────────┘
+```
+
+#### Measurement Strategy
+
+Table slides skip content text measurement entirely. The `hybrid_layout.py` orchestrator returns an empty string for table content zones, so the solver falls back to the blueprint's `preferred_h` (4.2″). Only the title and key-message zones are measured for text height.
 
 ### Asset-Grounding Rule
 

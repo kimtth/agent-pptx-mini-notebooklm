@@ -218,7 +218,6 @@ export function ChatPanel() {
       iconProvider: 'iconify',
       iconCollection: selectedIconCollection,
       availableIcons,
-      includeImagesInLayout: work.includeImagesInLayout,
     }
 
     window.electronAPI.chat.send(msg, historyToIpc([...messages, userMessage]), workspaceContext)
@@ -261,9 +260,13 @@ export function ChatPanel() {
     window.electronAPI.chat.cancel()
   }
 
-  const clearChatHistory = () => {
-    if (busy || messages.length === 0) return
-    clearMessages()
+  const clearChatHistory = async () => {
+    if (busy) return
+    if (messages.length > 0) {
+      clearMessages()
+    }
+    await window.electronAPI.pptx.clearWorkspaceArtifacts().catch(() => undefined)
+    window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
   }
 
   const handleKey = (e: React.KeyboardEvent) => {

@@ -92,7 +92,6 @@ export interface IpcChatAPI {
       iconProvider: 'iconify';
       iconCollection: IconifyCollectionId;
       availableIcons: string[];
-      includeImagesInLayout?: boolean;
       chunkSize?: number;
     },
   ): void;

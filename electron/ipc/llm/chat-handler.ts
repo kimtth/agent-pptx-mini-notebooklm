@@ -31,7 +31,7 @@ import type { DataFile, ScrapeResult } from '../../../src/domain/ports/ipc';
 import { getIconifyCollectionById } from '../../../src/domain/icons/iconify';
 import type { IconifyCollectionId } from '../../../src/domain/icons/iconify';
 import { formatWorkflowForPrompt, getWorkflowConfig, type WorkflowConfig } from '../../../src/domain/workflows/workflow-config';
-import { executeGeneratedPythonCodeToFile, executeChunkedPptxGeneration, renderPresentationToFile, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace, persistLayoutMeta } from '../pptx/pptx-handler.ts';
+import { executeGeneratedPythonCodeToFile, executeChunkedPptxGeneration, renderPresentationToFile, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace } from '../pptx/pptx-handler.ts';
 import type { ChunkResult, PptxCompletionReport } from '../pptx/pptx-handler.ts';
 import { buildManagedSystemPrompt } from './system-prompts.ts';
 import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts';
@@ -78,7 +78,6 @@ interface WorkspaceContext {
   iconProvider: 'iconify';
   iconCollection: IconifyCollectionId;
   availableIcons: string[];
-  includeImagesInLayout?: boolean;
   chunkSize?: number;
 }
 
@@ -784,7 +783,6 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           .catch((err) => {
             console.log('[chat] Slide asset persistence failed (non-blocking):', err);
           });
-        persistLayoutMeta({ includeImagesInLayout: workspace.includeImagesInLayout ?? false }).catch(() => {});
       }
 
       let session: LLMSession | null = null;
@@ -834,7 +832,8 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           'Set the slide scenario (outline) for the presentation workspace panel. ' +
           'Each slide must have a keyMessage (the "so what" / key takeaway), a layout hint, and optionally an icon hint. ' +
           'You may also include imageQuery when supporting images should later be searched for and selected on the slide. ' +
-          'Available layouts: title, agenda, section, bullets, cards, stats, comparison, timeline, diagram, summary. ' +
+          'Available layouts: title, agenda, section, bullets, cards, stats, comparison, timeline, diagram, summary, table. ' +
+          'For table layout, encode rows as pipe-delimited bullets: first bullet is the header row (e.g. "Region | Q1 | Q2 | Q3"), subsequent bullets are data rows. ' +
           'The layout and icon are guidance for the later PPTX design step, not a rigid rendering contract. ' +
           'When helpful, include a designBrief describing tone, audience, visual style, density, and layout approach. ' +
           `Use Iconify icon IDs for icons and stay within the selected collection (${workspace.iconCollection}). Prefer slide-specific icon hints over invented names.`,
@@ -1020,7 +1019,6 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
               renderDir: previewRoot,
               iconCollection: workspace.iconCollection,
               layoutSpecsJson,
-              includeImagesInLayout: workspace.includeImagesInLayout,
               designStyle: workspace.designStyle ?? undefined,
             });
 
@@ -1138,7 +1136,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
               layoutSpecsJson,
               slideAssetsJson,
               templateMeta: workspace.templateMeta,
-              includeImagesInLayout: workspace.includeImagesInLayout,
+              designStyle: workspace.designStyle ?? undefined,
               onProgress: (progress) => sendToWindow(win, 'chat:chunk-progress', progress),
             });
 

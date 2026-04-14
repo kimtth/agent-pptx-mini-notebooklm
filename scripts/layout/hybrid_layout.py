@@ -102,6 +102,8 @@ def _zone_text(slide: SlideContent, role: ZoneRole) -> str:
     if role == ZoneRole.FOOTER:
         return slide.footer_text
     if role == ZoneRole.CONTENT:
+        if slide.layout_type == 'table':
+            return ''
         bullets = slide.bullets or []
         return '\n'.join(bullets) if bullets else ''
     if role == ZoneRole.NOTES:
@@ -111,7 +113,33 @@ def _zone_text(slide: SlideContent, role: ZoneRole) -> str:
 
 def _zone_needs_measurement(role: ZoneRole) -> bool:
     """Only text-bearing zones need COM measurement."""
-    return role in (ZoneRole.TITLE, ZoneRole.KEY_MESSAGE, ZoneRole.CONTENT, ZoneRole.FOOTER, ZoneRole.NOTES)
+    return role in (ZoneRole.TITLE, ZoneRole.KEY_MESSAGE, ZoneRole.CONTENT, ZoneRole.CHIPS, ZoneRole.FOOTER, ZoneRole.NOTES)
+
+
+def _default_metrics_backend() -> str:
+    """Return the implicit measurement backend preference for this platform."""
+    return 'pillow-first'
+
+
+def _columnar_height_reserve(blueprint: LayoutBlueprint) -> float:
+    """Extra per-item height reserve for panel chrome.
+
+    Columnar layouts render text inside decorated panels with internal margins,
+    icon badges, or header bands. Pure text measurement underestimates the final
+    box height unless we reserve some space for those non-text elements.
+    """
+    if blueprint.cards:
+        pattern = (blueprint.cards.pattern or '').strip().lower()
+        if pattern == 'icon_card':
+            return round(max(blueprint.cards.icon_size or 0.46, 0.34) + 0.24, 2)
+        if pattern == 'header_icon_card':
+            return round(max(blueprint.cards.header_band_h or 0.34, 0.28) + 0.12, 2)
+        return 0.22
+    if blueprint.stats:
+        return 0.28
+    if blueprint.comparison:
+        return 0.24
+    return 0.0
 
 
 def _effective_blueprint(blueprint: LayoutBlueprint, slide: SlideContent) -> LayoutBlueprint:
@@ -200,7 +228,7 @@ def _get_measure_backend() -> tuple[type, callable]:
       - ``pillow-first`` (default): Pillow → COM → heuristic
       - ``com-first``: COM → Pillow → heuristic
     """
-    backend_pref = os.environ.get('PPTX_FONT_METRICS_BACKEND', 'pillow-first').strip().lower()
+    backend_pref = os.environ.get('PPTX_FONT_METRICS_BACKEND', _default_metrics_backend()).strip().lower()
 
     if backend_pref == 'com-first':
         # Legacy order: COM first (Windows), then Pillow, then heuristic
@@ -263,6 +291,8 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
     # Per-item measurement for columnar layouts (cards, stats, comparison)
     # Each entry: (slide_index, TextMeasureRequest)
     item_measure_queue: list[tuple[int, TextMeasureRequest]] = []
+    # Per-chip measurement for title slides. Each entry: (slide_index, TextMeasureRequest)
+    chip_measure_queue: list[tuple[int, TextMeasureRequest]] = []
     # Track which slides have columnar per-item measurements
     columnar_slides: set[int] = set()
 
@@ -278,6 +308,25 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
 
         for zd in bp.zones:
             if not _zone_needs_measurement(zd.role):
+                continue
+            if zd.role == ZoneRole.CHIPS:
+                visible_chips = [label.strip() for label in (slide.chip_labels or []) if label.strip()][:3]
+                if not visible_chips:
+                    continue
+                total_w = _zone_width(bp, zd, zd.role, slide.has_icon)
+                chip_gap = min(total_w * 0.025, 0.18)
+                chip_w = (total_w - chip_gap * (len(visible_chips) - 1)) / len(visible_chips)
+                for chip_text in visible_chips:
+                    chip_measure_queue.append((
+                        i,
+                        TextMeasureRequest(
+                            text=chip_text,
+                            width_in=max(round(chip_w - 0.16, 2), 0.5),
+                            font_family=slide.font_family,
+                            font_size_pt=11.2,
+                            bold=False,
+                        ),
+                    ))
                 continue
             # For columnar layouts, measure each bullet at per-column width
             # instead of measuring all text at full content width
@@ -320,6 +369,7 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
     all_requests: list[TextMeasureRequest] = []
     all_requests.extend(req for _, _, req in measure_queue)
     all_requests.extend(req for _, req in item_measure_queue)
+    all_requests.extend(req for _, req in chip_measure_queue)
 
     if all_requests:
         all_heights = measure_text_heights(all_requests)
@@ -329,7 +379,9 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
     # Split heights back into zone measurements and per-item measurements
     zone_count = len(measure_queue)
     zone_heights = all_heights[:zone_count]
-    item_heights = all_heights[zone_count:]
+    item_count = len(item_measure_queue)
+    item_heights = all_heights[zone_count:zone_count + item_count]
+    chip_heights = all_heights[zone_count + item_count:]
 
     # Step 4: Group measurements by slide index
     slide_measurements: list[dict[str, float]] = [{} for _ in slides]
@@ -347,18 +399,34 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
         else:
             per_item_max_h[si] = max(per_item_max_h[si], h)
 
+    chip_max_h: dict[int, float] = {}
+    chip_idx = 0
+    for si, _ in chip_measure_queue:
+        h = chip_heights[chip_idx]
+        chip_idx += 1
+        chip_total_h = round(h + 0.10, 4)
+        if si not in chip_max_h:
+            chip_max_h[si] = chip_total_h
+        else:
+            chip_max_h[si] = max(chip_max_h[si], chip_total_h)
+
     # Step 5: Solve constraints for each slide
     specs: list[LayoutSpec] = []
     for i, (slide, bp) in enumerate(zip(slides, blueprints)):
         mh = slide_measurements[i]
+        if i in chip_max_h:
+            mh = {**mh, ZoneRole.CHIPS.value: chip_max_h[i]}
         item_count = slide.item_count
         if item_count == 0 and slide.bullets:
             item_count = len(slide.bullets)
+        card_measured_h = per_item_max_h.get(i)
+        if card_measured_h is not None:
+            card_measured_h = round(card_measured_h + _columnar_height_reserve(bp), 4)
         spec = solve_layout(
             bp, mh,
             has_icon=slide.has_icon,
             item_count=item_count,
-            card_measured_h=per_item_max_h.get(i),
+            card_measured_h=card_measured_h,
         )
         specs.append(spec)
 

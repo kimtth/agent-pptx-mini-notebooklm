@@ -128,7 +128,7 @@ const FIELDS: SettingsField[] = [
   {
     key: 'PPTX_FONT_METRICS_BACKEND',
     label: 'Font Metrics Backend',
-    hint: 'Controls text-measurement engine for layout computation and overflow repair. Pillow-first is cross-platform; COM-first uses PowerPoint (Windows only).',
+    hint: 'Controls text-measurement engine for layout computation and overflow repair. Pillow-first is the default; COM-first uses PowerPoint for opt-in Windows WYSIWYG measurement.',
     options: [
       { value: 'pillow-first', label: 'Pillow-first (default)' },
       { value: 'com-first', label: 'COM-first (PowerPoint)' },

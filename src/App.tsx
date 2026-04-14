@@ -46,6 +46,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const autoRetryCount = useRef(0)
   const chunkedPptxReady = useRef(false)
+  const postStagingActive = useRef(false)
 
   const retryWithBuildError = (errMsg: string) => {
     if (autoRetryCount.current >= MAX_AUTO_RETRIES) {
@@ -97,7 +98,6 @@ export default function App() {
       iconProvider: 'iconify',
       iconCollection: selectedIconCollection,
       availableIcons,
-      includeImagesInLayout: work.includeImagesInLayout,
     }
 
     window.electronAPI.chat.send(retryPrompt, historyToIpc([...useChatStore.getState().messages]), workspaceContext)
@@ -114,6 +114,7 @@ export default function App() {
     const prompt = `${workflow.triggerPrompt}\n\n## QA Report\n\n${summary}`
     const userMsg = createUserMessage(prompt)
     useChatStore.getState().addMessage(userMsg)
+    postStagingActive.current = true
     useSlidesStore.getState().setStreaming(true)
     useSlidesStore.getState().setPptxBusy(true)
 
@@ -144,7 +145,6 @@ export default function App() {
       iconProvider: 'iconify',
       iconCollection: selectedIconCollection,
       availableIcons,
-      includeImagesInLayout: work.includeImagesInLayout,
     }
 
     window.electronAPI.chat.send(prompt, historyToIpc([...useChatStore.getState().messages]), workspaceContext)
@@ -195,6 +195,15 @@ export default function App() {
           // re-execution which would overwrite the merged result.
           if (chunkedPptxReady.current) {
             chunkedPptxReady.current = false
+            return
+          }
+
+          // Post-staging QA just finished — do NOT re-trigger renderPreview
+          // or we enter an infinite generate→QA→generate loop.
+          if (postStagingActive.current) {
+            postStagingActive.current = false
+            useSlidesStore.getState().setStreaming(false)
+            useSlidesStore.getState().setPptxBusy(false)
             return
           }
 

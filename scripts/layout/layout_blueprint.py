@@ -147,7 +147,7 @@ class LayoutBlueprint:
 # ---------------------------------------------------------------------------
 
 _ZONE_TITLE = ZoneDef(ZoneRole.TITLE, min_h=0.40, preferred_h=0.50, font_pt=30, bold=True)
-_ZONE_KEY   = ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.30, preferred_h=0.55, font_pt=18)
+_ZONE_KEY   = ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.38, preferred_h=0.55, font_pt=18)
 _ZONE_ACCENT = ZoneDef(ZoneRole.ACCENT, fixed_h=0.04, min_h=0.04, preferred_h=0.04)
 _ZONE_NOTES = ZoneDef(ZoneRole.NOTES, fixed_h=0.70, min_h=0.70, preferred_h=0.70)
 
@@ -167,7 +167,7 @@ _TITLE_BLUEPRINT = LayoutBlueprint(
     zones=(
         ZoneDef(ZoneRole.ACCENT, fixed_h=0.06, min_h=0.06, preferred_h=0.06),
         ZoneDef(ZoneRole.TITLE, min_h=0.50, preferred_h=0.60, font_pt=30, bold=True),
-        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.30, preferred_h=0.46, font_pt=18),
+        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.38, preferred_h=0.46, font_pt=18),
         ZoneDef(ZoneRole.CHIPS, min_h=0.30, preferred_h=0.46),
         ZoneDef(ZoneRole.FOOTER, min_h=0.40, preferred_h=0.70),
         _ZONE_NOTES,
@@ -182,7 +182,7 @@ _SECTION_BLUEPRINT = LayoutBlueprint(
     layout_type='section',
     zones=(
         ZoneDef(ZoneRole.ACCENT, fixed_h=0.05, min_h=0.05, preferred_h=0.05),
-        ZoneDef(ZoneRole.TITLE, min_h=0.40, preferred_h=0.48, font_pt=36, bold=True),
+        ZoneDef(ZoneRole.TITLE, min_h=0.48, preferred_h=0.56, font_pt=36, bold=True),
         ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.40, preferred_h=0.68, font_pt=24),
         _ZONE_NOTES,
     ),
@@ -262,7 +262,19 @@ _CHART_BLUEPRINT = LayoutBlueprint(
     zones=(
         *_standard_header(),
         ZoneDef(ZoneRole.CONTENT, min_h=2.5, preferred_h=4.2, stretch=True),
-        ZoneDef(ZoneRole.FOOTER, min_h=0.15, preferred_h=0.22, fixed_h=0.22),
+        ZoneDef(ZoneRole.FOOTER, min_h=0.20, preferred_h=0.28, fixed_h=0.28),
+        _ZONE_NOTES,
+    ),
+    icon_size=1.6,
+)
+
+# -- table ------------------------------------------------------------------
+_TABLE_BLUEPRINT = LayoutBlueprint(
+    layout_type='table',
+    zones=(
+        *_standard_header(),
+        ZoneDef(ZoneRole.CONTENT, min_h=2.8, preferred_h=4.2, stretch=True),
+        ZoneDef(ZoneRole.FOOTER, min_h=0.20, preferred_h=0.28, fixed_h=0.28),
         _ZONE_NOTES,
     ),
     icon_size=1.6,
@@ -274,7 +286,7 @@ _CLOSING_BLUEPRINT = LayoutBlueprint(
     zones=(
         ZoneDef(ZoneRole.ACCENT, fixed_h=0.05, min_h=0.05, preferred_h=0.05),
         ZoneDef(ZoneRole.TITLE, min_h=0.50, preferred_h=0.60, font_pt=36, bold=True),
-        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.30, preferred_h=0.50, font_pt=18),
+        ZoneDef(ZoneRole.KEY_MESSAGE, min_h=0.38, preferred_h=0.50, font_pt=18),
         ZoneDef(ZoneRole.FOOTER, min_h=0.40, preferred_h=0.60),
         _ZONE_NOTES,
     ),
@@ -425,6 +437,7 @@ _BLUEPRINTS: dict[str, LayoutBlueprint] = {
     'summary': _SUMMARY_BLUEPRINT,
     'diagram': _DIAGRAM_BLUEPRINT,
     'chart': _CHART_BLUEPRINT,
+    'table': _TABLE_BLUEPRINT,
     'closing': _CLOSING_BLUEPRINT,
     'photo_fullbleed': _PHOTO_FULLBLEED_BLUEPRINT,
     'multi_column': _MULTI_COLUMN_BLUEPRINT,

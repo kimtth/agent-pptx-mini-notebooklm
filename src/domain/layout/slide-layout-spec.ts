@@ -223,6 +223,16 @@ export function getSlideLayoutSpec(slide: SlideItem): SlideLayoutSpec {
           captionRect: { x: 0.5, y: 5.86, w: 12.33, h: 0.22 },
         },
       }
+    case 'table':
+      return {
+        titleRect: headerRect(0.5, 0.5, 12.33, 0.50),
+        keyMessageRect: headerRect(0.5, 1.02, 12.33, 0.55),
+        accentRect: { x: 0.5, y: 1.62, w: 1.5, h: 0.04 },
+        iconRect: slide.icon ? iconCornerRect(1.6) : undefined,
+        contentRect: { x: 0.5, y: 1.86, w: 12.33, h: 3.9 },
+        notesRect: { x: 0.5, y: 6.18, w: 12.33, h: 0.7 },
+        maxItems: 0,
+      }
     case 'closing':
       return {
         titleRect: headerRect(0.9, 2.4, 11.53, 0.60),

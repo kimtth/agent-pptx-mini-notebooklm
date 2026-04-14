@@ -96,7 +96,6 @@ interface SlidesStore {
   applyResolvedImages(images: Array<{ id: string; number: number; imageQuery: string | null; imageUrl: string | null; imagePath: string | null; imageAttribution: string | null; sourcePageUrl: string | null; thumbnailUrl: string | null }>): void;
   setSlideImageQuery(number: number, imageQuery: string | null): void;
   removeSlideImage(number: number, imageId: string): void;
-  setIncludeImagesInLayout(v: boolean): void;
   setDesignStyle(style: DesignStyle | null): void;
   setFramework(fw: FrameworkType): void;
   setCustomFrameworkPrompt(prompt: string | null): void;
@@ -128,7 +127,6 @@ const initial: SlideWork = {
   pptxCode: null,
   pptxBuildError: null,
   thinking: null,
-  includeImagesInLayout: false,
   isStreaming: false,
   isPptxBusy: false,
 };
@@ -279,10 +277,6 @@ export const useSlidesStore = create<SlidesStore>()(persist(
         }),
       },
     }))
-  },
-
-  setIncludeImagesInLayout(v) {
-    set((state) => ({ work: { ...state.work, includeImagesInLayout: v } }));
   },
 
   setDesignStyle(style) {

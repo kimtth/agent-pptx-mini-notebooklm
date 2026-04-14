@@ -119,6 +119,10 @@ def _build_colors(theme: dict[str, str]) -> dict[str, str]:
     return {
         "BG": _hex_color(theme, "BG", "LT1", "LIGHT", "WHITE"),
         "TEXT": _hex_color(theme, "TEXT", "DK1", "DARK"),
+        "DARK": _hex_color(theme, "DARK", "DK1", "TEXT"),
+        "DARK2": _hex_color(theme, "DARK2", "DK2", "BORDER", "TEXT"),
+        "LIGHT": _hex_color(theme, "LIGHT", "LT1", "WHITE", "BG"),
+        "LIGHT2": _hex_color(theme, "LIGHT2", "LT2", "BORDER", "BG"),
         "SECONDARY": _hex_color(theme, "SECONDARY", "ACCENT2", "LT2"),
         "BORDER": _hex_color(theme, "BORDER", "SECONDARY", "ACCENT2"),
         "ACCENT1": _hex_color(theme, "ACCENT1", "PRIMARY"),
@@ -129,6 +133,65 @@ def _build_colors(theme: dict[str, str]) -> dict[str, str]:
         "ACCENT6": _hex_color(theme, "ACCENT6", "ACCENT4"),
         "PRIMARY": _hex_color(theme, "PRIMARY", "ACCENT1"),
     }
+
+
+def _mix_hex(a_hex: str, b_hex: str, weight_b: float) -> str:
+    """Return a blended hex color with ``weight_b`` contribution from ``b_hex``."""
+    weight_b = max(0.0, min(weight_b, 1.0))
+    weight_a = 1.0 - weight_b
+    a_hex = (a_hex or "000000").strip().lstrip("#")[:6].ljust(6, "0")
+    b_hex = (b_hex or "000000").strip().lstrip("#")[:6].ljust(6, "0")
+    comps = []
+    for idx in (0, 2, 4):
+        a_val = int(a_hex[idx:idx + 2], 16)
+        b_val = int(b_hex[idx:idx + 2], 16)
+        mixed = round(a_val * weight_a + b_val * weight_b)
+        comps.append(f"{max(0, min(mixed, 255)):02X}")
+    return "".join(comps)
+
+
+def _resolve_slide_colors(
+    ctx: RenderContext,
+    base_colors: dict[str, str],
+    accent_a: str,
+    accent_b: str,
+    slide_index: int,
+) -> dict[str, str]:
+    """Derive per-slide theme roles so styles use more than one palette slot."""
+    style = ctx.style
+    colors = dict(base_colors)
+
+    if style.dark_mode:
+        bg_seed = accent_a if style.color_treatment == "gradient" else accent_b
+        bg_hex = _mix_hex(colors["DARK"], bg_seed, 0.16 if style.color_treatment != "solid" else 0.10)
+        panel_base = _mix_hex(colors["DARK2"], accent_a, 0.24)
+        panel_alt = _mix_hex(colors["DARK2"], accent_b, 0.20)
+        border_hex = _mix_hex(colors["LIGHT2"], accent_a, 0.35)
+        text_hex = ctx.ensure_contrast(colors["LIGHT"], bg_hex)
+        secondary_hex = ctx.ensure_contrast(colors["LIGHT2"], bg_hex)
+    else:
+        bg_seed = accent_b if style.color_treatment == "gradient" else accent_a
+        bg_hex = _mix_hex(colors["BG"], bg_seed, 0.05 if style.panel_fill == "transparent" else 0.08)
+        panel_base = _mix_hex(colors["LIGHT"], accent_a, 0.22)
+        panel_alt = _mix_hex(colors["LIGHT"], accent_b, 0.18)
+        border_hex = _mix_hex(colors["BORDER"], accent_a, 0.30)
+        text_hex = ctx.ensure_contrast(colors["TEXT"], bg_hex)
+        secondary_hex = ctx.ensure_contrast(colors["TEXT"], panel_base)
+
+    if style.panel_fill == "solid":
+        panel_base = accent_a
+        panel_alt = accent_b if slide_index % 2 == 0 else _mix_hex(accent_b, colors["LIGHT"], 0.20)
+    elif style.panel_fill == "transparent":
+        panel_base = _mix_hex(bg_hex, accent_a, 0.12)
+        panel_alt = _mix_hex(bg_hex, accent_b, 0.10)
+
+    colors["BG"] = bg_hex
+    colors["TEXT"] = text_hex
+    colors["SECONDARY"] = secondary_hex
+    colors["BORDER"] = border_hex
+    colors["PANEL_BASE"] = panel_base
+    colors["PANEL_ALT"] = panel_alt
+    return colors
 
 
 # ── Low-level PPTX writers ──────────────────────────────────────────
@@ -269,6 +332,28 @@ def _add_design_language(ctx: RenderContext, slide, spec: LayoutSpec,
         bar.fill.solid()
         bar.fill.fore_color.rgb = ctx.rgb_color(accent_a)
         bar.line.fill.background()
+
+    if style.decorative_blob:
+        anchor = spec.content_rect or ref
+        blob_w = min(max(anchor.w * 0.42, 2.8), 4.4)
+        blob_h = min(max(anchor.h * 0.62, 1.9), 3.0)
+        blob_x = min(anchor.x + anchor.w - blob_w * 0.55, SLIDE_WIDTH_IN - blob_w - 0.10)
+        blob_y = max(ref.y - blob_h * 0.18, 0.10)
+        blob = ctx.add_design_shape(
+            slide.shapes,
+            MSO_AUTO_SHAPE_TYPE.OVAL,
+            Inches(blob_x), Inches(blob_y),
+            Inches(blob_w), Inches(blob_h),
+            name="bg_blob",
+        )
+        if style.color_treatment == "gradient":
+            ctx.apply_gradient_fill(blob, [_mix_hex(accent_a, "FFFFFF", 0.20), _mix_hex(accent_b, "FFFFFF", 0.40)],
+                                    angle_degrees=style.gradient_angle)
+        else:
+            blob.fill.solid()
+            blob.fill.fore_color.rgb = ctx.rgb_color(_mix_hex(accent_a, "FFFFFF", 0.45))
+        ctx.set_fill_transparency(blob, 0.78 if style.dark_mode else 0.88)
+        blob.line.fill.background()
 
     # Horizontal accent rule
     if style.title_accent_rule and spec.accent_rect is not None:
@@ -509,6 +594,234 @@ def _split_bullet_text(text: str) -> tuple[str, str, bool]:
     return cleaned, "", is_action
 
 
+def _parse_table_rows(lines: list[str]) -> list[list[str]]:
+    """Parse a slide's bullet lines into table rows.
+
+    Supported row syntaxes (auto-detected in priority order):
+    - Markdown table rows: ``A | B | C``  (separator rows like ``---|---`` are skipped)
+    - TSV rows: ``A\\tB\\tC``
+    - CSV-ish rows: ``A, B, C``
+    - Single-column fallback when no delimiter is present
+    """
+    parsed: list[list[str]] = []
+    for raw in lines:
+        line = (raw or '').strip()
+        if not line:
+            continue
+        # Skip markdown separator rows (e.g. "---|---|---")
+        if set(line) <= {'|', '-', ':', ' '}:
+            continue
+
+        cells: list[str]
+        if '|' in line:
+            parts = [part.strip() for part in line.split('|')]
+            cells = [part for part in parts if part]
+        elif '\t' in line:
+            cells = [part.strip() for part in line.split('\t')]
+        elif ', ' in line or ',' in line:
+            cells = [part.strip() for part in line.split(',')]
+        else:
+            cells = [line]
+
+        cleaned = [cell for cell in cells if cell]
+        if cleaned:
+            parsed.append(cleaned)
+
+    if not parsed:
+        return []
+
+    col_count = max(len(row) for row in parsed)
+    return [row + [''] * (col_count - len(row)) for row in parsed]
+
+
+def _lighten_hex(hex_color: str, factor: float = 0.92) -> str:
+    """Lighten a hex color towards white by the given factor (0=original, 1=white)."""
+    hex_color = hex_color.lstrip('#').upper()
+    r = int(hex_color[0:2], 16)
+    g = int(hex_color[2:4], 16)
+    b = int(hex_color[4:6], 16)
+    r = int(r + (255 - r) * factor)
+    g = int(g + (255 - g) * factor)
+    b = int(b + (255 - b) * factor)
+    return f"{r:02X}{g:02X}{b:02X}"
+
+
+def _is_numeric_cell(text: str) -> bool:
+    """Check if a cell value looks numeric (for right-alignment)."""
+    cleaned = text.strip().replace(',', '').replace('%', '').replace('$', '').replace('€', '').replace('¥', '').replace('£', '')
+    if cleaned.startswith(('+', '-')):
+        cleaned = cleaned[1:]
+    try:
+        float(cleaned)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _render_table_slide(ctx: RenderContext, slide, spec: LayoutSpec,
+                        data: dict, slide_index: int,
+                        accent_a: str, accent_b: str,
+                        colors: dict[str, str]) -> None:
+    """Structured table slide with themed header, zebra stripes, and auto-sized fonts."""
+    _add_title_and_key_message(ctx, slide, spec, data, colors, accent_a, accent_b)
+
+    rows = _parse_table_rows(data.get('bullets', []))
+    if spec.content_rect and rows:
+        content = spec.content_rect
+        row_count = len(rows)
+        col_count = max(len(row) for row in rows)
+
+        # ── Inset the table slightly for visual breathing room ──
+        inset_x = 0.08
+        inset_y = 0.06
+        tbl_x = content.x + inset_x
+        tbl_y = content.y + inset_y
+        tbl_w = content.w - inset_x * 2
+        tbl_h = content.h - inset_y * 2
+
+        table_shape = slide.shapes.add_table(
+            row_count, col_count,
+            Inches(tbl_x), Inches(tbl_y),
+            Inches(tbl_w), Inches(tbl_h),
+        )
+        table = table_shape.table
+        table.first_row = True
+
+        # ── Column widths — first column slightly wider for labels ──
+        if col_count >= 2:
+            label_ratio = 1.25
+            data_col_share = (tbl_w - tbl_w * label_ratio / (col_count - 1 + label_ratio))
+            label_w = tbl_w - data_col_share
+            data_w = data_col_share / max(col_count - 1, 1)
+            table.columns[0].width = Inches(label_w)
+            for col_idx in range(1, col_count):
+                table.columns[col_idx].width = Inches(data_w)
+        else:
+            table.columns[0].width = Inches(tbl_w)
+
+        # ── Row heights — header slightly taller ──
+        body_rows = max(row_count - 1, 1)
+        header_h = min(tbl_h * 0.16, 0.58)
+        body_row_h = (tbl_h - header_h) / body_rows if body_rows > 0 else tbl_h
+        if row_count == 1:
+            header_h = tbl_h
+
+        # ── Colors ──
+        header_fill = accent_a
+        bg_base = colors['BG']
+        # Zebra stripe: tinted version of accent for alternate rows
+        stripe_fill = _lighten_hex(accent_a, 0.92)
+        header_text_color = ctx.ensure_contrast(colors['BG'], header_fill)
+        body_text_color = ctx.ensure_contrast(colors['TEXT'], bg_base)
+        border_color = _lighten_hex(accent_a, 0.75)
+
+        # ── Font sizing — adaptive based on table density ──
+        font_name = ctx.font_family
+        cell_count = row_count * col_count
+        if cell_count <= 12:
+            body_font_size = 12
+            header_font_size = 13
+        elif cell_count <= 24:
+            body_font_size = 11
+            header_font_size = 12
+        elif cell_count <= 40:
+            body_font_size = 10
+            header_font_size = 11
+        else:
+            body_font_size = 9
+            header_font_size = 10
+
+        # ── Detect numeric columns for right-alignment ──
+        numeric_cols: set[int] = set()
+        if row_count > 1:
+            for col_idx in range(col_count):
+                data_cells = [rows[r][col_idx] for r in range(1, row_count) if col_idx < len(rows[r])]
+                non_empty = [c for c in data_cells if c.strip()]
+                if non_empty and sum(1 for c in non_empty if _is_numeric_cell(c)) / len(non_empty) >= 0.6:
+                    numeric_cols.add(col_idx)
+
+        # ── Cell margins (inches → EMU) ──
+        cell_margin_lr = Inches(0.10)
+        cell_margin_tb = Inches(0.04)
+
+        for row_idx, row_data in enumerate(rows):
+            is_header = row_idx == 0
+            is_even_body = (row_idx % 2 == 0) and not is_header  # zebra stripe
+
+            table.rows[row_idx].height = Inches(header_h if is_header else body_row_h)
+
+            for col_idx, value in enumerate(row_data):
+                cell = table.cell(row_idx, col_idx)
+                cell.text = value
+
+                # ── Fill ──
+                cell.fill.solid()
+                if is_header:
+                    cell.fill.fore_color.rgb = ctx.rgb_color(header_fill)
+                elif is_even_body:
+                    cell.fill.fore_color.rgb = ctx.rgb_color(stripe_fill)
+                else:
+                    cell.fill.fore_color.rgb = ctx.rgb_color(bg_base)
+
+                # ── Cell margins ──
+                cell.margin_left = cell_margin_lr
+                cell.margin_right = cell_margin_lr
+                cell.margin_top = cell_margin_tb
+                cell.margin_bottom = cell_margin_tb
+
+                # ── Vertical anchor ──
+                cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+
+                # ── Text formatting ──
+                text_frame = cell.text_frame
+                text_frame.word_wrap = True
+                text_frame.auto_size = MSO_AUTO_SIZE.NONE
+
+                # Determine alignment: header row centers, numeric cols right-align
+                if is_header:
+                    align = PP_ALIGN.CENTER
+                elif col_idx in numeric_cols:
+                    align = PP_ALIGN.RIGHT
+                elif col_idx == 0 and col_count >= 2:
+                    align = PP_ALIGN.LEFT  # first column = label
+                else:
+                    align = PP_ALIGN.LEFT
+
+                font_size = header_font_size if is_header else body_font_size
+                text_color = header_text_color if is_header else body_text_color
+
+                for paragraph in text_frame.paragraphs:
+                    paragraph.alignment = align
+                    paragraph.line_spacing = 1.08
+                    for run in paragraph.runs:
+                        run.font.size = Pt(font_size)
+                        run.font.name = font_name
+                        run.font.bold = is_header
+                        run.font.color.rgb = RGBColor.from_string(text_color)
+
+        # ── Table-level border styling via XML ──
+        try:
+            from pptx.oxml.ns import qn
+            tbl_xml = table._tbl
+            tbl_pr = tbl_xml.find(qn('a:tblPr'))
+            if tbl_pr is None:
+                from lxml import etree
+                tbl_pr = etree.SubElement(tbl_xml, qn('a:tblPr'))
+            # Set clean border style
+            tbl_pr.set('bandRow', '1')  # enable banded rows
+            tbl_pr.set('firstRow', '1')  # special first row formatting
+            tbl_pr.set('bandCol', '0')
+            tbl_pr.set('lastRow', '0')
+            tbl_pr.set('lastCol', '0')
+            tbl_pr.set('firstCol', '0')
+        except Exception:
+            pass  # XML styling is optional; table is usable without it
+
+    _add_footer(ctx, slide, spec, data.get('footer_text', ''), colors)
+    _place_slide_icon(ctx, slide, spec, slide_index, accent_a)
+    _set_speaker_notes(slide, data.get('notes', ''))
+
+
 def _tile_images(ctx: RenderContext, slide, image_paths: list[str],
                  rect: RectSpec | None) -> None:
     if not image_paths or rect is None:
@@ -572,7 +885,7 @@ def _place_panel_icon(ctx: RenderContext, slide, icon_id: str, accent_hex: str,
                       *, size_in: float, x: float, y: float) -> None:
     icon_path = ctx.fetch_icon(icon_id, color_hex=accent_hex)
     if icon_path:
-        ctx.safe_add_picture(
+        ctx.safe_add_design_picture(
             slide.shapes, icon_path,
             Inches(x), Inches(y),
             width=Inches(size_in), height=Inches(size_in),
@@ -758,7 +1071,9 @@ def _render_cards_slide(ctx: RenderContext, slide, spec: LayoutSpec,
 
     for idx, bullet in enumerate(data["bullets"][:len(card_rects)]):
         rect = card_rects[idx]
-        fill_hex = ctx.accent_cycle[(slide_index + idx + 1) % len(ctx.accent_cycle)]
+        fill_hex = colors["PANEL_BASE"] if idx % 2 == 0 else colors.get("PANEL_ALT", colors["PANEL_BASE"])
+        if ctx.style.panel_fill == "solid":
+            fill_hex = ctx.accent_cycle[(slide_index + idx + 1) % len(ctx.accent_cycle)]
         panel = _add_panel(ctx, slide, rect, fill_hex, fill_hex,
                            accent_b_hex=accent_b, name=f"card_{idx}")
         title_text, body_text, _ = _split_bullet_text(bullet)
@@ -769,7 +1084,7 @@ def _render_cards_slide(ctx: RenderContext, slide, spec: LayoutSpec,
             ico = max(min(icon_size, rect.h * 0.22), 0.34)
             _place_panel_icon(ctx, slide, card_icon, fill_hex,
                               size_in=ico, x=rect.x + 0.14, y=rect.y + 0.10)
-            top_reserve = ico + 0.06
+            top_reserve = ico + 0.08
         elif pattern == "header_icon_card":
             band_h = min(header_band_h, rect.h * 0.22)
             band = ctx.add_design_shape(
@@ -800,14 +1115,14 @@ def _render_cards_slide(ctx: RenderContext, slide, spec: LayoutSpec,
                                   size_in=ico,
                                   x=start_x + icon_idx * (ico + gap),
                                   y=rect.y + (band_h - ico) / 2)
-            top_reserve = band_h + 0.02
+            top_reserve = band_h + 0.05
         elif show_icons:
             ico = max(min(rect.h * 0.15, 0.28), 0.18)
             _place_panel_icon(ctx, slide, card_icon, fill_hex,
                               size_in=ico,
                               x=rect.x + rect.w - ico - 0.10,
                               y=rect.y + 0.10)
-            top_reserve = 0.05
+            top_reserve = 0.06
 
         _write_panel_text(ctx, panel, title_text, body_text, fill_hex, colors,
                           title_pt=15.5 if body_text else 14.5,
@@ -1155,6 +1470,7 @@ _RENDERERS: dict[str, object] = {
     "summary": _render_summary_slide,
     "diagram": _render_diagram_slide,
     "chart": _render_chart_slide,
+    "table": _render_table_slide,
     "quote": _render_quote_slide,
     "big_number": _render_big_number_slide,
     "photo_fullbleed": _render_photo_fullbleed_slide,
@@ -1272,12 +1588,14 @@ def render_presentation(
 
     # ── Render each slide ──
     for slide_index, raw_data in enumerate(layout_input):
+        raw_bullets = raw_data.get("bullets") or []
+        raw_chip_labels = raw_data.get("chip_labels") or []
         data = {
             "layout_type": str(raw_data.get("layout_type") or raw_data.get("layout") or "bullets").strip().lower(),
             "title_text": str(raw_data.get("title_text") or raw_data.get("title") or "").strip(),
             "key_message_text": str(raw_data.get("key_message_text") or raw_data.get("keyMessage") or "").strip(),
-            "bullets": [str(item).strip() for item in raw_data.get("bullets", []) if str(item).strip()],
-            "chip_labels": [str(item).strip() for item in raw_data.get("chip_labels", []) if str(item).strip()],
+            "bullets": [str(item).strip() for item in raw_bullets if str(item).strip()],
+            "chip_labels": [str(item).strip() for item in raw_chip_labels if str(item).strip()],
             "footer_text": str(raw_data.get("footer_text") or "").strip(),
             "notes": str(raw_data.get("notes") or "").strip(),
             "item_count": int(raw_data.get("item_count") or 0),
@@ -1290,12 +1608,26 @@ def render_presentation(
         spec = layout_specs[slide_index]
         accent_a = accent_cycle[slide_index % len(accent_cycle)]
         accent_b = accent_cycle[(slide_index + 1) % len(accent_cycle)]
+        slide_colors = _resolve_slide_colors(ctx, colors, accent_a, accent_b, slide_index)
 
         # Add slide
         slide = prs.slides.add_slide(blank_layout)
         if not template_path:
             slide.background.fill.solid()
-            slide.background.fill.fore_color.rgb = rgb_color(colors["BG"])
+            slide.background.fill.fore_color.rgb = rgb_color(slide_colors["BG"])
+
+            if style.color_treatment == "gradient":
+                bg = ctx.add_design_shape(
+                    slide.shapes,
+                    MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                    Inches(0), Inches(0),
+                    Inches(SLIDE_WIDTH_IN), Inches(SLIDE_HEIGHT_IN),
+                    name="bg_gradient",
+                )
+                ctx.apply_gradient_fill(bg, [slide_colors["BG"], _mix_hex(accent_b, slide_colors["BG"], 0.35)],
+                                        angle_degrees=style.gradient_angle)
+                bg.line.fill.background()
+                ctx.set_fill_transparency(bg, 0.06 if style.dark_mode else 0.10)
 
         # Decorative accents (controlled by style)
         _add_design_language(ctx, slide, spec, accent_a, accent_b)
@@ -1303,7 +1635,7 @@ def render_presentation(
         # Dispatch to layout-specific renderer
         layout_type = data["layout_type"]
         renderer_fn = _RENDERERS.get(layout_type, _render_bullets_slide)
-        renderer_fn(ctx, slide, spec, data, slide_index, accent_a, accent_b, colors)
+        renderer_fn(ctx, slide, spec, data, slide_index, accent_a, accent_b, slide_colors)
 
     # ── Save ──
     ctx.ensure_parent_dir(output_path)

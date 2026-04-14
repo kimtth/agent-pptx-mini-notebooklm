@@ -48,6 +48,10 @@ def _is_wide_char(cp: int) -> bool:
     )
 
 
+def _contains_wide_text(text: str) -> bool:
+    return any(_is_wide_char(ord(ch)) for ch in text)
+
+
 # ---------------------------------------------------------------------------
 # Font resolution
 # ---------------------------------------------------------------------------
@@ -147,16 +151,54 @@ def _resolve_font_path(family: str, bold: bool) -> str | None:
     return None
 
 
-@lru_cache(maxsize=64)
-def _load_font(family: str, size_pt: float, bold: bool):
+def _platform_cjk_fallback_families() -> list[str]:
+    if sys.platform == 'win32':
+        return [
+            'Yu Gothic UI',
+            'Yu Gothic',
+            'Meiryo',
+            'Malgun Gothic',
+            'Microsoft JhengHei UI',
+            'Microsoft JhengHei',
+            'Microsoft YaHei UI',
+            'Microsoft YaHei',
+            'Noto Sans JP',
+            'Noto Sans CJK JP',
+        ]
+    if sys.platform == 'darwin':
+        return ['Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Apple SD Gothic Neo', 'PingFang SC']
+    return ['Noto Sans CJK JP', 'Noto Sans JP', 'Noto Sans CJK KR', 'Noto Sans CJK SC']
+
+
+@lru_cache(maxsize=128)
+def _resolve_measurement_family(family: str, bold: bool, contains_wide_text: bool) -> str:
+    if not contains_wide_text:
+        return family
+
+    family_path = _resolve_font_path(family, bold) or _resolve_font_path(family, False)
+    if family_path:
+        stem = Path(family_path).stem.lower()
+        if any(token in stem for token in ('gothic', 'meiryo', 'malgun', 'yahei', 'jhenghei', 'hiragino', 'pingfang', 'noto')):
+            return family
+
+    for candidate in _platform_cjk_fallback_families():
+        if _resolve_font_path(candidate, bold) or _resolve_font_path(candidate, False):
+            return candidate
+
+    return family
+
+
+@lru_cache(maxsize=128)
+def _load_font(family: str, size_pt: float, bold: bool, contains_wide_text: bool = False):
     """Load a Pillow font for the given family, size, and weight."""
     from PIL import ImageFont
 
     size = int(round(size_pt))
+    resolved_family = _resolve_measurement_family(family, bold, contains_wide_text)
 
     # Prefer the concrete font file when we can resolve it. Family-name aliases
     # on Windows can load a different face that underestimates CJK wrapping.
-    font_path = _resolve_font_path(family, bold)
+    font_path = _resolve_font_path(resolved_family, bold)
     if font_path:
         try:
             return ImageFont.truetype(font_path, size=size)
@@ -166,8 +208,8 @@ def _load_font(family: str, size_pt: float, bold: bool):
     # Try Pillow's built-in font-name resolution (works well on Windows)
     names: list[str] = []
     if bold:
-        names.extend([f'{family} Bold', f'{family}-Bold'])
-    names.append(family)
+        names.extend([f'{resolved_family} Bold', f'{resolved_family}-Bold'])
+    names.append(resolved_family)
 
     for name in names:
         try:
@@ -177,7 +219,7 @@ def _load_font(family: str, size_pt: float, bold: bool):
 
     # Non-bold fallback when bold file isn't found
     if bold:
-        font_path = _resolve_font_path(family, False)
+        font_path = _resolve_font_path(resolved_family, False)
         if font_path:
             try:
                 return ImageFont.truetype(font_path, size=size)
@@ -324,17 +366,22 @@ def measure_text_heights(
 
     heights: list[float] = []
     for req in requests:
-        font = _load_font(req.font_family, req.font_size_pt, req.bold)
-        max_width_px = req.width_in * _DPI
+        text = req.text if req.text.strip() else ' '
+        contains_wide_text = _contains_wide_text(text)
+        font = _load_font(req.font_family, req.font_size_pt, req.bold, contains_wide_text)
+        width_scale = 0.92 if contains_wide_text else 1.0
+        max_width_px = req.width_in * _DPI * width_scale
         text = req.text if req.text.strip() else ' '
 
         wrapped = _wrap_text(text, font, max_width_px)
-        spacing = int(round(req.font_size_pt * _PIL_LINE_SPACING_RATIO))
+        spacing_ratio = _PIL_LINE_SPACING_RATIO + (0.08 if contains_wide_text else 0.0)
+        spacing = int(round(req.font_size_pt * spacing_ratio))
         bbox = draw.multiline_textbbox(
             (0, 0), wrapped, font=font, spacing=spacing,
         )
         height_px = bbox[3] - bbox[1]
-        height_in = height_px / _DPI + _PPT_TEXTBOX_PADDING_IN
+        padding_in = _PPT_TEXTBOX_PADDING_IN + (0.10 if contains_wide_text else 0.0)
+        height_in = height_px / _DPI + padding_in
 
         heights.append(round(height_in, 4))
 

@@ -18,8 +18,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
-import os
 from dataclasses import dataclass
 from enum import Enum
 
@@ -34,26 +32,6 @@ OVERLAP_TOLERANCE_EMU = Inches(0.05)
 
 # Auto-size constant (avoids import issues when MSO_AUTO_SIZE isn't available)
 _TEXT_TO_FIT_SHAPE = 2  # MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
-
-
-def _should_include_images_in_layout() -> bool:
-    """Check whether Picture shapes should participate in collision detection.
-
-    Reads from PPTX_INCLUDE_IMAGES_IN_LAYOUT env var (set by pptx-handler),
-    or falls back to layout-meta.json in the workspace previews directory.
-    """
-    if os.environ.get('PPTX_INCLUDE_IMAGES_IN_LAYOUT', '') == '1':
-        return True
-    workspace = os.environ.get('WORKSPACE_DIR', '')
-    if workspace:
-        meta_path = os.path.join(workspace, 'previews', 'layout-meta.json')
-        try:
-            with open(meta_path, encoding='utf-8') as f:
-                meta = json.load(f)
-            return bool(meta.get('includeImagesInLayout', False))
-        except (OSError, json.JSONDecodeError, TypeError):
-            pass
-    return False
 
 
 class IssueSeverity(Enum):
@@ -90,7 +68,6 @@ _ICON_NAME_PREFIXES = ('icon_', 'design_icon_', 'decor_icon_')
 def _classify_shape_role(
     shape,
     *,
-    include_images: bool,
     shape_role_registry: dict[int, str] | None = None,
     layout_specs: list | None = None,
     slide_index: int = -1,
@@ -102,7 +79,7 @@ def _classify_shape_role(
       2. Blueprint geometry match (shape aligns with a known LayoutSpec rect)
             3. Explicit name prefix
       4. Heuristics (background fill, decorative frame, glow oval)
-      5. Picture shape + include_images flag
+    5. Picture shape
       6. Default → LAYOUT_MANAGED
     """
     # 1. Registry lookup — single source of truth when available
@@ -139,10 +116,9 @@ def _classify_shape_role(
     if _is_decorative_glow(shape):
         return ShapeRole.TEMPLATE_DESIGN
 
-    # 5. Picture shapes: controlled by include_images flag
+    # 5. Picture shapes are treated as decorative content.
     if _is_picture_shape(shape):
-        if not include_images:
-            return ShapeRole.TEMPLATE_DESIGN
+        return ShapeRole.TEMPLATE_DESIGN
 
     # 6. Default
     return ShapeRole.LAYOUT_MANAGED
@@ -441,6 +417,11 @@ def _dominant_font_props(shape) -> tuple[str, bool]:
     return font_family, is_bold
 
 
+def _default_metrics_backend() -> str:
+    """Return the implicit measurement backend preference for this platform."""
+    return 'pillow-first'
+
+
 def _estimate_required_text_height_in(shape, box: ShapeBox) -> float | None:
     text = _shape_text(shape)
     if not text:
@@ -467,21 +448,29 @@ def _estimate_required_text_height_in(shape, box: ShapeBox) -> float | None:
     font_pt = _max_font_size_pt(shape)
     font_family, is_bold = _dominant_font_props(shape)
     required = None
-    try:
-        from font_text_measure import TextMeasureRequest, measure_text_heights  # type: ignore
+    backend_pref = os.environ.get('PPTX_FONT_METRICS_BACKEND', _default_metrics_backend()).strip().lower()
+    backend_names = ('com', 'pillow') if backend_pref == 'com-first' else ('pillow', 'com')
 
-        req = TextMeasureRequest(
-            text=text,
-            width_in=width_in,
-            font_family=font_family,
-            font_size_pt=font_pt,
-            bold=is_bold,
-        )
-        heights = measure_text_heights([req])
-        if heights:
-            required = heights[0]
-    except ImportError:
-        required = None
+    for backend_name in backend_names:
+        try:
+            if backend_name == 'com':
+                from com_text_measure import TextMeasureRequest, measure_text_heights  # type: ignore
+            else:
+                from font_text_measure import TextMeasureRequest, measure_text_heights  # type: ignore
+
+            req = TextMeasureRequest(
+                text=text,
+                width_in=width_in,
+                font_family=font_family,
+                font_size_pt=font_pt,
+                bold=is_bold,
+            )
+            heights = measure_text_heights([req])
+            if heights:
+                required = heights[0]
+                break
+        except ImportError:
+            continue
 
     if required is None:
         required = estimate_text_height_in(text, width_in, font_pt)
@@ -509,6 +498,10 @@ def _text_content_box(shape, outer_box: ShapeBox) -> ShapeBox | None:
         tf = shape.text_frame
         margin_left = int(getattr(tf, 'margin_left', 0) or 0)
         margin_right = int(getattr(tf, 'margin_right', 0) or 0)
+        # Reserve a modest right-side gutter for compact companion icons that
+        # the renderer can place inside the upper-right corner of text panels.
+        icon_gutter = min(max(int(outer_box.width * 0.08), Inches(0.38)), Inches(0.85))
+        margin_right += icon_gutter
         margin_top = int(getattr(tf, 'margin_top', 0) or 0)
         margin_bottom = int(getattr(tf, 'margin_bottom', 0) or 0)
     except Exception:
@@ -544,7 +537,6 @@ def validate_slide(
     slide,
     slide_index: int,
     *,
-    include_images: bool | None = None,
     shape_role_registry: dict[int, str] | None = None,
     layout_specs: list | None = None,
 ) -> list[LayoutIssue]:
@@ -563,12 +555,9 @@ def validate_slide(
       2. ``layout_specs`` geometry match — shape aligns with a blueprint rect
       3. Name-prefix conventions
       4. Heuristic detection
-      5. Picture + include_images flag
+            5. Picture shape
       6. Default → LAYOUT_MANAGED
     """
-    if include_images is None:
-        include_images = _should_include_images_in_layout()
-
     issues: list[LayoutIssue] = []
 
     # Collect ALL shapes with their semantic role and bounding box.
@@ -580,7 +569,6 @@ def validate_slide(
             continue
         role = _classify_shape_role(
             shape,
-            include_images=include_images,
             shape_role_registry=shape_role_registry,
             layout_specs=layout_specs,
             slide_index=slide_index,
@@ -675,6 +663,8 @@ def validate_slide(
     ]
 
     for icon_box, icon_shape in icon_boxes:
+        if icon_box.shape_name.startswith('design_icon_'):
+            continue
         for text_box, text_shape in text_content_boxes:
             if getattr(icon_shape, 'shape_id', None) == getattr(text_shape, 'shape_id', None):
                 continue
@@ -705,6 +695,14 @@ def validate_slide(
         for j in range(i + 1, len(collision_boxes)):
             a, shape_a = collision_boxes[i]
             b, shape_b = collision_boxes[j]
+            names = {a.shape_name, b.shape_name}
+            if any(name.startswith('design_card_header_') for name in names) and any(name.startswith('card_') for name in names):
+                continue
+            if any(name.startswith('design_icon_') for name in names) and any(
+                name.startswith('card_') or name.startswith('design_card_header_')
+                for name in names
+            ):
+                continue
             if _boxes_overlap(a, b):
                 area = _overlap_area(a, b)
                 # Only flag significant overlaps (> 5% of smaller shape area)
@@ -742,7 +740,6 @@ def validate_slide(
                     # The shadow shape is always slightly offset from its paired main
                     # shape, so they inherently overlap. Downgrade to WARNING.
                     if severity == IssueSeverity.ERROR:
-                        names = {a.shape_name, b.shape_name}
                         if any(name.startswith('clay_shadow') for name in names):
                             severity = IssueSeverity.WARNING
 
@@ -801,13 +798,11 @@ def validate_presentation(
     layout_specs: list | None = None,
 ) -> list[LayoutIssue]:
     """Validate all slides in a presentation."""
-    include_images = _should_include_images_in_layout()
     issues: list[LayoutIssue] = []
     for idx, slide in enumerate(prs.slides):
         issues.extend(validate_slide(
             slide,
             idx,
-            include_images=include_images,
             shape_role_registry=shape_role_registry,
             layout_specs=layout_specs,
         ))

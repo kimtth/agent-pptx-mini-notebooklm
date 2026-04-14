@@ -11,17 +11,18 @@ import { DESIGN_STYLE_OPTIONS, getDesignStyleMeta } from '../../domain/design-st
 import { FRAMEWORK_OPTIONS, getFrameworkMeta } from '../../domain/frameworks'
 import type { SlideItem } from '../../domain/entities/slide-work'
 import type { NotebookLMAuthStatus } from '../../domain/ports/ipc'
+import { useChatStore } from '../../stores/chat-store'
 import { ImagePickerModal } from './ImagePickerModal.tsx'
 import { toLocalImageUrl } from '../../application/local-image-url.ts'
 
 const LAYOUT_BADGE: Record<string, string> = {
   title: 'TTL', agenda: 'AGN', section: 'SEC', bullets: 'BUL',
   cards: 'CRD', stats: 'STA', comparison: 'CMP', timeline: 'TML',
-  diagram: 'DGM', summary: 'SUM', chart: 'CHT',
+  diagram: 'DGM', summary: 'SUM', chart: 'CHT', table: 'TBL',
 }
 
 export function SlideNavigator() {
-  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework, setCustomFrameworkPrompt, setTemplatePath, setTemplateMeta, setIncludeImagesInLayout, reset } = useSlidesStore()
+  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework, setCustomFrameworkPrompt, setTemplatePath, setTemplateMeta } = useSlidesStore()
   const slides = work.slides
   const selectedFramework = getFrameworkMeta(work.framework)
   const selectedStyle = getDesignStyleMeta(work.designStyle)
@@ -31,7 +32,6 @@ export function SlideNavigator() {
   const [confirmClear, setConfirmClear] = useState(false)
 
   async function handleClearSlides() {
-    reset()
     await window.electronAPI.pptx.clearWorkspaceArtifacts().catch(() => undefined)
     window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
     setConfirmClear(false)
@@ -52,7 +52,7 @@ export function SlideNavigator() {
                 onClick={() => setConfirmClear(true)}
                 className="opacity-50 hover:opacity-100 transition-opacity"
                 style={{ color: 'var(--text-muted)' }}
-                title="Clear all slides"
+                title="Clear preview files"
               >
                 Clear
               </button>
@@ -64,7 +64,7 @@ export function SlideNavigator() {
                   className="px-1.5 py-0.5 font-semibold border"
                   style={{ color: '#ef4444', borderColor: '#ef4444', background: 'transparent' }}
                 >
-                  Clear all
+                  Clear previews
                 </button>
                 <button
                   onClick={() => setConfirmClear(false)}
@@ -185,6 +185,11 @@ export function SlideNavigator() {
               : 'Choose one of the available brand styles to guide layout, typography, and visual treatment before generating slides.'}
           </p>
           {isCustomTemplate && (
+            <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+              The attached PPTX blank page will be used for theme colors and background template styling.
+            </p>
+          )}
+          {isCustomTemplate && (
             <div className="flex flex-col gap-1.5 mt-1 p-2 border" style={{ borderColor: 'var(--panel-border)', background: 'var(--surface-hover)' }}>
               {work.templatePath ? (
                 <>
@@ -249,35 +254,6 @@ export function SlideNavigator() {
           )}
         </div>
 
-        {/* Image layout toggle */}
-        <div
-          className="flex items-center justify-between mt-2 p-2 border"
-          style={{ borderColor: 'var(--panel-border)', background: 'var(--surface-hover)' }}
-        >
-          <div className="flex flex-col gap-0.5">
-            <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-              Images in Layout
-            </label>
-            <p className="text-[10px] leading-3.5" style={{ color: 'var(--text-muted)' }}>
-              {work.includeImagesInLayout
-                ? 'Images are treated as layout objects and included in collision detection.'
-                : 'Images are decorative content, excluded from layout collision detection.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={work.includeImagesInLayout}
-            onClick={() => setIncludeImagesInLayout(!work.includeImagesInLayout)}
-            className="flex-none relative inline-flex h-5 w-9 items-center rounded-full transition-colors ml-3"
-            style={{ background: work.includeImagesInLayout ? 'var(--accent)' : 'var(--surface)' }}
-          >
-            <span
-              className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
-              style={{ transform: work.includeImagesInLayout ? 'translateX(17px)' : 'translateX(3px)' }}
-            />
-          </button>
-        </div>
       </div>
 
       {/* NotebookLM Infographic */}
