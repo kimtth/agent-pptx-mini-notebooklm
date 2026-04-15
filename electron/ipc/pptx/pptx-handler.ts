@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow, shell } from 'electron'
 import fs from 'fs/promises'
 import { existsSync } from 'fs'
 import path from 'path'
@@ -618,8 +618,9 @@ async function renderPresentationInternal(
     ? await fs.readFile(slideAssetsPath, 'utf-8').catch(() => '')
     : ''
 
+  // Only use the on-disk template when the user explicitly selected "Custom Template"
   let templatePath = opts?.templatePath
-  if (!templatePath) {
+  if (!templatePath && opts?.designStyle === 'Custom Template') {
     const candidate = path.join(workspaceDir, 'template', 'template.pptx')
     if (existsSync(candidate)) templatePath = candidate
   }
@@ -723,9 +724,9 @@ async function executeGeneratedPythonCodeToFileInternal(
     ? await fs.readFile(slideAssetsPath, 'utf-8').catch(() => '')
     : ''
 
-  // Auto-detect custom template from workspace if not explicitly provided
+  // Only use the on-disk template when the user explicitly selected "Custom Template"
   let templatePath = opts?.templatePath
-  if (!templatePath) {
+  if (!templatePath && opts?.designStyle === 'Custom Template') {
     const candidate = path.join(workspaceDir, 'template', 'template.pptx')
     if (existsSync(candidate)) templatePath = candidate
   }
@@ -852,8 +853,9 @@ export async function executeChunkedPptxGeneration(
   const colorTreatment = resolveThemeColorTreatment(theme)
   const textBoxStyle = resolveThemeTextBoxStyle(theme)
   const workspaceDir = await readWorkspaceDir()
+  // Only use the on-disk template when the user explicitly selected "Custom Template"
   let templatePath = opts.templatePath
-  if (!templatePath) {
+  if (!templatePath && opts.designStyle === 'Custom Template') {
     const candidate = path.join(workspaceDir, 'template', 'template.pptx')
     if (existsSync(candidate)) templatePath = candidate
   }
@@ -1106,6 +1108,22 @@ async function renderPngFromPptx(pptxPath: string, renderDir: string): Promise<v
 }
 
 export function registerPptxHandlers(): void {
+  const channels = [
+    'pptx:generate',
+    'pptx:readExistingPreviews',
+    'pptx:rerenderPreview',
+    'pptx:openPreviewPptx',
+    'pptx:renderPreview',
+    'pptx:computeLayout',
+    'pptx:importTemplate',
+    'pptx:removeTemplate',
+    'pptx:clearWorkspaceArtifacts',
+  ] as const
+
+  for (const channel of channels) {
+    ipcMain.removeHandler(channel)
+  }
+
   ipcMain.handle('pptx:generate', async (_event, code: string, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], templateMeta?: TemplateMeta | null) => {
     try {
       const win = BrowserWindow.fromWebContents(_event.sender)
@@ -1131,46 +1149,52 @@ export function registerPptxHandlers(): void {
       const workspaceDir = await readWorkspaceDir()
       const renderDir = path.join(workspaceDir, 'previews')
       const imagePaths = await readPreviewImagePaths(renderDir)
+      return { success: imagePaths.length > 0, imagePaths }
+    } catch {
+      return { success: false, imagePaths: [] }
+    }
+  })
 
-      // Fast path: images already exist — but verify they belong to the current
-      // PPTX generation and are not stale previews from a prior run.
-      if (imagePaths.length > 0) {
-        const pptxPath = await findMostRecentPptx(renderDir)
-        if (pptxPath) {
-          try {
-            const pptxMtime = (await fs.stat(pptxPath)).mtimeMs
-            const imgMtime = (await fs.stat(imagePaths[0])).mtimeMs
-            // Allow 5 s tolerance for COM export lag after PPTX is written
-            if (imgMtime >= pptxMtime - 5000) {
-              return { success: true, imagePaths }
-            }
-            // Images are stale — fall through to re-render
-            console.log('[readExistingPreviews] Images are stale vs PPTX mtime, re-rendering')
-          } catch {
-            return { success: true, imagePaths } // stat failed, trust what we have
-          }
-        } else {
-          return { success: true, imagePaths } // no PPTX to compare against
-        }
-      }
-
-      // No images — try to render from an existing PPTX
+  ipcMain.handle('pptx:rerenderPreview', async () => {
+    try {
+      const workspaceDir = await readWorkspaceDir()
+      const renderDir = path.join(workspaceDir, 'previews')
       const pptxPath = await findMostRecentPptx(renderDir)
       if (!pptxPath) {
-        return { success: false, imagePaths: [] }
+        return { success: false, imagePaths: [], error: 'No PPTX file found in the previews folder.' }
       }
 
-      try {
-        await queuePowerPointAutomation(() => renderPngFromPptx(pptxPath, renderDir))
-      } catch (err) {
-        console.log('[readExistingPreviews] COM render failed:', err)
-        return { success: false, imagePaths: [], warning: 'PPTX exists but preview rendering failed. PowerPoint desktop may be required.' }
-      }
+      await removePreviewImages(renderDir)
+      await queuePowerPointAutomation(() => renderPngFromPptx(pptxPath, renderDir))
 
       const rendered = await readPreviewImagePaths(renderDir)
       return { success: rendered.length > 0, imagePaths: rendered }
-    } catch {
-      return { success: false, imagePaths: [] }
+    } catch (err) {
+      console.log('[rerenderPreview] COM render failed:', err)
+      return { success: false, imagePaths: [], error: 'Preview rendering failed. PowerPoint desktop may be required.' }
+    }
+  })
+
+  ipcMain.handle('pptx:openPreviewPptx', async () => {
+    try {
+      const workspaceDir = await readWorkspaceDir()
+      const previewDir = path.join(workspaceDir, 'previews')
+      const pptxPath = await findMostRecentPptx(previewDir)
+      if (!pptxPath) {
+        return { success: false, error: 'No PPTX file found in the previews folder.' }
+      }
+
+      const openError = await shell.openPath(path.resolve(pptxPath))
+      if (openError) {
+        return { success: false, error: openError }
+      }
+
+      return { success: true, path: pptxPath }
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Failed to open the preview PPTX in PowerPoint.',
+      }
     }
   })
 
@@ -1210,6 +1234,16 @@ export function registerPptxHandlers(): void {
             const pptxFile = previewEntries.find((e) => e.isFile() && /\.pptx$/i.test(e.name))
             if (pptxFile) actualPptx = path.join(previewRoot, pptxFile.name)
           } catch { /* ignore */ }
+
+          // Render PNG previews from the generated PPTX via PowerPoint COM.
+          // We're already inside queuePowerPointAutomation, so call directly.
+          if (actualPptx) {
+            try {
+              await renderPngFromPptx(actualPptx, renderDir)
+            } catch (err) {
+              console.log('[renderPreview] COM preview render failed (PPTX was generated):', err)
+            }
+          }
 
           const imagePaths = await readPreviewImagePaths(renderDir)
           const qa = completionReport.qa ?? undefined

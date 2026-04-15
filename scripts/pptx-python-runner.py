@@ -363,13 +363,51 @@ def get_missing_icons() -> list[dict[str, str]]:
     return list(_MISSING_ICONS)
 
 
-def _load_theme() -> dict[str, str]:
+def _derive_theme_slots(theme: dict[str, object], colors: dict[str, str]) -> dict[str, str]:
+    raw_slots = theme.get('slots')
+    if isinstance(raw_slots, dict):
+        slots = {
+            str(k): str(v).strip().lstrip('#').upper()
+            for k, v in raw_slots.items()
+            if isinstance(v, str) and v.strip()
+        }
+        if slots:
+            return slots
+    return {
+        'dk1': colors.get('DARK') or '',
+        'lt1': colors.get('LIGHT') or colors.get('WHITE') or '',
+        'dk2': colors.get('DARK2') or colors.get('DARK') or '',
+        'lt2': colors.get('LIGHT2') or colors.get('BORDER') or '',
+        'accent1': colors.get('ACCENT1') or colors.get('PRIMARY') or '',
+        'accent2': colors.get('ACCENT2') or colors.get('SECONDARY') or '',
+        'accent3': colors.get('ACCENT3') or colors.get('ACCENT1') or '',
+        'accent4': colors.get('ACCENT4') or colors.get('ACCENT2') or '',
+        'accent5': colors.get('ACCENT5') or colors.get('ACCENT3') or '',
+        'accent6': colors.get('ACCENT6') or colors.get('ACCENT4') or '',
+        'hlink': colors.get('LINK') or colors.get('ACCENT1') or '',
+        'folHlink': colors.get('USED_LINK') or colors.get('ACCENT4') or '',
+    }
+
+
+def _load_theme_payload() -> dict[str, object]:
     raw = os.environ.get('PPTX_THEME_JSON', '{}')
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _load_theme() -> dict[str, str]:
+    parsed = _load_theme_payload()
+    raw_colors = parsed.get('C') if isinstance(parsed.get('C'), dict) else parsed
+    if not isinstance(raw_colors, dict):
+        return {}
+    return {
+        str(k): str(v).strip().lstrip('#').upper()
+        for k, v in raw_colors.items()
+        if isinstance(v, str) and v.strip()
+    }
 
 
 def _load_slide_assets() -> list[dict[str, object]]:
@@ -635,7 +673,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('generated_code', nargs='?', default=None,
                         help='Path to generated Python source (unused in renderer mode)')
     parser.add_argument('output_path')
-    parser.add_argument('--render-dir', default=None)
+    parser.add_argument('--render-dir', default=None,
+                        help='Preview render directory (accepted for compatibility; managed by the caller)')
     parser.add_argument('--workspace-dir', default=None,
                         help='Absolute path to the user workspace directory')
     parser.add_argument('--chunk-mode', action='store_true',
@@ -803,43 +842,6 @@ def add_native_chart(
     return graphic_frame
 
 
-class _enforce_save_path:
-    """Context manager that monkeypatches Presentation.save to always write to *canonical_path*.
-
-    This is the single enforcement point for the presentation-preview.pptx rule.
-    No matter what path generated code passes to prs.save(), the output is
-    redirected to the canonical path chosen by the runner.  On exit the
-    original method is restored so post-processing helpers are unaffected.
-    """
-
-    def __init__(self, canonical_path: Path) -> None:
-        self._canonical = canonical_path
-        self._orig_save = None
-
-    def __enter__(self):
-        import pptx.presentation as _pptx_mod
-        self._orig_save = _pptx_mod.Presentation.save
-        canonical = self._canonical
-
-        def _guarded_save(prs_self, file=None, *args, **kwargs):
-            target = str(canonical)
-            if file is not None and str(file) != target:
-                print(
-                    f'[runner] prs.save({str(file)!r}) redirected \u2192 {canonical.name}',
-                    file=sys.stderr,
-                )
-            self._orig_save(prs_self, target, *args, **kwargs)
-
-        _pptx_mod.Presentation.save = _guarded_save  # type: ignore[assignment]
-        return self
-
-    def __exit__(self, *exc):
-        import pptx.presentation as _pptx_mod
-        if self._orig_save is not None:
-            _pptx_mod.Presentation.save = self._orig_save  # type: ignore[assignment]
-        return False
-
-
 def _cleanup_rogue_pptx(directory: Path, canonical_name: str) -> None:
     """Remove any PPTX files in *directory* that are not the canonical output."""
     for entry in directory.iterdir():
@@ -849,16 +851,21 @@ def _cleanup_rogue_pptx(directory: Path, canonical_name: str) -> None:
 
 
 def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: str = '') -> dict[str, object]:
+    theme_payload = _load_theme_payload()
     theme = _load_theme()
+    theme_slots = _derive_theme_slots(theme_payload, theme)
     title = os.environ.get('PPTX_TITLE', 'Presentation')
     base_font_family = os.environ.get('PPTX_FONT_FAMILY', 'Calibri')
     color_treatment = (os.environ.get('PPTX_COLOR_TREATMENT', 'solid') or 'solid').strip().lower()
     text_box_style = (os.environ.get('PPTX_TEXT_BOX_STYLE', 'plain') or 'plain').strip().lower()
+    design_style = os.environ.get('PPTX_DESIGN_STYLE', 'Blank White')
+    from style_config import resolve_style_config  # type: ignore
+    style_config = resolve_style_config(design_style, color_treatment, text_box_style)
     if not workspace_dir:
         workspace_dir = os.environ.get('WORKSPACE_DIR', '')
     images_dir = os.path.join(workspace_dir, 'images') if workspace_dir else ''
 
-    # Pre-computed layout specs from hybrid layout engine (COM + constraint solver)
+    # Pre-computed layout specs from hybrid layout engine (constraint solver)
     precomputed_specs: list[LayoutSpec] | None = None
     specs_json = os.environ.get('PPTX_LAYOUT_SPECS_JSON', '')
     if specs_json.strip():
@@ -887,6 +894,10 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
         'OUTPUT_PATH': str(output_path),
         'PPTX_TITLE': title,
         'PPTX_THEME': theme,
+        'PPTX_THEME_SLOTS': theme_slots,
+        'PPTX_THEME_FULL': theme_payload,
+        'PPTX_DESIGN_STYLE': design_style,
+        'PPTX_STYLE_CONFIG': style_config,
         'WORKSPACE_DIR': workspace_dir,
         'IMAGES_DIR': images_dir,
         'SLIDE_WIDTH_IN': SLIDE_WIDTH_IN,
@@ -937,6 +948,7 @@ def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: s
         'PPTX_FONT_FAMILY': base_font_family,
         'PPTX_COLOR_TREATMENT': color_treatment if color_treatment in ('solid', 'gradient', 'mixed') else 'mixed',
         'PPTX_TEXT_BOX_STYLE': text_box_style if text_box_style in ('plain', 'with-icons', 'mixed') else 'mixed',
+        'resolve_style_config': resolve_style_config,
         'contrast_ratio': contrast_ratio,
         'ensure_contrast': ensure_contrast,
         'set_fill_transparency': set_fill_transparency,
@@ -1133,199 +1145,6 @@ def _shrink_text_frame_fonts(shape, scale: float) -> bool:
     return changed
 
 
-def _get_powerpnt_pids() -> set[int]:
-    """Return the set of POWERPNT.EXE PIDs currently running."""
-    import subprocess as _sp
-    try:
-        r = _sp.run(
-            ['tasklist', '/FI', 'IMAGENAME eq POWERPNT.EXE', '/FO', 'CSV', '/NH'],
-            capture_output=True, text=True, timeout=5,
-        )
-        pids: set[int] = set()
-        for line in r.stdout.strip().splitlines():
-            parts = line.replace('"', '').split(',')
-            if len(parts) >= 2 and parts[1].strip().isdigit():
-                pids.add(int(parts[1].strip()))
-        return pids
-    except Exception:
-        return set()
-
-
-def _detect_new_powerpnt_pids(before: set[int], timeout_s: float = 2.0) -> set[int]:
-    """Poll for newly spawned POWERPNT.EXE processes for a short window."""
-    import time
-
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        after = _get_powerpnt_pids()
-        delta = after - before
-        if delta:
-            return delta
-        time.sleep(0.2)
-    return _get_powerpnt_pids() - before
-
-
-def _count_open_presentations(pp) -> int | None:
-    """Return the current PowerPoint presentation count when available."""
-    try:
-        presentations = getattr(pp, 'Presentations', None)
-        count = getattr(presentations, 'Count', None)
-        if count is None:
-            return None
-        return int(count)
-    except Exception:
-        return None
-
-
-def _create_powerpoint_com() -> tuple[object, dict[str, object]]:
-    """Create a PowerPoint COM app and track whether it is safe to quit it.
-
-    Safety rule: DispatchEx always creates a new isolated COM instance, so
-    if we detected a new POWERPNT.EXE PID it is definitively ours — safe to
-    Quit regardless of what other PowerPoint processes were already running.
-    When no new PID was detected (DispatchEx may have piggybacked on an
-    existing process), we must NOT quit because it could affect user sessions.
-    """
-    import win32com.client  # type: ignore
-
-    before = _get_powerpnt_pids()
-    pp = win32com.client.DispatchEx('PowerPoint.Application')
-    pp.Visible = 1
-    owned_pids = _detect_new_powerpnt_pids(before)
-    presentations_before = _count_open_presentations(pp)
-    safe_to_quit = bool(owned_pids)
-    print(
-        '[powerpoint-com] created app '
-        f'safe_to_quit={safe_to_quit} before_pids={sorted(before)} '
-        f'owned_pids={sorted(owned_pids)} presentations={presentations_before}',
-        file=sys.stderr,
-    )
-    return pp, {
-        'before_pids': before,
-        'owned_pids': owned_pids,
-        'safe_to_quit': safe_to_quit,
-        'presentations_before': presentations_before,
-    }
-
-
-def _quit_powerpoint_com(pp, ownership: dict[str, object] | None = None) -> None:
-    """Quit a PowerPoint COM app only when we can prove we created it.
-
-    Safe to quit when ``owned_pids`` is non-empty — that means DispatchEx
-    spawned a new POWERPNT.EXE process that belongs to us.  When the set is
-    empty, DispatchEx may have piggybacked on a user-visible session so we
-    must leave the application running.
-    """
-    if pp is not None:
-        safe = bool((ownership or {}).get('safe_to_quit'))
-        owned_pids = (ownership or {}).get('owned_pids')
-        if safe:
-            try:
-                pp.Quit()
-                print(
-                    f'[powerpoint-com] quit owned app owned_pids={sorted(owned_pids or [])}',
-                    file=sys.stderr,
-                )
-                return
-            except Exception as exc:
-                print(f'[powerpoint-com] quit failed, leaving app running: {exc}', file=sys.stderr)
-                return
-        print(
-            '[powerpoint-com] skip quit — no owned PID detected (DispatchEx may have reused existing process)',
-            file=sys.stderr,
-        )
-
-
-def _collect_com_overflows(output_path: Path) -> list[dict[str, object]] | None:
-    """Return COM-measured overflow metadata, or None if COM is unavailable."""
-    if sys.platform != 'win32':
-        return None
-    try:
-        import importlib.util
-        import pythoncom  # type: ignore
-    except ImportError:
-        return None
-    if importlib.util.find_spec('win32com.client') is None:
-        return None
-
-    abs_path = str(output_path.resolve())
-    overflows: list[dict[str, object]] = []
-
-    pythoncom.CoInitialize()
-    ppt = None
-    prs_com = None
-    ppt_ownership: dict[str, object] = {}
-
-    try:
-        ppt, ppt_ownership = _create_powerpoint_com()
-        prs_com = ppt.Presentations.Open(
-            abs_path, ReadOnly=0, Untitled=0, WithWindow=0,
-        )
-
-        for si in range(1, prs_com.Slides.Count + 1):
-            slide = prs_com.Slides(si)
-            for shi in range(1, slide.Shapes.Count + 1):
-                shape = slide.Shapes(shi)
-                if not shape.HasTextFrame:
-                    continue
-                text = shape.TextFrame.TextRange.Text
-                if not text or not text.strip():
-                    continue
-                normalized_text = _normalize_shape_text(str(text))
-
-                orig_top = shape.Top
-                orig_height = shape.Height
-                is_textbox = (shape.Type == 17)  # msoTextBox
-
-                # Temporarily grow shape to fit text
-                shape.TextFrame2.WordWrap = True
-                shape.TextFrame2.AutoSize = 1  # ppAutoSizeShapeToFitText
-                _ = shape.Height  # Force recalculation
-                required_height = shape.Height
-
-                # Restore immediately
-                shape.TextFrame2.AutoSize = 0  # ppAutoSizeNone
-                shape.Height = orig_height
-                shape.Top = orig_top
-
-                # Check overflow (5 % tolerance)
-                if required_height > orig_height * 1.05:
-                    scale = min(orig_height / required_height, 1.0)
-                    overflows.append({
-                        'slide_idx': si - 1,
-                        'shape_idx': shi - 1,
-                        'shape_id': getattr(shape, 'Id', None),
-                        'shape_name': str(getattr(shape, 'Name', '') or ''),
-                        'shape_text': normalized_text,
-                        'scale': scale,
-                        'is_textbox': is_textbox,
-                    })
-                    print(
-                        f'[layout] Slide {si}, "{shape.Name}": '
-                        f'need {required_height:.0f}pt, have {orig_height:.0f}pt '
-                        f'(scale={scale:.0%}, {"textbox" if is_textbox else "shape"})',
-                        file=sys.stderr,
-                    )
-
-        prs_com.Saved = True  # Suppress save prompt — no changes persisted
-        prs_com.Close()
-        prs_com = None
-    except Exception as exc:
-        print(f'[layout] COM measurement failed: {exc}', file=sys.stderr)
-        return None
-    finally:
-        if prs_com is not None:
-            try:
-                prs_com.Saved = True
-                prs_com.Close()
-            except Exception:
-                pass
-        _quit_powerpoint_com(ppt, ppt_ownership)
-        pythoncom.CoUninitialize()
-
-    return overflows
-
-
 def _collect_pillow_overflows(output_path: Path) -> list[dict[str, object]] | None:
     """Return Pillow-measured overflow metadata, or None if Pillow is unavailable."""
     try:
@@ -1411,36 +1230,19 @@ def _collect_pillow_overflows(output_path: Path) -> list[dict[str, object]] | No
 def _fix_text_overflow(output_path: Path) -> int:
     """Measure text overflow and repair text-bearing shapes.
 
-    Uses the backend selected by ``PPTX_FONT_METRICS_BACKEND`` env var:
-      - ``pillow-first`` (default): Pillow → COM fallback
-      - ``com-first``: COM → Pillow fallback
-
     The repair runs in bounded passes. Each pass measures overflow,
     then applies python-pptx fixes. Textboxes are manually shrunk because
     PowerPoint ignores TEXT_TO_FIT_SHAPE for them. Auto shapes also get manual
     shrink in addition to TEXT_TO_FIT_SHAPE because the auto-size flag alone has
     proven insufficient for some dense card/footer compositions.
 
-    Returns the number of fixes applied, or -1 if no backend is available.
+    Returns the number of fixes applied, or -1 if Pillow is unavailable.
     """
-    backend_pref = os.environ.get('PPTX_FONT_METRICS_BACKEND', 'pillow-first').strip().lower()
-
-    def _collect_overflows(path: Path) -> list[dict[str, object]] | None:
-        if backend_pref == 'com-first':
-            result = _collect_com_overflows(path)
-            if result is None:
-                result = _collect_pillow_overflows(path)
-        else:
-            result = _collect_pillow_overflows(path)
-            if result is None:
-                result = _collect_com_overflows(path)
-        return result
-
     total_fixes = 0
     max_passes = 2
 
     for pass_index in range(max_passes):
-        overflows = _collect_overflows(output_path)
+        overflows = _collect_pillow_overflows(output_path)
         if overflows is None:
             return -1
         if not overflows:
@@ -1819,15 +1621,13 @@ def validate_and_fix_output(output_path: Path, *, run_text_overflow_fix: bool = 
         hints: list[str] = []
         if has_overlap:
             hints.append(
-                'TOOL HINT: Use patch_layout_infrastructure(action="read", file="layout_specs") to inspect '
-                'current layout coordinates, then patch_layout_infrastructure(action="patch", ...) to adjust '
-                'layout dimensions. After patching, call rerun_pptx to re-execute.'
+                'TOOL HINT: Inspect the current layout coordinates in layout_specs.py, adjust them as needed '
+                'with the available app repair tooling, then rerun the PPTX render.'
             )
         if has_text_overflow:
             hints.append(
-                'TOOL HINT: Use patch_layout_infrastructure(action="read", file="layout_validator") to inspect '
-                'validation thresholds, then patch if needed. Or adjust layout_specs dimensions to provide more space. '
-                'After patching, call rerun_pptx to re-execute.'
+                'TOOL HINT: Inspect the validation thresholds in layout_validator.py and adjust them if needed, '
+                'or widen the available space in layout_specs.py, then rerun the PPTX render.'
             )
 
         hint_text = '\n'.join(hints)
@@ -1838,44 +1638,6 @@ def validate_and_fix_output(output_path: Path, *, run_text_overflow_fix: bool = 
             f'{hint_text}\n\n'
             f'{report}'
         )
-
-
-def render_preview_images(output_path: Path, render_dir: Path) -> None:
-    if sys.platform != 'win32':
-        raise RuntimeError('Local slide preview rendering is only supported on Windows.')
-
-    try:
-        import importlib.util
-        import pythoncom  # type: ignore
-    except ImportError as exc:
-        raise RuntimeError('pywin32 is required for local PPTX preview rendering on Windows.') from exc
-    if importlib.util.find_spec('win32com.client') is None:
-        raise RuntimeError('pywin32 is required for local PPTX preview rendering on Windows.')
-
-    render_dir.mkdir(parents=True, exist_ok=True)
-    # Only remove old preview images; preserve generated-source.py and .pptx files
-    for existing in render_dir.glob('*'):
-        if existing.is_file() and existing.suffix.lower() in ('.png', '.jpg', '.jpeg'):
-            existing.unlink()
-
-    pythoncom.CoInitialize()
-    powerpoint = None
-    presentation = None
-    pp_ownership: dict[str, object] = {}
-    try:
-        powerpoint, pp_ownership = _create_powerpoint_com()
-        presentation = powerpoint.Presentations.Open(str(output_path), WithWindow=False, ReadOnly=True)
-        presentation.Export(str(render_dir), 'PNG', 1280, 720)
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError('Microsoft PowerPoint is required to render local preview images.') from exc
-    finally:
-        if presentation is not None:
-            try:
-                presentation.Close()
-            except Exception:
-                pass
-        _quit_powerpoint_com(powerpoint, pp_ownership)
-        pythoncom.CoUninitialize()
 
 
 def _unlock_or_rename(output_path: Path) -> Path:
@@ -1959,7 +1721,6 @@ def main() -> int:
 
     args = parse_args()
     output_path = Path(args.output_path).resolve()
-    render_dir = Path(args.render_dir).resolve() if args.render_dir else None
     workspace_dir = str(Path(args.workspace_dir).resolve()) if args.workspace_dir else ''
     renderer_mode = args.renderer_mode
 
@@ -2084,7 +1845,7 @@ def main() -> int:
 
     qa_findings: dict = {'contrast_fixes': 0, 'missing_images': [], 'layout_issues': []}
     try:
-        skip_text_overflow_fix = render_dir is not None and os.environ.get('PPTX_SKIP_TEXT_OVERFLOW_FIX') == '1'
+        skip_text_overflow_fix = os.environ.get('PPTX_SKIP_TEXT_OVERFLOW_FIX') == '1'
         qa_findings = validate_and_fix_output(output_path, run_text_overflow_fix=not skip_text_overflow_fix) or qa_findings
     except Exception as exc:  # noqa: BLE001
         msg = f'Layout validation failed: {exc}'
@@ -2093,14 +1854,6 @@ def main() -> int:
 
     # Collect missing icons accumulated during code execution
     missing_icons = get_missing_icons()
-
-    if render_dir is not None:
-        try:
-            render_preview_images(output_path, render_dir)
-        except Exception as exc:  # noqa: BLE001
-            msg = f'Preview rendering failed: {exc}'
-            post_warnings.append(msg)
-            print(f'[WARNING] {msg}', file=sys.stderr)
 
     report = _build_completion_report(
         output_path,

@@ -64,8 +64,8 @@ class ZoneDef:
     """Declarative specification for a single layout zone.
 
     ``min_h`` and ``preferred_h`` are in inches and drive the constraint
-    solver.  ``font_pt`` / ``bold`` control the COM AutoFit measurement
-    request so the solver receives an accurate minimum height.
+    solver.  ``font_pt`` / ``bold`` control the text-measurement request so
+    the solver receives an accurate minimum height.
 
     ``stretch`` marks a zone that should absorb remaining vertical space
     (typically the content zone).

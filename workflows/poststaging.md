@@ -39,7 +39,7 @@ After the create-pptx workflow produces a deck, inspect the structured QA report
 4. **Decide Corrective Action** — based on the category of the worst finding:
    - **No blocking or actionable issues** → Confirm the deck is ready. Stop.
    - **Missing images or icons (blocking)** → Regenerate the affected slide code, ensuring ALL approved images are placed via `slide_image_paths()` / `safe_add_picture()` and ALL icons are fetched via `fetch_icon()`. Output the corrected python-pptx code block.
-   - **Layout overlap or text overflow (blocking)** → Use `patch_layout_infrastructure` to read the current layout specs or validator thresholds, patch as needed, then call `rerun_pptx` to re-execute.
+   - **Layout overlap or text overflow (blocking)** → Inspect the current layout specs or validator thresholds, patch them as needed with the available repair tooling, then rerun the render.
    - **Unresolved contrast (actionable)** → Regenerate the affected slide code with explicit `ensure_contrast()` calls for the flagged text/background pairs. Output the corrected python-pptx code block.
 5. **Verify Fix** — after corrective action, the pipeline automatically re-runs post-staging. If the new QA report still contains blocking or actionable issues, repeat from step 2 (up to the app's auto-retry limit).
 
@@ -56,7 +56,7 @@ After the create-pptx workflow produces a deck, inspect the structured QA report
 - When all findings are clear: output a short confirmation message summarizing the QA pass (e.g. "All 8 slides passed post-staging QA — deck is ready.").
 - When corrective action is needed: output either:
   - A complete, self-contained python-pptx code block targeting the affected slides. Do not output a partial snippet or diff. The block must be executable as-is so the app can detect it and regenerate the deck.
-  - A `patch_layout_infrastructure` + `rerun_pptx` tool sequence for layout issues.
+  - A layout-repair action followed by a rerun for layout issues.
 
 ## Success Criteria
 

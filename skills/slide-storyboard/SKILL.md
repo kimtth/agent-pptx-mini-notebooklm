@@ -1,6 +1,6 @@
 ---
 name: slide-storyboard
-description: Analyzes user requests and provided materials to create a presentation slide story (structure plan). Uses the set_scenario tool to output directly to the workspace panel. Also calls suggest_framework to present available business frameworks to the user for selection.
+description: Analyzes user requests and provided materials to create a presentation slide story (structure plan). Outputs the slide scenario directly to the workspace panel and presents available business frameworks to the user for selection.
 ---
 
 # Slide Story Creation Skill
@@ -9,12 +9,12 @@ A skill that analyzes user requests and creates a slide story (structure plan) a
 
 ## Critical: Output Method
 
-**Never write the slide structure directly in chat. Always use the `set_scenario` tool to send it to the workspace panel.**
+**Never write the slide structure directly in chat. Always send it to the workspace panel.**
 Include a presentation-wide `designBrief` when relevant.
 
 ```
-// ✅ Correct: call set_scenario tool
-set_scenario({
+// ✅ Correct: send scenario to the workspace panel
+{
   title: "Presentation Title",
   slides: [
     { number: 1, title: "Title Slide", bullets: ["Subtitle"], notes: "..." },
@@ -30,12 +30,12 @@ set_scenario({
     density: "airy",
     layoutApproach: "design-led"
   }
-})
+}
 
 // ❌ Wrong: write markdown in chat ← Never do this
 ```
 
-After calling the tool, return only a short message in chat: e.g., "Slide structure and design brief created in workspace. Review and generate PPTX?"
+After sending the scenario, return only a short message in chat: e.g., "Slide structure and design brief created in workspace. Review and generate PPTX?"
 
 ## When To Use This Skill
 
@@ -45,7 +45,7 @@ After calling the tool, return only a short message in chat: e.g., "Slide struct
 
 ## Step 0: Confirm Framework With the User
 
-**The business framework is defined by the user, not by the assistant.** If the user has already specified a framework, use it directly. If no framework has been specified, present the available options using `suggest_framework` and ask the user which one to use. Do not auto-select a framework on the user's behalf.
+**The business framework is defined by the user, not by the assistant.** If the user has already specified a framework, use it directly. If no framework has been specified, present the available options and ask the user which one to use. Do not auto-select a framework on the user's behalf.
 
 Framework selection guide:
 
@@ -154,7 +154,7 @@ N+1. Appendix section (layout: section)
 - Notes must be 2–3 sentences, never empty or just a dash
 - Avoid generic statements — every bullet should be specific and defensible
 
-## set_scenario Output Fields
+## Scenario Output Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -210,4 +210,4 @@ Icons are fetched live from the **Iconify** public API. Use any valid Iconify ic
 - [ ] Bullets contain specific numbers/data
 - [ ] The deck has a logical arc (intro → body → conclusion)
 - [ ] Vocabulary level is appropriate for the target audience
-- [ ] Framework was confirmed with the user (or user-specified framework was applied) before `set_scenario`
+- [ ] Framework was confirmed with the user (or user-specified framework was applied) before writing the scenario

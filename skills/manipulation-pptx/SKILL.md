@@ -97,6 +97,10 @@ If a design style skill (e.g., Neo-Brutalism, Cyberpunk Outline) specifies its o
 
 The design style defines mood, layout technique, and visual structure. The theme defines the actual colors used in the output.
 
+## Efficiency Contract
+
+**Do NOT explore application internals during generation.** The conversation context and this skill file provide the complete API contract. Everything below — theme contract, runtime namespace, code rules, layout system, icon usage — is the authoritative reference. Do not read runner scripts, handler modules, or unrelated sample projects to "understand" the codebase. Read only the 3 workspace JSON files (`layout-input.json`, `layout-specs.json`, `slide-assets.json`) and then generate code directly.
+
 ## Code Rules
 
 1. Wrap the output in ` ```python `.
@@ -266,7 +270,7 @@ Pattern rules:
 
 ### Layout Template System
 
-The runtime injects `PRECOMPUTED_LAYOUT_SPECS` — a `list[LayoutSpec]` (one per slide) computed by the hybrid layout engine using **PowerPoint COM AutoFit + kiwisolver constraint solver**. These specs have pixel-perfect coordinates based on actual text measurements. **Never use literal float coordinates. Every x, y, w, h must reference a `spec.*` field or be computed relative to one.**
+The runtime injects `PRECOMPUTED_LAYOUT_SPECS` — a `list[LayoutSpec]` (one per slide) computed by the hybrid layout engine using **Pillow text measurement + kiwisolver constraint solver**. These specs provide content-aware coordinates based on measured text heights. **Never use literal float coordinates. Every x, y, w, h must reference a `spec.*` field or be computed relative to one.**
 
 Available on `LayoutSpec`: `title_rect`, `key_message_rect`, `accent_rect`, `icon_rect`, `content_rect`, `notes_rect`, `summary_box`, `hero_rect`, `chips_rect`, `footer_rect`, `sidebar_rect`, `max_items`, `row_step`, `cards`, `stats`, `timeline`, `comparison`.
 
@@ -323,7 +327,7 @@ for idx, text in enumerate(chip_texts):
 
 All sub-zones are pre-computed by the hybrid layout engine and included in `PRECOMPUTED_LAYOUT_SPECS`.
 
-There is no runtime geometry repair pass. The generated code must produce the final layout directly: reserve notes/footer space, keep aligned layouts aligned, and split or simplify content instead of relying on any post-processing fix-up.
+Generated code must produce the final layout directly: reserve notes/footer space, keep aligned layouts aligned, and split or simplify content instead of crowding. The app's layout repair tooling exists as a fallback for edge cases — do not rely on it as a primary strategy.
 - Prefer 3-5 bullets per slide. If content is denser than that, convert it into two-column cards, stats, or a comparison structure.
 - **Maximum 5 content shapes per slide** (excluding slide title, key message, accent bar, and notes/footer). If more are needed, split the content across two slides or collapse items into a grid/card layout.
 - **Long titles are handled by the hybrid engine.** The pre-computed specs already account for title text wrapping — no additional `flow_layout_spec()` call is needed.
@@ -503,35 +507,19 @@ run.font.name = font
 
 ---
 
-## Layout Infrastructure Tools
+## Layout Repair Workflow
 
-When PPTX generation fails with layout validation errors (overlap, text overflow, out-of-bounds), you have two tools to fix the underlying layout infrastructure and re-run without regenerating the entire code.
+When PPTX generation fails with layout validation errors (overlap, text overflow, out-of-bounds), the app provides repair tooling to fix the underlying layout infrastructure and re-run without regenerating the entire code.
 
-### `patch_layout_infrastructure`
+### Repair steps
 
-Read or patch `layout_specs.py` (pre-computed layout coordinates) or `layout_validator.py` (validation rules).
+1. Inspect the relevant layout file (`layout_specs.py` for coordinates, `layout_validator.py` for validation thresholds) to understand the current values.
+2. Identify the dimension or threshold causing the error.
+3. Patch the value (e.g., reduce a card width from 5.9 to 4.5 to eliminate overlap).
+4. Rerun the PPTX render to verify the fix.
 
-**Parameters:**
-- `action`: `"read"` to view the file, `"patch"` to search-and-replace
-- `file`: `"layout_specs"` or `"layout_validator"`
-- `search` (patch only): exact string to find
-- `replace` (patch only): replacement string
+### Common fixes
 
-**Workflow:**
-1. Read the file to understand current values: `patch_layout_infrastructure(action="read", file="layout_specs")`
-2. Identify the dimension or threshold causing the error
-3. Patch it: `patch_layout_infrastructure(action="patch", file="layout_specs", search="card_w_val = 5.9", replace="card_w_val = 4.5")`
-4. Re-run with `rerun_pptx`
-
-**Common fixes:**
-- **Overlap errors**: Use `patch_layout_infrastructure` to adjust layout dimensions in `layout_specs.py`, then call `rerun_pptx`
-- **Text overflow errors**: Increase box heights or adjust validator thresholds in `layout_validator.py`
-- **Out-of-bounds errors**: Reduce x+w or y+h values so shapes stay within 13.33" × 7.5"
-
-### `rerun_pptx`
-
-Re-execute the last generated python-pptx code (`generated-source.py`) with the same theme and title. Use after `patch_layout_infrastructure` to verify the fix.
-
-**Parameters:** none
-
-**Returns:** success message or the validation error report if the fix didn't resolve the issue.
+- **Overlap errors**: Adjust layout dimensions in `layout_specs.py`, then rerun the render.
+- **Text overflow errors**: Increase box heights or adjust validator thresholds in `layout_validator.py`.
+- **Out-of-bounds errors**: Reduce x+w or y+h values so shapes stay within 13.33" × 7.5".

@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from font_text_measure import TextMeasureRequest, measure_text_heights
 from pptx.util import Inches
 from layout_specs import estimate_text_height_in
 
@@ -417,11 +418,6 @@ def _dominant_font_props(shape) -> tuple[str, bool]:
     return font_family, is_bold
 
 
-def _default_metrics_backend() -> str:
-    """Return the implicit measurement backend preference for this platform."""
-    return 'pillow-first'
-
-
 def _estimate_required_text_height_in(shape, box: ShapeBox) -> float | None:
     text = _shape_text(shape)
     if not text:
@@ -447,30 +443,15 @@ def _estimate_required_text_height_in(shape, box: ShapeBox) -> float | None:
 
     font_pt = _max_font_size_pt(shape)
     font_family, is_bold = _dominant_font_props(shape)
-    required = None
-    backend_pref = os.environ.get('PPTX_FONT_METRICS_BACKEND', _default_metrics_backend()).strip().lower()
-    backend_names = ('com', 'pillow') if backend_pref == 'com-first' else ('pillow', 'com')
-
-    for backend_name in backend_names:
-        try:
-            if backend_name == 'com':
-                from com_text_measure import TextMeasureRequest, measure_text_heights  # type: ignore
-            else:
-                from font_text_measure import TextMeasureRequest, measure_text_heights  # type: ignore
-
-            req = TextMeasureRequest(
-                text=text,
-                width_in=width_in,
-                font_family=font_family,
-                font_size_pt=font_pt,
-                bold=is_bold,
-            )
-            heights = measure_text_heights([req])
-            if heights:
-                required = heights[0]
-                break
-        except ImportError:
-            continue
+    req = TextMeasureRequest(
+        text=text,
+        width_in=width_in,
+        font_family=font_family,
+        font_size_pt=font_pt,
+        bold=is_bold,
+    )
+    heights = measure_text_heights([req])
+    required = heights[0] if heights else None
 
     if required is None:
         required = estimate_text_height_in(text, width_in, font_pt)

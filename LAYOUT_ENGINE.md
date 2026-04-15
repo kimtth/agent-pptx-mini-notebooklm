@@ -21,7 +21,6 @@ hybrid_layout.py
         │
         ├──▶ layout_blueprint.py      (design tokens + zones)
         ├──▶ font_text_measure.py     (default Pillow measurement)
-        ├──▶ com_text_measure.py      (optional secondary backend on Windows)
         ├──▶ estimate_text_height_in  (last-resort heuristic)
         └──▶ constraint_solver.py     (kiwisolver / Cassowary)
         │
@@ -33,7 +32,7 @@ pptx-python-runner.py
         │
         ├──▶ inject PRECOMPUTED_LAYOUT_SPECS + helpers
         ├──▶ execute generated python-pptx code
-        ├──▶ overflow repair using configured backend
+        ├──▶ overflow repair using Pillow measurement
         ├──▶ contrast repair
         ├──▶ validate_presentation(prs)
         └──▶ optional preview image rendering
@@ -51,7 +50,7 @@ The layout engine runs as a subprocess (`hybrid_layout.py`) and communicates thr
 
 ### Input Artifacts
 
-The Electron app writes `layout-input.json` as soon as slide-storyboard emits `set_scenario`, then refreshes it again before layout computation. Each slide is serialized as `SlideContent`:
+The Electron app writes `layout-input.json` as soon as the slide scenario is set in the workspace, then refreshes it again before layout computation. Each slide is serialized as `SlideContent`:
 
 ```json
 {
@@ -93,13 +92,13 @@ The pre-generation layout pipeline is a three-stage process that produces slide 
 
 ```
 ┌─────────────────┐     ┌──────────────────────────────┐     ┌──────────────────┐
-│ Layout Blueprint │ ──▶ │ Text Measurement Backends   │ ──▶ │ Constraint Solver │ ──▶ LayoutSpec JSON
-│ (design tokens)  │     │ (Pillow default, COM second)│     │ (kiwisolver)      │
+│ Layout Blueprint │ ──▶ │ Text Measurement           │ ──▶ │ Constraint Solver │ ──▶ LayoutSpec JSON
+│ (design tokens)  │     │ (Pillow + heuristic)       │     │ (kiwisolver)      │
 └─────────────────┘     └──────────────────────────────┘     └──────────────────┘
 ```
 
 1. **Layout Blueprint** (`layout_blueprint.py`) defines design tokens, margins, zone roles, and layout-family structure.
-2. **Text Measurement** uses the configured backend to measure text heights at the actual target widths. The default order is Pillow first and COM second on Windows; the shared heuristic is used only when no measurement backend is available for a given path.
+2. **Text Measurement** uses Pillow to measure text heights at the actual target widths. The shared heuristic is used only when Pillow is unavailable for a given path.
 3. **Constraint Solver** (`constraint_solver.py`) feeds blueprint zones + measured heights into a Cassowary solver to produce final `LayoutSpec` coordinates.
 
 The output `LayoutSpec` provides `RectSpec(x, y, w, h)` for every element zone such as title, key message, content area, cards, icons, and footer. `hybrid_layout.py` is the orchestration layer around these stages: it batches measurement requests, solves each slide in order, then serializes the resulting specs to JSON for injection into the Python runner.
@@ -195,22 +194,10 @@ The key design principle is: **blueprints define intent, not final geometry**. F
 
 Text measurement is the bridge between declarative layout intent and the solver's hard geometry constraints.
 
-### Backend Order
-
-`hybrid_layout.py` selects the measurement backend by `PPTX_FONT_METRICS_BACKEND`:
-
-| Setting | Order |
-|---------|-------|
-| `pillow-first` | Pillow → COM (Windows only) → heuristic |
-| `com-first` | COM (Windows only) → Pillow → heuristic |
-
-`pillow-first` is the current default.
-
 ### Available Backends
 
-- `font_text_measure.py` — default cross-platform backend using Pillow TrueType font metrics and glyph-aware word wrapping.
-- `com_text_measure.py` — optional Windows-only backend using PowerPoint COM AutoFit for WYSIWYG measurement.
-- `estimate_text_height_in()` — shared heuristic used only when neither primary backend is available, plus a few narrow helper cases.
+- `font_text_measure.py` — primary cross-platform backend using Pillow TrueType font metrics and glyph-aware word wrapping.
+- `estimate_text_height_in()` — shared heuristic used only when Pillow is unavailable, plus a few narrow helper cases.
 
 ### Measurement Strategy by Layout Family
 
@@ -239,7 +226,7 @@ Per-item text measurement prevents overflow-driven collisions:
 
 For timelines: `step_y = card_measured_h / 0.85` because the node rect uses 85% of step height. Content height = `step_y × item_count`.
 
-Measurement is batched deck-wide. `hybrid_layout.py` builds one queue of title/key-message/content/notes requests, sends them through the configured backend in a single batch, then splits the results back by slide and zone.
+Measurement is batched deck-wide. `hybrid_layout.py` builds one queue of title/key-message/content/notes requests, sends them through the Pillow backend in a single batch, then splits the results back by slide and zone.
 
 One small exception exists outside the main backend path: chip text uses the shared `estimate_text_height_in()` heuristic with a tighter `line_height=1.12` when computing chip-band height.
 
@@ -507,8 +494,8 @@ Generated python-pptx code
   validate_and_fix_output(output_path)
         │
     ├── Text overflow fix (normal PPTX export path)
-    │     Measure overflow and repair text-bearing shapes using the configured backend
-    │     Default runtime path is Pillow-first; COM is the secondary option on Windows
+    │     Measure overflow and repair text-bearing shapes using Pillow
+    │     Falls back to the shared heuristic only if Pillow is unavailable
     │     Runs in up to 2 bounded passes, becoming slightly more aggressive on the second pass
     │
     ├── Auto-size path (when no measurement backend is available)
@@ -525,7 +512,7 @@ Generated python-pptx code
       └── > 2 blocking issues → Raise runtime error
 ```
 
-There is one preview-specific exception: when the Electron app is generating local preview PNGs, it sets `PPTX_SKIP_TEXT_OVERFLOW_FIX=1`. In that path the runner skips the overflow-repair phase and keeps only contrast repair + validation before `render_preview_images()`. This avoids doing a second measurement-and-fix pass during preview generation while preserving the normal export path's stricter repair behavior.
+The `PPTX_SKIP_TEXT_OVERFLOW_FIX=1` environment variable can be set to skip the overflow-repair phase, keeping only contrast repair + validation. This is used by the chunked pipeline's post-process-only mode.
 
 If validation still finds blocking issues that exceed tolerance, or any blocking text-overflow issue, the runner raises a `RuntimeError`.
 
@@ -874,7 +861,7 @@ The engine works best when generated code follows a small set of strict rules:
 5. When a slide has many images, create a real multi-image composition instead of reusing one image placeholder.
 6. Treat title, key message, notes, and footer as reserved structural zones; do not place content into them opportunistically.
 7. If validation reports blocking issues, reduce density, reserve more space, or regenerate; do not keep stacking more shapes into the same space.
-8. Treat `patch_layout_infrastructure` and `rerun_pptx` as app-level repair tooling, not as part of the layout engine API contract.
+8. Treat the app-level layout repair and rerun tooling as external to the layout engine API contract — they are fallback mechanisms, not part of the engine itself.
 
 ---
 
@@ -901,7 +888,7 @@ The engine works best when generated code follows a small set of strict rules:
 
 ## Import Convention (Critical)
 
-The layout modules (`layout_blueprint.py`, `layout_specs.py`, `constraint_solver.py`, `hybrid_layout.py`, `font_text_measure.py`, `com_text_measure.py`) all live in `scripts/layout/` and import each other using bare module names:
+The layout modules (`layout_blueprint.py`, `layout_specs.py`, `constraint_solver.py`, `hybrid_layout.py`, `font_text_measure.py`) all live in `scripts/layout/` and import each other using bare module names:
 
 ```python
 from layout_blueprint import ZoneRole, get_blueprint

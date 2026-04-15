@@ -21,7 +21,7 @@ export const SETTINGS_KEYS = [
   'MODEL_NAME',
   'REASONING_EFFORT',
   'PPTX_CHUNK_SIZE',
-  'PPTX_FONT_METRICS_BACKEND',
+
 ] as const;
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number];

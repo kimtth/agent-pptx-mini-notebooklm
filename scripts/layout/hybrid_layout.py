@@ -1,13 +1,13 @@
 """Content-adaptive layout orchestrator.
 
-Combines PowerPoint COM text measurement with constraint solving to
+Combines Pillow-based text measurement with constraint solving to
 produce precise ``LayoutSpec`` objects for each slide in a deck.
 
 Pipeline
 --------
 1. Load blueprints for each slide's layout type
 2. Collect all text zones that need measurement
-3. Open PowerPoint COM → batch-measure all text heights → close COM
+3. Batch-measure all text heights via Pillow font metrics
 4. For each slide: solve constraints (blueprint + measurements + content)
 5. Return ``list[LayoutSpec]``
 
@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -56,7 +55,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class SlideContent:
-    """Content metadata for a single slide — drives COM measurement + solver."""
+    """Content metadata for a single slide — drives measurement + solver."""
     layout_type: str
     title_text: str = ''
     key_message_text: str = ''
@@ -112,13 +111,8 @@ def _zone_text(slide: SlideContent, role: ZoneRole) -> str:
 
 
 def _zone_needs_measurement(role: ZoneRole) -> bool:
-    """Only text-bearing zones need COM measurement."""
+    """Only text-bearing zones need measurement."""
     return role in (ZoneRole.TITLE, ZoneRole.KEY_MESSAGE, ZoneRole.CONTENT, ZoneRole.CHIPS, ZoneRole.FOOTER, ZoneRole.NOTES)
-
-
-def _default_metrics_backend() -> str:
-    """Return the implicit measurement backend preference for this platform."""
-    return 'pillow-first'
 
 
 def _columnar_height_reserve(blueprint: LayoutBlueprint) -> float:
@@ -220,42 +214,18 @@ def _column_width(blueprint: LayoutBlueprint, content_w: float) -> float | None:
 # ---------------------------------------------------------------------------
 
 def _get_measure_backend() -> tuple[type, callable]:
-    """Select the best available text-measurement backend.
+    """Select the active text-measurement backend.
 
     Returns ``(TextMeasureRequest_class, measure_text_heights_func)``.
 
-    The order is controlled by the ``PPTX_FONT_METRICS_BACKEND`` env var:
-      - ``pillow-first`` (default): Pillow → COM → heuristic
-      - ``com-first``: COM → Pillow → heuristic
+    The layout engine always uses Pillow font metrics when available and
+    falls back to the shared heuristic only if Pillow cannot be imported.
     """
-    backend_pref = os.environ.get('PPTX_FONT_METRICS_BACKEND', _default_metrics_backend()).strip().lower()
-
-    if backend_pref == 'com-first':
-        # Legacy order: COM first (Windows), then Pillow, then heuristic
-        if sys.platform == 'win32':
-            try:
-                from com_text_measure import TextMeasureRequest, measure_text_heights
-                return TextMeasureRequest, measure_text_heights
-            except (ImportError, OSError):
-                pass
-        try:
-            from font_text_measure import TextMeasureRequest, measure_text_heights
-            return TextMeasureRequest, measure_text_heights
-        except ImportError:
-            pass
-    else:
-        # Default: Pillow first, then COM, then heuristic
-        try:
-            from font_text_measure import TextMeasureRequest, measure_text_heights
-            return TextMeasureRequest, measure_text_heights
-        except ImportError:
-            pass
-        if sys.platform == 'win32':
-            try:
-                from com_text_measure import TextMeasureRequest, measure_text_heights
-                return TextMeasureRequest, measure_text_heights
-            except (ImportError, OSError):
-                pass
+    try:
+        from font_text_measure import TextMeasureRequest, measure_text_heights
+        return TextMeasureRequest, measure_text_heights
+    except ImportError:
+        pass
 
     # Heuristic fallback — synthesise a compatible measure function
     from font_text_measure import TextMeasureRequest
@@ -275,8 +245,7 @@ def _get_measure_backend() -> tuple[type, callable]:
 def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
     """Compute content-adaptive layout specs for all slides.
 
-    Automatically selects the best measurement backend:
-    COM (Windows + PowerPoint) → Pillow font metrics → heuristic fallback.
+    Uses Pillow font metrics with heuristic fallback when Pillow is unavailable.
     Returns a list of ``LayoutSpec`` in the same order as *slides*.
     """
     TextMeasureRequest, measure_text_heights = _get_measure_backend()
@@ -365,7 +334,7 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
                 ),
             ))
 
-    # Step 3: Batch COM measurement (all requests in one COM session)
+    # Step 3: Batch text measurement
     all_requests: list[TextMeasureRequest] = []
     all_requests.extend(req for _, _, req in measure_queue)
     all_requests.extend(req for _, req in item_measure_queue)

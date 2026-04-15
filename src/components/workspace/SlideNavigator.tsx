@@ -33,7 +33,6 @@ export function SlideNavigator() {
 
   async function handleClearSlides() {
     await window.electronAPI.pptx.clearWorkspaceArtifacts().catch(() => undefined)
-    window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
     setConfirmClear(false)
   }
 

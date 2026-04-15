@@ -231,7 +231,6 @@ export function ChatPanel() {
     if (busy) return
     const workflow = getWorkflowConfig('prestaging')
     initializeForBrainstorm()
-    window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
     let prompt = input.trim()
     if (!prompt) {
       const fw = useSlidesStore.getState().work.framework
@@ -266,7 +265,6 @@ export function ChatPanel() {
       clearMessages()
     }
     await window.electronAPI.pptx.clearWorkspaceArtifacts().catch(() => undefined)
-    window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
   }
 
   const handleKey = (e: React.KeyboardEvent) => {

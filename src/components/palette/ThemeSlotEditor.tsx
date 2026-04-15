@@ -2,46 +2,78 @@
  * ThemeSlotEditor: 12 OOXML theme color slots with colored dropdowns
  */
 
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronDown } from 'lucide-react'
 import { usePaletteStore } from '../../stores/palette-store'
-import { buildThemeTokens } from '../../application/palette-use-case'
 import type { ThemeSlots } from '../../domain/entities/palette'
 
 const SLOT_LABELS: { key: keyof ThemeSlots; label: string; description: string }[] = [
-  { key: 'dk1', label: 'Dark 1 (dk1)', description: 'Primary text' },
-  { key: 'lt1', label: 'Light 1 (lt1)', description: 'Primary background' },
-  { key: 'dk2', label: 'Dark 2 (dk2)', description: 'Secondary text' },
-  { key: 'lt2', label: 'Light 2 (lt2)', description: 'Secondary background' },
-  { key: 'accent1', label: 'Accent 1', description: 'Primary accent' },
-  { key: 'accent2', label: 'Accent 2', description: 'Secondary accent' },
-  { key: 'accent3', label: 'Accent 3', description: 'Tertiary accent' },
-  { key: 'accent4', label: 'Accent 4', description: 'Quaternary accent' },
-  { key: 'accent5', label: 'Accent 5', description: 'Quinary accent' },
-  { key: 'accent6', label: 'Accent 6', description: 'Senary accent' },
-  { key: 'hlink', label: 'Hyperlink', description: 'Link color' },
-  { key: 'folHlink', label: 'Followed Link', description: 'Visited link' },
+  { key: 'lt1', label: 'Slide Background', description: 'Main canvas' },
+  { key: 'lt2', label: 'Panel Background', description: 'Cards and panels' },
+  { key: 'dk1', label: 'Primary Text', description: 'Main text' },
+  { key: 'dk2', label: 'Secondary Text / Borders', description: 'Muted text and lines' },
+  { key: 'accent1', label: 'Brand Color', description: 'Hero accents, key numbers, primary emphasis' },
+  { key: 'accent2', label: 'Secondary Brand Color', description: 'Secondary charts, comparison blocks, supporting emphasis' },
+  { key: 'accent3', label: 'Chart Color 1', description: '3rd series, stacked bars, timeline dots' },
+  { key: 'accent4', label: 'Chart Color 2', description: '4th series, comparison panels, callout stats' },
+  { key: 'accent5', label: 'Chart Color 3', description: '5th series, badges, status chips' },
+  { key: 'accent6', label: 'Chart Color 4', description: '6th series, alerts, warm highlights' },
+  { key: 'hlink', label: 'Link Color', description: 'Links' },
+  { key: 'folHlink', label: 'Visited Link Color', description: 'Visited links' },
 ]
 
 export function ThemeSlotEditor() {
   const { slots, colors, setSlots, themeName, setThemeName, commitTokens } = usePaletteStore()
+  const [openKey, setOpenKey] = useState<keyof ThemeSlots | null>(null)
+  const rootRef = useRef<HTMLElement | null>(null)
 
   if (!slots) return null
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpenKey(null)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [])
 
   const handleChange = (key: keyof ThemeSlots, hex: string) => {
     const next = { ...slots, [key]: hex.replace('#', '') }
     setSlots(next)
     commitTokens()
+    setOpenKey(null)
   }
 
+  const colorOptions = useMemo(
+    () =>
+      colors.map((color) => ({
+        ...color,
+        normalizedHex: normalizeHex(color.hex),
+      })),
+    [colors],
+  )
+
   return (
-    <section className="border" style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)' }}>
+    <section
+      ref={rootRef}
+      className="border"
+      style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)' }}
+    >
       <div
         className="flex items-center px-4 border-b text-xs font-semibold uppercase tracking-wider"
         style={{ color: 'var(--text-secondary)', borderColor: 'var(--panel-border)', height: 40, minHeight: 40 }}
       >
-        Theme Slots
+        Theme Colors
       </div>
 
       <div className="px-4 py-4">
+      <p className="mb-4 text-[11px] leading-4" style={{ color: 'var(--text-secondary)' }}>
+        Pick colors by how they are used in the deck.
+      </p>
+
       {/* Theme name */}
       <input
         type="text"
@@ -60,10 +92,20 @@ export function ThemeSlotEditor() {
       />
 
       <div className="flex flex-col gap-2">
-        {SLOT_LABELS.map(({ key, label }) => {
-          const current = `#${slots[key]}`
+        {SLOT_LABELS.map(({ key, label, description }) => {
+          const current = normalizeHex(slots[key])
+          const selectedColor = colorOptions.find((color) => color.normalizedHex === current)
           return (
-            <div key={key} className="flex items-center gap-2 h-8">
+            <div key={key} className="flex items-center gap-2 min-h-10">
+              <div className="min-w-0 flex-[1.2] leading-tight">
+                <div className="text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {label}
+                </div>
+                <div className="text-[10px]" style={{ color: 'var(--text-secondary)' }}>
+                  {description}
+                </div>
+              </div>
+
               {/* Color swatch (click to open picker) */}
               <div
                 className="relative flex-none w-7 h-7 border overflow-hidden"
@@ -80,35 +122,63 @@ export function ThemeSlotEditor() {
               </div>
 
               {/* Dropdown */}
-              <select
-                value={`#${slots[key]}`}
-                onChange={(e) => handleChange(key, e.target.value)}
-                className="flex-1 h-8 text-xs px-2 border outline-none"
-                style={{
-                  background: `#${slots[key]}`,
-                  borderColor: 'var(--panel-border)',
-                  color: getContrastText(`#${slots[key]}`),
-                  cursor: 'pointer',
-                }}
-                aria-label={label}
-              >
-                {colors.map((c) => (
-                  <option
-                    key={c.hex}
-                    value={c.hex}
-                    style={{ background: c.hex, color: getContrastText(c.hex) }}
-                  >
-                    {c.name} — {c.hex}
-                  </option>
-                ))}
-              </select>
+              <div className="relative flex-1">
+                <button
+                  type="button"
+                  onClick={() => setOpenKey((currentOpen) => (currentOpen === key ? null : key))}
+                  className="flex h-8 w-full items-center gap-2 border px-2 text-left text-xs outline-none"
+                  style={{
+                    background: 'var(--input-bg)',
+                    borderColor: 'var(--panel-border)',
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                  }}
+                  aria-haspopup="listbox"
+                  aria-expanded={openKey === key}
+                  aria-label={label}
+                >
+                  <ColorSwatch hex={current} />
+                  <span className="min-w-0 flex-1 truncate">
+                    {selectedColor ? `${selectedColor.name} — ${selectedColor.normalizedHex}` : current.toUpperCase()}
+                  </span>
+                  <ChevronDown size={14} style={{ color: 'var(--text-secondary)', flexShrink: 0 }} />
+                </button>
 
-              {/* Slot label */}
-              <div
-                className="flex-none text-[10px] text-right"
-                style={{ color: 'var(--text-secondary)', width: 64 }}
-              >
-                {label.split('(')[0].trim()}
+                {openKey === key && (
+                  <div
+                    className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto border shadow-lg"
+                    style={{
+                      background: 'var(--surface)',
+                      borderColor: 'var(--panel-border)',
+                    }}
+                    role="listbox"
+                    aria-label={`${label} options`}
+                  >
+                    {colorOptions.map((color) => {
+                      const isSelected = color.normalizedHex === current
+                      return (
+                        <button
+                          key={`${key}-${color.normalizedHex}`}
+                          type="button"
+                          onClick={() => handleChange(key, color.normalizedHex)}
+                          className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors hover:bg-[var(--surface-hover)]"
+                          style={{
+                            color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                            background: isSelected ? 'var(--surface-hover)' : 'transparent',
+                          }}
+                          role="option"
+                          aria-selected={isSelected}
+                        >
+                          <ColorSwatch hex={color.normalizedHex} />
+                          <span className="min-w-0 flex-1 truncate">
+                            {color.name} — {color.normalizedHex.toUpperCase()}
+                          </span>
+                          {isSelected && <Check size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )
@@ -119,11 +189,17 @@ export function ThemeSlotEditor() {
   )
 }
 
-function getContrastText(hex: string): string {
-  const h = hex.replace('#', '')
-  const r = parseInt(h.substring(0, 2), 16)
-  const g = parseInt(h.substring(2, 4), 16)
-  const b = parseInt(h.substring(4, 6), 16)
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
-  return luminance > 0.5 ? '#1B1B1B' : '#FFFFFF'
+function ColorSwatch({ hex }: { hex: string }) {
+  return (
+    <span
+      className="inline-block h-3.5 w-3.5 flex-none border"
+      style={{ background: hex, borderColor: 'var(--panel-border)' }}
+      aria-hidden="true"
+    />
+  )
+}
+
+function normalizeHex(hex: string): string {
+  const withHash = hex.startsWith('#') ? hex : `#${hex}`
+  return withHash.toUpperCase()
 }

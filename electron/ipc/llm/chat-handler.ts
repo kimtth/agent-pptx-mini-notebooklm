@@ -203,11 +203,11 @@ async function readDesignStyleBlock(styleName: string): Promise<string | null> {
     return null;
   }
 
-  // Split by H2 headers (## NN. StyleName)
-  const sections = content.split(/^(?=## \d+\.\s)/m);
+  // Split by H2 headers (## NN. StyleName or ## M1. MotifName)
+  const sections = content.split(/^(?=## (?:\d+|M\d+)\.\s)/m);
   const normalizedQuery = styleName.toLowerCase().replace(/[-_\s]+/g, '');
   for (const section of sections) {
-    const headerMatch = section.match(/^## \d+\.\s+(.+)/);
+    const headerMatch = section.match(/^## (?:\d+|M\d+)\.\s+(.+)/);
     if (!headerMatch) continue;
     const sectionName = headerMatch[1].toLowerCase().replace(/[-_\s]+/g, '');
     if (sectionName.includes(normalizedQuery) || normalizedQuery.includes(sectionName)) {
@@ -215,6 +215,76 @@ async function readDesignStyleBlock(styleName: string): Promise<string | null> {
     }
   }
   return null;
+}
+
+/**
+ * Extract the CSS + HTML preview block for a design style from the
+ * HTML reference file.  Returns a combined string with both the CSS
+ * rules and the HTML markup for the selected style, giving the LLM a
+ * concrete visual reference to translate into python-pptx shapes.
+ */
+async function readDesignStyleHtml(styleName: string): Promise<string | null> {
+  const htmlPath = resolveBundledPath('skills', 'pptx-design-styles', 'preview', 'modern-pptx-designs-30.html');
+  let content: string;
+  try {
+    content = await fs.readFile(htmlPath, 'utf-8');
+  } catch {
+    return null;
+  }
+
+  // Word-overlap matching: if ≥2 significant words match, it's a hit.
+  // Handles reorderings like "SciFi Holographic Data" vs "SCIFI DATA / HOLOGRAPHIC".
+  const queryWords = styleName.toLowerCase().replace(/[-_/]+/g, ' ').split(/\s+/).filter(w => w.length > 1);
+
+  function wordsMatch(headerText: string): boolean {
+    const headerWords = headerText.toLowerCase().replace(/[-_/]+/g, ' ').split(/\s+/).filter(w => w.length > 1);
+    const overlap = queryWords.filter(w => headerWords.some(hw => hw.includes(w) || w.includes(hw)));
+    // Require at least 2 words overlap, or all query words if query is short
+    return overlap.length >= Math.min(2, queryWords.length);
+  }
+
+  // ── Extract CSS block ──
+  // CSS sections start with  /* NN STYLE_NAME */
+  const cssSections = content.split(/(?=\/\* \d{2} )/);
+  let cssBlock = '';
+  for (const section of cssSections) {
+    const header = section.match(/^\/\* (\d{2}) ([^*]+)\*\//);
+    if (!header) continue;
+    if (wordsMatch(header[2])) {
+      cssBlock = section.trim();
+      break;
+    }
+  }
+
+  // ── Extract HTML block ──
+  // HTML sections start with  <!-- NN Style Name -->
+  const htmlSections = content.split(/(?=<!-- \d{2} )/);
+  let htmlBlock = '';
+  for (const section of htmlSections) {
+    const header = section.match(/^<!-- (\d{2}) ([^-]+)-->/);
+    if (!header) continue;
+    if (wordsMatch(header[2])) {
+      // Take the first <div class="card">...</div> block
+      const cardEnd = section.indexOf('</div>\n\n');
+      htmlBlock = cardEnd > 0 ? section.substring(0, cardEnd + 6).trim() : section.trim();
+      break;
+    }
+  }
+
+  if (!cssBlock && !htmlBlock) return null;
+
+  const parts: string[] = [];
+  if (cssBlock) {
+    parts.push('```css');
+    parts.push(cssBlock);
+    parts.push('```');
+  }
+  if (htmlBlock) {
+    parts.push('```html');
+    parts.push(htmlBlock);
+    parts.push('```');
+  }
+  return parts.join('\n');
 }
 
 /**
@@ -517,6 +587,7 @@ async function buildPrompt(
       parts.push(`Palette colors: ${workspace.theme.colors.slice(0, 20).map((color) => `${color.name} ${color.hex}`).join(' | ')}`);
     }
     parts.push('CRITICAL: The palette colors above are the ONLY color source for this deck. Use OOXML slot and palette hex values exclusively in python-pptx code. Do NOT use any hardcoded hex colors from the design style spec — those are overridden by this palette. Readability is mandatory: when text sits on any colored or image background, call ensure_contrast(fg_hex, bg_hex). If style conflicts with readability, readability wins.');
+    parts.push('CRITICAL: At runtime, PPTX_THEME contains direct role colors derived from the selected theme and PPTX_THEME_SLOTS contains the exact OOXML slot values. Slide backgrounds, primary text, borders, and other foundational reading surfaces must use those exact slot-derived values directly. Do NOT invent blended or averaged hex colors for slide backgrounds or primary reading surfaces. Only use gradients or tints when the selected style explicitly calls for them on accent or decorative surfaces.');
     parts.push('CRITICAL: These style controls are not advisory only. Respect them in generated code. If PPTX_COLOR_TREATMENT == "gradient", use apply_gradient_fill() on at least one major panel, ribbon, or hero surface per slide when that slide uses filled surfaces. If PPTX_COLOR_TREATMENT == "solid", use solid fills for those reading surfaces. If PPTX_COLOR_TREATMENT == "mixed", decide per-slide: prefer gradients on hero, title, and large accent surfaces; prefer solid fills on dense reading surfaces and small cards. If PPTX_TEXT_BOX_STYLE == "with-icons", major text panels should include a visible, readable icon companion when space allows, and the icon should match that panel\'s own content rather than repeating one slide-level icon across all boxes. Do not use tiny decorative icons. If PPTX_TEXT_BOX_STYLE == "plain", keep major text panels free of decorative icon chips/badges. If PPTX_TEXT_BOX_STYLE == "mixed", add icon companions to cards, callouts, and feature panels where the icon adds semantic anchoring, but keep dense prose panels and narrow sidebars plain.');
     parts.push('CRITICAL: Horizontally aligned card/stat/process/comparison rows MUST stay within slide bounds. Use the pre-computed spec geometry (spec.cards.card_rect, spec.stats.box_rect, spec.comparison.left/right) without adding offsets that push the last item past the right edge. If content exceeds the available width, reduce copy instead of widening boxes.');
     parts.push('');
@@ -538,7 +609,7 @@ async function buildPrompt(
   if (workspace.slides.length > 0) {
     parts.push('## PPTX Preflight\n');
     parts.push('The layout validator automatically checks overlap, out-of-bounds, and text overflow after generation.');
-    parts.push('If validation fails with ERROR-level issues, use patch_layout_infrastructure to read and fix layout_specs.py or layout_validator.py, then call rerun_pptx.');
+    parts.push('If validation fails with ERROR-level issues, inspect and repair layout_specs.py or layout_validator.py with the available app tooling, then rerun the render.');
     parts.push('');
   }
 
@@ -546,7 +617,105 @@ async function buildPrompt(
     parts.push('## Selected PPTX Design Style\n');
     parts.push(`Apply the "${workspace.designStyle}" style consistently across the deck.`);
     parts.push('Ensure contrast safety and readability when applying the design style — avoid mid-tone on mid-tone, and add overlay panels behind text over images.');
-    const styleBlock = await readDesignStyleBlock(workspace.designStyle);
+
+    // ── StyleConfig field reference ──
+    // The LLM must know exactly what fields exist so it reads them
+    // programmatically instead of guessing from the markdown spec.
+    parts.push([
+      '',
+      '### PPTX_STYLE_CONFIG — MANDATORY Runtime Object',
+      '`PPTX_STYLE_CONFIG` is a pre-populated `StyleConfig` dataclass injected by the runtime.',
+      'You MUST read its fields to drive every visual decision. Do NOT hardcode style values.',
+      '',
+      '#### Field Reference',
+      '| Field | Type | Example values |',
+      '|-------|------|----------------|',
+      '| `title_accent_bar` | bool | Thin vertical bar left of the title |',
+      '| `title_accent_rule` | bool | Thin horizontal rule above the title |',
+      '| `title_centered` | bool | Center-align title text |',
+      '| `title_font_scale` | float | 1.0 / 1.2 / 0.85 |',
+      '| `key_message_band` | bool | Semi-transparent band behind key-message |',
+      '| `key_message_band_opacity` | float | 0.0–1.0 |',
+      '| `panel_fill` | str | "transparent" / "tinted" / "solid" / "frosted" |',
+      '| `panel_fill_opacity` | float | 0.0–1.0 |',
+      '| `panel_border` | bool | Draw border around panels |',
+      '| `panel_border_weight_pt` | float | 0.5 / 1.0 / 2.0 |',
+      '| `panel_stripe` | bool | Vertical color stripe on panel left edge |',
+      '| `panel_shadow` | str | "none" / "hard" / "accent" |',
+      '| `decorative_circle` | bool | Small hollow circle near bottom-right |',
+      '| `decorative_blob` | bool | Organic background blob |',
+      '| `background_grid` | str | "none" / "fine" / "perspective" |',
+      '| `frame_outline` | str | "none" / "single" / "double" |',
+      '| `corner_brackets` | bool | Angular corner bracket marks |',
+      '| `accent_rings` | bool | Concentric outline rings |',
+      '| `color_treatment` | str | "solid" / "gradient" / "mixed" |',
+      '| `gradient_angle` | int | 0–180 degrees |',
+      '| `text_box_style` | str | "plain" / "with-icons" / "mixed" |',
+      '| `bullet_marker` | str | "•" / "—" / "✔" / "▸" |',
+      '| `bullet_marker_bold` | bool | Render bullet marker in bold |',
+      '| `content_density` | str | "compact" / "normal" / "spacious" |',
+      '| `dark_mode` | bool | Swap BG↔TEXT color roles |',
+      '| `rainbow_stripe_bars` | bool | Full-spectrum rainbow bars at top and bottom |',
+      '| `sparkle_stars` | bool | Small star/sparkle motifs in corners |',
+      '| `scan_lines` | bool | Thin horizontal scan-line overlay |',
+      '',
+      '#### Required Usage Pattern',
+      'At the start of your generated code, read the config into local variables:',
+      '```python',
+      'SC = PPTX_STYLE_CONFIG  # pre-injected StyleConfig instance',
+      '# Then use SC.field_name throughout:',
+      '# SC.panel_fill, SC.panel_border, SC.title_accent_bar, etc.',
+      '```',
+      '',
+      'Concrete examples:',
+      '```python',
+      '# Panel fill driven by style config',
+      'if SC.panel_fill == "tinted":',
+      '    shape.fill.solid()',
+      '    shape.fill.fore_color.rgb = RGBColor.from_string(C["ACCENT1"])',
+      '    set_fill_transparency(shape, 1 - SC.panel_fill_opacity)',
+      'elif SC.panel_fill == "frosted":',
+      '    shape.fill.solid()',
+      '    shape.fill.fore_color.rgb = RGBColor.from_string(C["WHITE"])',
+      '    set_fill_transparency(shape, 1 - SC.panel_fill_opacity)',
+      'elif SC.panel_fill == "solid":',
+      '    shape.fill.solid()',
+      '    shape.fill.fore_color.rgb = RGBColor.from_string(C["LIGHT2"])',
+      'else:  # transparent',
+      '    shape.fill.background()',
+      '',
+      '# Border driven by style config',
+      'if SC.panel_border:',
+      '    shape.line.width = Pt(SC.panel_border_weight_pt)',
+      '    shape.line.color.rgb = RGBColor.from_string(C["BORDER"])',
+      '',
+      '# Title accent bar',
+      'if SC.title_accent_bar:',
+      '    bar = add_design_shape(slide.shapes, MSO_SHAPE.RECTANGLE,',
+      '        left, top, Inches(0.06), title_h)',
+      '    bar.fill.solid()',
+      '    bar.fill.fore_color.rgb = RGBColor.from_string(C["ACCENT1"])',
+      '',
+      '# Gradient fill',
+      'if SC.color_treatment == "gradient":',
+      '    apply_gradient_fill(shape, [(C["ACCENT1"], 0), (C["ACCENT2"], 100)], SC.gradient_angle)',
+      '',
+      '# Decorative circle',
+      'if SC.decorative_circle:',
+      '    circ = add_design_shape(slide.shapes, MSO_SHAPE.OVAL,',
+      '        Inches(9.0), Inches(6.0), Inches(0.5), Inches(0.5))',
+      '    circ.fill.background()',
+      '    circ.line.width = Pt(1.5)',
+      '    circ.line.color.rgb = RGBColor.from_string(C["ACCENT1"])',
+      '```',
+      '',
+      'CRITICAL: Every panel, card, title decoration, bullet character, and decorative',
+      'element MUST be driven by reading `PPTX_STYLE_CONFIG` fields — NOT by guessing',
+      'from the style name or hardcoding values. This is how different style selections',
+      'produce visually distinct slides.',
+    ].join('\n'));
+
+     const styleBlock = await readDesignStyleBlock(workspace.designStyle);
     if (styleBlock) {
       // When a palette is active, strip hardcoded hex colors from the style spec
       // so the LLM uses only palette colors for the design style's layout/composition.
@@ -554,13 +723,28 @@ async function buildPrompt(
       const spec = hasActivePalette
         ? styleBlock.replace(/#[0-9A-Fa-f]{6}/g, '(use palette)').replace(/@ \d+[–-]\d+% opacity/g, '@ low opacity')
         : styleBlock;
-      parts.push('### Style Spec\n');
+      parts.push('### Style Spec (Layout & Composition Reference)\n');
+      parts.push('Use the layout and composition guidance below for slide arrangement and signature elements.');
+      parts.push('All concrete visual parameters (fills, borders, decorations) come from `PPTX_STYLE_CONFIG` — do NOT extract numeric values from this spec.');
       if (hasActivePalette) {
         parts.push('NOTE: A custom palette is active. Use ONLY the palette/theme colors from the Active Theme Palette section above. The hex values below have been replaced — apply only the layout, composition, and signature element rules from this style spec.');
       }
       parts.push(spec);
     } else {
       parts.push('If the pptx-design-styles skill is available, use it for style details.');
+    }
+
+    // ── Inject CSS+HTML visual reference for this style ──
+    // This gives the LLM the exact visual implementation (gradients, shadows,
+    // shapes, colors) to translate into python-pptx equivalents.
+    const styleHtml = await readDesignStyleHtml(workspace.designStyle);
+    if (styleHtml) {
+      parts.push('### Visual Reference (CSS + HTML)\n');
+      parts.push('Below is the CSS and HTML that renders this style as a preview card.');
+      parts.push('Translate these visual effects (gradients, shadows, shapes, colors, stripes, decorations) into python-pptx equivalents.');
+      parts.push('Map CSS `background`, `linear-gradient`, `box-shadow`, `text-shadow`, `border` to python-pptx fills, gradient stops, shape shadows, and line properties.');
+      parts.push('Use theme palette colors (C dict) instead of the hardcoded hex values in the CSS.\n');
+      parts.push(styleHtml);
     }
     parts.push('');
   }
@@ -622,7 +806,9 @@ async function buildChunkPrompt(
     '- apply_widescreen(prs) → prs',
     '- set_fill_transparency(shape, value)',
     '- apply_gradient_fill(shape, color_stops, angle_degrees=0)',
-    '- PRECOMPUTED_LAYOUT_SPECS, OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_FONT_FAMILY, PPTX_COLOR_TREATMENT, PPTX_TEXT_BOX_STYLE, WORKSPACE_DIR, IMAGES_DIR',
+    '- PRECOMPUTED_LAYOUT_SPECS, OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_THEME_SLOTS, PPTX_THEME_FULL, PPTX_DESIGN_STYLE, PPTX_FONT_FAMILY, PPTX_COLOR_TREATMENT, PPTX_TEXT_BOX_STYLE, WORKSPACE_DIR, IMAGES_DIR',
+    '- PPTX_STYLE_CONFIG: StyleConfig instance — read fields like .panel_fill, .panel_border, .title_accent_bar, .decorative_circle, .color_treatment, .gradient_angle, .bullet_marker, .content_density, .rainbow_stripe_bars, .sparkle_stars, .scan_lines, etc. Use `SC = PPTX_STYLE_CONFIG` at the top of your code, then `SC.field` everywhere. This is MANDATORY — do not hardcode style values.',
+    '- resolve_style_config(design_style, color_treatment, text_box_style) → StyleConfig  [already called for you — use PPTX_STYLE_CONFIG directly]',
     'Do NOT invent helpers such as _txb, _rect, _oval, _shape, or any other shorthand.',
   ].join('\n');
 
@@ -757,8 +943,8 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
       let prompt = await buildPrompt(message, history, workspace, mode);
 
       // Pre-compute content-adaptive layout specs for PPTX generation workflows.
-      // Uses PowerPoint COM AutoFit + kiwisolver constraint solver to produce
-      // pixel-perfect coordinates injected into the Python runner env.
+      // Uses Pillow text measurement + kiwisolver constraint solver to produce
+      // content-aware coordinates injected into the Python runner env.
       let layoutSpecsJson: string | undefined;
       let slideAssetsJson: string | undefined;
       let layoutSpecsPromise: Promise<void> | null = null;
@@ -1016,7 +1202,6 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
             await fs.unlink(outputPath).catch(() => { });
 
             const report = await renderPresentationToFile(theme, title, outputPath, {
-              renderDir: previewRoot,
               iconCollection: workspace.iconCollection,
               layoutSpecsJson,
               designStyle: workspace.designStyle ?? undefined,
@@ -1026,7 +1211,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
 
             return {
               success: true,
-              message: `PPTX re-generated successfully (${report.slideCount} slides). Preview images updated.`,
+              message: `PPTX re-generated successfully (${report.slideCount} slides).`,
               slideCount: report.slideCount,
               warnings: report.warnings,
             };
@@ -1072,7 +1257,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           ? hasCustomFrameworkPrompt
             ? 'IMPORTANT: The user has already chosen a custom business framework. It is shown in the Current Workspace section under Custom framework prompt. Follow those instructions directly and do NOT ask the user to choose a framework again.'
             : 'IMPORTANT: The user has already chosen a business framework — it is shown in the Current Workspace section. Apply it directly. Do NOT ask the user to choose a framework again or list framework options.'
-          : 'When creating a presentation outline, the business framework is defined by the user. If the user has already specified a framework, apply it directly. If not, present the available options using suggest_framework and ask the user to choose before calling set_scenario.';
+          : 'When creating a presentation outline, the business framework is defined by the user. If the user has already specified a framework, apply it directly. If not, present the available options and ask the user to choose before writing the slide scenario to the workspace panel.';
         const pptxSystemMessage = buildManagedSystemPrompt('pptx', {
           workflowDirective,
           workspaceDir: workspaceAbsPath,

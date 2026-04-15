@@ -57,7 +57,7 @@ Requirements:
 - Node.js with `pnpm`
 - `uv` and Python 3.13+
 - credentials for at least one supported model provider
-- Microsoft PowerPoint on Windows (Optional, but recommended) — required for local preview images; layout measurement falls back in order: See [the details](#text-height-measurement)
+- Microsoft PowerPoint on Windows (Optional) — required for local preview images only; layout measurement uses Pillow font metrics. See [the details](#text-height-measurement)
 
 Install dependencies:
 
@@ -168,7 +168,6 @@ pptx-handler.ts
   │     hybrid_layout.py               Orchestrator (CLI entry point)
   │       ├─ layout_blueprint.py       Load declarative zone definitions
   │       ├─ font_text_measure.py      Measure text heights via Pillow font metrics (cross-platform)
-  │       ├─ com_text_measure.py       Measure text heights via PowerPoint COM (Windows only - Optional)
   │       └─ constraint_solver.py      Solve zone positions with kiwisolver
   │             └─ layout_specs.py     Emit LayoutSpec / RectSpec dataclasses
   │       ↓
@@ -185,25 +184,24 @@ pptx-handler.ts
 
 | Module | Role |
 |--------|------|
-| `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point; selects measurement backend (Pillow-first by default, or COM-first via setting) |
+| `hybrid_layout.py` | Orchestrator + JSON serialization + CLI entry point; uses Pillow measurement with heuristic fallback |
 | `layout_blueprint.py` | Declarative zone definitions for 14 layout types |
 | `font_text_measure.py` | Text height measurement via Pillow font metrics (cross-platform, ~90–95% accuracy) |
-| `com_text_measure.py` | Text height measurement via PowerPoint COM (Windows only, highest accuracy, optional) |
 | `constraint_solver.py` | Kiwisolver (Cassowary) constraint solver → `LayoutSpec` |
 | `layout_specs.py` | `LayoutSpec` / `RectSpec` dataclasses and `flow_layout_spec()` cascade helper |
 | `layout_validator.py` | Post-generation validation (overlap, bounds, text overflow) |
 
-Pre-computed specs are injected as `PRECOMPUTED_LAYOUT_SPECS` into the generated code namespace. Requires `kiwisolver`; `pywin32` and PowerPoint are optional — text height measurement using Pillow by default.
+Pre-computed specs are injected as `PRECOMPUTED_LAYOUT_SPECS` into the generated code namespace. Requires `kiwisolver`.
 
 Hybrid layout artifacts are stored in the active workspace under `previews/`:
-- `layout-input.json` — the storyboard-derived `SlideContent[]` payload written immediately when `set_scenario` runs and refreshed again before layout computation
+- `layout-input.json` — the storyboard-derived `SlideContent[]` payload written immediately when the slide scenario is set and refreshed again before layout computation
 - `layout-specs.json` — the computed `LayoutSpec[]` output written by `hybrid_layout.py`
 
 ##### Text height measurement
 
-- **Pillow font-metrics** — cross-platform: simulates word-wrap via TrueType glyph metrics; accurate but not pixel-perfect *(~90–95% accuracy)*
-- **COM** (PowerPoint on Windows) — WYSIWYG: renders a real textbox and reads back the exact shape height *(highest accuracy)*
-- **Auto-size** — last resort: sets `TEXT_TO_FIT_SHAPE` on shapes and lets PowerPoint shrink text at open time; no pre-measured height *(lowest accuracy — text may be visibly scaled down)*
+- **Pillow font-metrics** — cross-platform: simulates word-wrap via TrueType glyph metrics; accurate enough for layout planning *(~90–95% accuracy)*
+- **Heuristic fallback** — uses the shared text-height estimator only if Pillow is unavailable
+- **Auto-size** — post-generation escape hatch: sets `TEXT_TO_FIT_SHAPE` on shapes and lets PowerPoint shrink text at open time when overflow repair still cannot reclaim enough space
 
 ## Persistent Storage
 
@@ -225,11 +223,7 @@ Work can be saved and loaded as `.pptapp` project files (JSON). A project snapsh
 
 ## Preview
 
-The center preview panel renders local slide images from the generated PPTX.
-
-- Rendered preview assets are stored under `previews/` in the configured workspace directory.
-- On Windows, local preview image rendering requires Microsoft PowerPoint and the managed Python environment. Without PowerPoint, the app can still generate decks using the non-COM measurement path, but it cannot render local preview images.
-- `Refresh Preview` reloads preview images that already exist in the workspace.
+The center preview panel renders local slide PNGs generated from the preview PPTX. Use `Load Preview` to read cached images from the workspace, `Rerender` to export fresh images from PowerPoint via COM, and `Open in PowerPoint` to launch the latest preview deck in the desktop app.
 
 ## Agentic Workflows
 

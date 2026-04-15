@@ -3,7 +3,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Download, Palette, ChevronLeft, ChevronRight, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react'
+import { Download, Palette, ChevronLeft, ChevronRight, FolderOpen, MonitorPlay, ExternalLink, ZoomIn, ZoomOut } from 'lucide-react'
 import { useSlidesStore } from '../../stores/slides-store'
 import { usePaletteStore } from '../../stores/palette-store'
 import { useChatStore } from '../../stores/chat-store'
@@ -25,9 +25,11 @@ export function CenterArea() {
   const [selected, setSelected] = useState(0)
   const [previewScale, setPreviewScale] = useState(DEFAULT_PREVIEW_SCALE)
   const [exporting, setExporting] = useState(false)
+  const [openingPptx, setOpeningPptx] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
   const [previewWarning, setPreviewWarning] = useState<string | null>(null)
   const [rendering, setRendering] = useState(false)
+  const [rerendering, setRerendering] = useState(false)
   const [previewImages, setPreviewImages] = useState<string[]>([])
   const [previewCacheToken, setPreviewCacheToken] = useState(0)
 
@@ -80,7 +82,7 @@ export function CenterArea() {
     }
   }, [workspaceDir])
 
-  const refreshPreview = async () => {
+  const loadPreview = async () => {
     if (!workspaceDir) return
     setRendering(true)
     setPreviewWarning(null)
@@ -90,14 +92,36 @@ export function CenterArea() {
       setPreviewImages(result.imagePaths ?? [])
       setPreviewCacheToken((current) => current + 1)
       if ((result.imagePaths ?? []).length === 0) {
-        setPreviewWarning('No generated preview images were found in the workspace previews folder.')
+        setPreviewWarning('No preview images found. Click Rerender to generate them from the PPTX.')
       }
     } else {
       setPreviewImages([])
       setPreviewCacheToken((current) => current + 1)
-      setPreviewWarning('Failed to load preview images from the workspace previews folder.')
+      setPreviewWarning('No preview images found. Click Rerender to generate them from the PPTX.')
     }
     setRendering(false)
+  }
+
+  const rerenderPreview = async () => {
+    if (!workspaceDir) return
+    setRerendering(true)
+    setPreviewWarning(null)
+
+    try {
+      const result = await window.electronAPI.pptx.rerenderPreview()
+      if (result.success) {
+        setPreviewImages(result.imagePaths ?? [])
+        setPreviewCacheToken((current) => current + 1)
+      } else {
+        setPreviewImages([])
+        setPreviewCacheToken((current) => current + 1)
+        setPreviewWarning(result.error ?? 'Preview rendering failed. PowerPoint desktop may be required.')
+      }
+    } catch (err) {
+      setPreviewWarning(err instanceof Error ? err.message : 'Preview rendering failed.')
+    } finally {
+      setRerendering(false)
+    }
   }
 
   const exportPptx = async () => {
@@ -138,6 +162,21 @@ export function CenterArea() {
   const exportThmx = async () => {
     if (!tokens) return
     await window.electronAPI.theme.exportThmx(tokens)
+  }
+
+  const openPreviewPptx = async () => {
+    setOpeningPptx(true)
+    setExportError(null)
+    try {
+      const result = await window.electronAPI.pptx.openPreviewPptx()
+      if (!result.success) {
+        setExportError(result.error ?? 'Failed to open the preview PPTX in PowerPoint.')
+      }
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Failed to open the preview PPTX in PowerPoint.')
+    } finally {
+      setOpeningPptx(false)
+    }
   }
 
   const zoomOutDisabled = previewScale <= MIN_PREVIEW_SCALE
@@ -189,15 +228,38 @@ export function CenterArea() {
             </div>
           )}
           {(work.pptxCode || previewImages.length > 0) && (
-            <button
-              onClick={() => void refreshPreview()}
-              disabled={rendering}
-              className="flex h-8 items-center gap-1.5 border px-3 text-xs font-medium transition-colors disabled:opacity-50"
-              style={{ background: 'var(--surface-hover)', color: 'var(--text-primary)', borderColor: 'var(--panel-border)' }}
-            >
-              <RefreshCw size={12} className={rendering ? 'animate-spin' : ''} />
-              {rendering ? 'Loading…' : 'Refresh Preview'}
-            </button>
+            <>
+              <button
+                onClick={() => void loadPreview()}
+                disabled={rendering || rerendering}
+                className="flex h-8 items-center gap-1.5 border px-3 text-xs font-medium transition-colors disabled:opacity-50"
+                style={{ background: 'var(--surface-hover)', color: 'var(--text-primary)', borderColor: 'var(--panel-border)' }}
+                title="Load existing preview images from the workspace"
+              >
+                <FolderOpen size={12} />
+                {rendering ? 'Loading…' : 'Load Preview'}
+              </button>
+              <button
+                onClick={() => void rerenderPreview()}
+                disabled={rendering || rerendering || openingPptx}
+                className="flex h-8 items-center gap-1.5 border px-3 text-xs font-medium transition-colors disabled:opacity-50"
+                style={{ background: 'var(--surface-hover)', color: 'var(--text-primary)', borderColor: 'var(--panel-border)' }}
+                title="Re-render preview images from the PPTX using PowerPoint"
+              >
+                <MonitorPlay size={12} />
+                {rerendering ? 'Rendering…' : 'Rerender'}
+              </button>
+              <button
+                onClick={() => void openPreviewPptx()}
+                disabled={rendering || rerendering || openingPptx}
+                className="flex h-8 items-center gap-1.5 border px-3 text-xs font-medium transition-colors disabled:opacity-50"
+                style={{ background: 'var(--surface-hover)', color: 'var(--text-primary)', borderColor: 'var(--panel-border)' }}
+                title="Open the preview PPTX in PowerPoint"
+              >
+                <ExternalLink size={12} />
+                {openingPptx ? 'Opening…' : 'Open in PowerPoint'}
+              </button>
+            </>
           )}
           {tokens && (
             <button
@@ -246,11 +308,10 @@ export function CenterArea() {
         className="flex-1 relative flex items-center justify-center overflow-hidden border p-6"
         style={{ background: 'var(--surface)', borderColor: 'var(--panel-border)' }}
       >
-        {rendering ? (
+        {rendering || rerendering ? (
           <div className="text-center" style={{ color: 'var(--text-muted)' }}>
             <div className="text-5xl mb-4 opacity-30">🖼️</div>
-            <p className="text-sm">Loading slide previews…</p>
-            <p className="text-xs mt-1">The app is reading generated preview images from the workspace.</p>
+            <p className="text-sm">{rerendering ? 'Rendering slide previews via PowerPoint…' : 'Loading slide previews…'}</p>
           </div>
         ) : previewImages.length === 0 ? (
           <div className="text-center" style={{ color: 'var(--text-muted)' }}>
@@ -259,13 +320,13 @@ export function CenterArea() {
               <>
                 <p className="text-sm">PPTX is ready.</p>
                 <p className="text-xs mt-1">Preview images load automatically after generation.</p>
-                <p className="text-xs mt-1">Use <strong>Refresh Preview</strong> only if you want to reload from the workspace.</p>
+                <p className="text-xs mt-1">Use <strong>Load Preview</strong> to read cached images, or <strong>Rerender</strong> to create fresh images via PowerPoint.</p>
               </>
             ) : (
               <>
                 <p className="text-sm">Rendered slide previews will appear here.</p>
                 <p className="text-xs mt-1">Create PPTX code first.</p>
-                <p className="text-xs mt-1">Use <strong>Refresh Preview</strong> only to reload preview images that already exist in the workspace.</p>
+                <p className="text-xs mt-1">Use <strong>Load Preview</strong> to read cached images, or <strong>Rerender</strong> to create fresh images via PowerPoint.</p>
               </>
             )}
           </div>

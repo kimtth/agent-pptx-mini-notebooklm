@@ -50,12 +50,22 @@ class StyleConfig:
     """Border line width in points."""
     panel_stripe: bool = False
     """Thin vertical color stripe on the left edge of each panel."""
+    panel_shadow: str = "none"
+    """Panel shadow mode: ``none`` | ``hard`` | ``accent``."""
 
     # ── Decorative shapes ───────────────────────────────────────────
     decorative_circle: bool = False
     """Small hollow circle near the bottom-right corner."""
     decorative_blob: bool = False
     """Organic background blob (reserved for future use)."""
+    background_grid: str = "none"
+    """Background grid mode: ``none`` | ``fine`` | ``perspective``."""
+    frame_outline: str = "none"
+    """Slide frame mode: ``none`` | ``single`` | ``double``."""
+    corner_brackets: bool = False
+    """Add angular corner bracket marks around the primary content zone."""
+    accent_rings: bool = False
+    """Add concentric outline rings as a signature object."""
 
     # ── Color treatment ─────────────────────────────────────────────
     color_treatment: str = "solid"
@@ -80,6 +90,14 @@ class StyleConfig:
     # ── Dark mode ───────────────────────────────────────────────────
     dark_mode: bool = False
     """Hint for fill colors: swap BG↔TEXT roles when True."""
+
+    # ── Signature decorative elements ──────────────────────────────
+    rainbow_stripe_bars: bool = False
+    """Full-spectrum rainbow bars at top and bottom of the slide."""
+    sparkle_stars: bool = False
+    """Small star/sparkle motifs in corners (✦ ★)."""
+    scan_lines: bool = False
+    """Thin horizontal scan-line overlay across the slide."""
 
 
 # ── Preset catalogue ────────────────────────────────────────────────
@@ -111,6 +129,7 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill_opacity=1.0,
         panel_border=True,
         panel_border_weight_pt=3.0,
+        panel_shadow="hard",
         panel_stripe=False,
         title_font_scale=1.15,
         bullet_marker="\u25CF",  # ●
@@ -150,6 +169,7 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill_opacity=0.95,
         panel_border=True,
         panel_border_weight_pt=0.6,
+        panel_shadow="accent",
         text_box_style="with-icons",
         bullet_marker="\u2022",  # •
         content_density="spacious",
@@ -172,6 +192,8 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_border_weight_pt=0.6,
         key_message_band=True,
         key_message_band_opacity=0.15,
+        decorative_blob=True,
+        accent_rings=True,
         color_treatment="gradient",
         gradient_angle=60,
         bullet_marker="\u25B8",  # ▸
@@ -182,13 +204,18 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill_opacity=0.90,
         panel_border=True,
         panel_border_weight_pt=2.5,
+        panel_shadow="accent",
+        accent_rings=True,
         title_font_scale=1.1,
         bullet_marker="\u2605",  # ★
         text_box_style="with-icons",
         dark_mode=True,
+        rainbow_stripe_bars=True,
+        sparkle_stars=True,
     ),
     "nordic minimalism": StyleConfig(
-        panel_fill="transparent",
+        panel_fill="tinted",
+        panel_fill_opacity=0.90,
         panel_border=False,
         bullet_marker="\u2022",  # •
         content_density="spacious",
@@ -198,6 +225,7 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill="transparent",
         panel_border=False,
         title_font_scale=1.25,
+        title_accent_bar=True,
         title_accent_rule=True,
         bullet_marker="\u2014",  # —
         text_box_style="plain",
@@ -212,9 +240,13 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         dark_mode=True,
     ),
     "monochrome minimal": StyleConfig(
-        panel_fill="transparent",
+        panel_fill="tinted",
+        panel_fill_opacity=0.92,
         panel_border=True,
         panel_border_weight_pt=0.5,
+        frame_outline="single",
+        accent_rings=True,
+        title_accent_rule=True,
         bullet_marker="\u2014",  # —
         text_box_style="plain",
         content_density="spacious",
@@ -223,13 +255,16 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill="transparent",
         panel_border=True,
         panel_border_weight_pt=1.5,
+        background_grid="fine",
+        corner_brackets=True,
         title_accent_bar=True,
         bullet_marker="\u25B8",  # ▸
         text_box_style="with-icons",
         dark_mode=True,
     ),
     "editorial magazine": StyleConfig(
-        panel_fill="transparent",
+        panel_fill="tinted",
+        panel_fill_opacity=0.88,
         panel_border=False,
         title_accent_rule=True,
         title_font_scale=1.1,
@@ -238,10 +273,11 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         content_density="spacious",
     ),
     "pastel soft ui": StyleConfig(
-        panel_fill="tinted",
+        panel_fill="frosted",
         panel_fill_opacity=0.88,
         panel_border=True,
         panel_border_weight_pt=0.5,
+        panel_shadow="accent",
         bullet_marker="\u2022",  # •
         text_box_style="with-icons",
     ),
@@ -250,6 +286,8 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill_opacity=0.72,
         panel_border=True,
         panel_border_weight_pt=1.2,
+        decorative_blob=True,
+        background_grid="perspective",
         color_treatment="gradient",
         gradient_angle=90,
         key_message_band=True,
@@ -261,6 +299,7 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill="tinted",
         panel_fill_opacity=0.85,
         panel_border=False,
+        decorative_blob=True,
         bullet_marker="\u2023",  # ‣
         text_box_style="plain",
         content_density="spacious",
@@ -270,6 +309,7 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill_opacity=0.92,
         panel_border=True,
         panel_border_weight_pt=1.0,
+        panel_shadow="hard",
         text_box_style="with-icons",
         bullet_marker="\u25CF",  # ●
         dark_mode=True,
@@ -279,15 +319,19 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill_opacity=0.75,
         panel_border=True,
         panel_border_weight_pt=1.0,
+        background_grid="perspective",
+        accent_rings=True,
         color_treatment="gradient",
         gradient_angle=180,
         bullet_marker="\u2605",  # ★
         dark_mode=True,
+        scan_lines=True,
     ),
     "art deco luxe": StyleConfig(
         panel_fill="transparent",
         panel_border=True,
         panel_border_weight_pt=2.0,
+        frame_outline="double",
         title_accent_rule=True,
         title_font_scale=1.1,
         bullet_marker="\u25C6",  # ◆
@@ -295,7 +339,8 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         content_density="spacious",
     ),
     "brutalist newspaper": StyleConfig(
-        panel_fill="transparent",
+        panel_fill="solid",
+        panel_fill_opacity=0.95,
         panel_border=True,
         panel_border_weight_pt=2.5,
         title_accent_rule=True,
@@ -329,6 +374,7 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_border=True,
         panel_border_weight_pt=2.0,
         title_font_scale=1.1,
+        decorative_circle=True,
         text_box_style="with-icons",
         bullet_marker="\u25CF",  # ●
     ),
@@ -344,6 +390,9 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill="transparent",
         panel_border=True,
         panel_border_weight_pt=1.0,
+        background_grid="fine",
+        frame_outline="single",
+        corner_brackets=True,
         title_accent_bar=True,
         title_accent_rule=True,
         bullet_marker="\u25B8",  # ▸
@@ -366,6 +415,8 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_border_weight_pt=0.8,
         key_message_band=True,
         key_message_band_opacity=0.12,
+        accent_rings=True,
+        background_grid="fine",
         color_treatment="gradient",
         gradient_angle=45,
         bullet_marker="\u25B8",  # ▸
@@ -373,7 +424,7 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         dark_mode=True,
     ),
     "risograph print": StyleConfig(
-        panel_fill="tinted",
+        panel_fill="solid",
         panel_fill_opacity=0.85,
         panel_border=False,
         title_accent_rule=True,
@@ -382,8 +433,10 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
     ),
     # ── Template Motifs ──
     "editorial split hero": StyleConfig(
-        panel_fill="transparent",
-        panel_border=False,
+        panel_fill="tinted",
+        panel_fill_opacity=0.85,
+        panel_border=True,
+        panel_border_weight_pt=0.8,
         title_accent_rule=True,
         title_font_scale=1.15,
         bullet_marker="\u2014",  # —
@@ -403,6 +456,7 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_fill_opacity=0.90,
         panel_border=True,
         panel_border_weight_pt=0.5,
+        panel_stripe=True,
         bullet_marker="\u2022",  # •
         text_box_style="plain",
     ),
@@ -412,12 +466,15 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
         panel_border=True,
         panel_border_weight_pt=0.8,
         panel_stripe=True,
+        background_grid="fine",
         bullet_marker="\u25B8",  # ▸
         text_box_style="with-icons",
     ),
     "accent monochrome focus": StyleConfig(
-        panel_fill="transparent",
+        panel_fill="frosted",
+        panel_fill_opacity=0.80,
         panel_border=False,
+        frame_outline="single",
         title_accent_bar=True,
         title_centered=True,
         bullet_marker="\u2014",  # —
@@ -468,10 +525,17 @@ def resolve_style_config(
     key = design_style.strip().lower() if design_style else ""
     base = STYLE_PRESETS.get(key, StyleConfig())
 
+    # Only apply UI overrides when the user has NOT selected a named design
+    # style.  Named presets already specify their own color_treatment and
+    # text_box_style; overriding them with the UI's generic default ("mixed")
+    # would flatten every preset to the same look.
+    has_named_preset = key in STYLE_PRESETS and key not in ("", "blank white", "blank dark", "custom template")
+
     overrides: dict[str, object] = {}
-    if color_treatment and color_treatment in ("solid", "gradient", "mixed"):
-        overrides["color_treatment"] = color_treatment
-    if text_box_style and text_box_style in ("plain", "with-icons", "mixed"):
-        overrides["text_box_style"] = text_box_style
+    if not has_named_preset:
+        if color_treatment and color_treatment in ("solid", "gradient", "mixed"):
+            overrides["color_treatment"] = color_treatment
+        if text_box_style and text_box_style in ("plain", "with-icons", "mixed"):
+            overrides["text_box_style"] = text_box_style
 
     return replace(base, **overrides) if overrides else base

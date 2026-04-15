@@ -1,8 +1,7 @@
 """Cross-platform font-metrics text measurement.
 
 Uses Pillow (PIL) to measure text heights via actual TrueType font metrics
-and glyph-level word wrapping.  Drop-in replacement for the PowerPoint COM
-measurement in ``com_text_measure.py``.
+and glyph-level word wrapping.
 
 Works on Windows, macOS, and Linux — no display server or PowerPoint required.
 Only needs Pillow with the FreeType backend (standard in pip-installed Pillow).
@@ -19,7 +18,7 @@ import re
 
 
 # ---------------------------------------------------------------------------
-# Shared data type (also imported by com_text_measure.py & hybrid_layout.py)
+# Shared data type for the layout engine and validator.
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -353,7 +352,6 @@ def measure_text_heights(
 ) -> list[float]:
     """Measure text heights using Pillow font metrics.
 
-    Drop-in replacement for ``com_text_measure.measure_text_heights``.
     Returns a list of heights (inches) in the same order as *requests*.
     """
     if not requests:

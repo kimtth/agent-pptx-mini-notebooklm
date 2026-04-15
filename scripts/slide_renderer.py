@@ -150,6 +150,13 @@ def _mix_hex(a_hex: str, b_hex: str, weight_b: float) -> str:
     return "".join(comps)
 
 
+def _luminance(hex_color: str) -> float:
+    """Return relative luminance (0..1) from a hex color string."""
+    h = (hex_color or "000000").strip().lstrip("#")[:6].ljust(6, "0")
+    r, g, b = int(h[0:2], 16) / 255.0, int(h[2:4], 16) / 255.0, int(h[4:6], 16) / 255.0
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
 def _resolve_slide_colors(
     ctx: RenderContext,
     base_colors: dict[str, str],
@@ -157,33 +164,53 @@ def _resolve_slide_colors(
     accent_b: str,
     slide_index: int,
 ) -> dict[str, str]:
-    """Derive per-slide theme roles so styles use more than one palette slot."""
+    """Derive per-slide colour roles from the user's palette + the active style.
+
+    The palette BG is used as-is for the slide background — no accent mixing.
+    Panels, borders, and secondary tones are derived from palette slots with
+    accent colouring so they complement the style.
+    """
     style = ctx.style
     colors = dict(base_colors)
 
+    # Background: use the palette colour directly
+    bg_hex = colors["BG"]
+
     if style.dark_mode:
-        bg_seed = accent_a if style.color_treatment == "gradient" else accent_b
-        bg_hex = _mix_hex(colors["DARK"], bg_seed, 0.16 if style.color_treatment != "solid" else 0.10)
-        panel_base = _mix_hex(colors["DARK2"], accent_a, 0.24)
-        panel_alt = _mix_hex(colors["DARK2"], accent_b, 0.20)
-        border_hex = _mix_hex(colors["LIGHT2"], accent_a, 0.35)
-        text_hex = ctx.ensure_contrast(colors["LIGHT"], bg_hex)
+        panel_base = _mix_hex(colors["DARK2"], accent_a, 0.28)
+        panel_alt = _mix_hex(colors["DARK2"], accent_b, 0.24)
+        border_hex = _mix_hex(colors["LIGHT2"], accent_a, 0.40)
+        text_hex = ctx.ensure_contrast(colors["TEXT"], bg_hex)
         secondary_hex = ctx.ensure_contrast(colors["LIGHT2"], bg_hex)
     else:
-        bg_seed = accent_b if style.color_treatment == "gradient" else accent_a
-        bg_hex = _mix_hex(colors["BG"], bg_seed, 0.05 if style.panel_fill == "transparent" else 0.08)
-        panel_base = _mix_hex(colors["LIGHT"], accent_a, 0.22)
-        panel_alt = _mix_hex(colors["LIGHT"], accent_b, 0.18)
-        border_hex = _mix_hex(colors["BORDER"], accent_a, 0.30)
+        panel_base = _mix_hex(colors["LIGHT"], accent_a, 0.28)
+        panel_alt = _mix_hex(colors["LIGHT"], accent_b, 0.22)
+        border_hex = _mix_hex(colors["BORDER"], accent_a, 0.35)
         text_hex = ctx.ensure_contrast(colors["TEXT"], bg_hex)
         secondary_hex = ctx.ensure_contrast(colors["TEXT"], panel_base)
 
+    # Style-specific panel fill overrides
     if style.panel_fill == "solid":
         panel_base = accent_a
         panel_alt = accent_b if slide_index % 2 == 0 else _mix_hex(accent_b, colors["LIGHT"], 0.20)
+    elif style.panel_fill == "frosted":
+        if style.dark_mode:
+            panel_base = _mix_hex(colors["DARK2"], accent_a, 0.32)
+            panel_alt = _mix_hex(colors["DARK2"], accent_b, 0.28)
+        else:
+            panel_base = _mix_hex(bg_hex, accent_a, 0.25)
+            panel_alt = _mix_hex(bg_hex, accent_b, 0.20)
+    elif style.panel_fill == "tinted":
+        # Tinted panels should be clearly coloured — visible accent wash
+        if style.dark_mode:
+            panel_base = _mix_hex(colors["DARK2"], accent_a, 0.40)
+            panel_alt = _mix_hex(colors["DARK2"], accent_b, 0.35)
+        else:
+            panel_base = _mix_hex(bg_hex, accent_a, 0.38)
+            panel_alt = _mix_hex(bg_hex, accent_b, 0.30)
     elif style.panel_fill == "transparent":
-        panel_base = _mix_hex(bg_hex, accent_a, 0.12)
-        panel_alt = _mix_hex(bg_hex, accent_b, 0.10)
+        panel_base = _mix_hex(bg_hex, accent_a, 0.15)
+        panel_alt = _mix_hex(bg_hex, accent_b, 0.12)
 
     colors["BG"] = bg_hex
     colors["TEXT"] = text_hex
@@ -230,10 +257,18 @@ def _add_textbox(ctx: RenderContext, slide, rect: RectSpec, text: str,
 
     p = tf.paragraphs[0]
     p.alignment = align
-    if line_spacing:
-        p.line_spacing = line_spacing
+    density = ctx.style.content_density
+    if density == "compact":
+        spacing_mult = 0.94
+    elif density == "spacious":
+        spacing_mult = 1.08
     else:
-        p.line_spacing = 1.12 if font_size_pt >= 24 else 1.32
+        spacing_mult = 1.0
+    if line_spacing:
+        p.line_spacing = line_spacing * spacing_mult
+    else:
+        base_spacing = 1.12 if font_size_pt >= 24 else 1.32
+        p.line_spacing = base_spacing * spacing_mult
 
     _write_run(p, text, font_size_pt, color_hex, bold, ctx.font_family)
     return tb
@@ -245,6 +280,24 @@ def _add_panel(ctx: RenderContext, slide, rect: RectSpec,
     """Add a panel shape with fill controlled by StyleConfig."""
     style = ctx.style
     colors = _build_colors(ctx.theme)
+    if style.panel_shadow != "none" and style.panel_fill != "transparent":
+        shadow_dx = 0.10 if style.panel_shadow == "hard" else 0.06
+        shadow_dy = 0.11 if style.panel_shadow == "hard" else 0.08
+        shadow = ctx.add_design_shape(
+            slide.shapes,
+            MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+            Inches(rect.x + shadow_dx), Inches(rect.y + shadow_dy),
+            Inches(rect.w), Inches(rect.h),
+            name=f"{name}_shadow" if name else "panel_shadow",
+        )
+        if style.panel_shadow == "hard":
+            shadow.fill.solid()
+            shadow.fill.fore_color.rgb = ctx.rgb_color(colors.get("DARK", "111111"))
+        else:
+            shadow.fill.solid()
+            shadow.fill.fore_color.rgb = ctx.rgb_color(accent_b_hex or colors.get("ACCENT2", fill_hex))
+            ctx.set_fill_transparency(shadow, 0.32 if style.dark_mode else 0.22)
+        shadow.line.fill.background()
     shape = ctx.add_managed_shape(
         slide.shapes,
         MSO_AUTO_SHAPE_TYPE.RECTANGLE,
@@ -256,8 +309,10 @@ def _add_panel(ctx: RenderContext, slide, rect: RectSpec,
     if style.panel_fill == "transparent":
         shape.fill.background()
     elif style.panel_fill == "frosted":
+        # Frosted glass: semi-transparent accent-tinted fill
+        frost_color = _mix_hex(fill_hex, colors.get("LIGHT", "FFFFFF"), 0.55) if not style.dark_mode else _mix_hex(fill_hex, colors.get("DARK", "1B1B1B"), 0.45)
         shape.fill.solid()
-        shape.fill.fore_color.rgb = ctx.rgb_color(colors["BG"])
+        shape.fill.fore_color.rgb = ctx.rgb_color(frost_color)
         ctx.set_fill_transparency(shape, 1.0 - style.panel_fill_opacity)
     elif style.panel_fill == "tinted":
         shape.fill.solid()
@@ -307,17 +362,155 @@ def _add_panel_stripe(ctx: RenderContext, slide, rect: RectSpec,
 # ── Design language (decorative accents) ─────────────────────────────
 
 def _add_design_language(ctx: RenderContext, slide, spec: LayoutSpec,
-                         accent_a: str, accent_b: str) -> None:
+                         accent_a: str, accent_b: str,
+                         colors: dict[str, str]) -> None:
     """Add optional decorative elements controlled by StyleConfig."""
     style = ctx.style
     ref = spec.title_rect or spec.content_rect or spec.key_message_rect
     if ref is None:
         return
 
-    # Vertical accent bar
+    if style.background_grid != "none":
+        grid_color = _mix_hex(accent_a, colors["BG"], 0.25 if style.dark_mode else 0.45)
+        if style.background_grid == "fine":
+            x = 0.0
+            while x <= SLIDE_WIDTH_IN:
+                line = ctx.add_design_shape(
+                    slide.shapes,
+                    MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                    Inches(x), Inches(0),
+                    Inches(0.01), Inches(SLIDE_HEIGHT_IN),
+                    name="bg_grid_v",
+                )
+                line.fill.solid()
+                line.fill.fore_color.rgb = ctx.rgb_color(grid_color)
+                ctx.set_fill_transparency(line, 0.86 if style.dark_mode else 0.90)
+                line.line.fill.background()
+                x += 0.72
+            y = 0.0
+            while y <= SLIDE_HEIGHT_IN:
+                line = ctx.add_design_shape(
+                    slide.shapes,
+                    MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                    Inches(0), Inches(y),
+                    Inches(SLIDE_WIDTH_IN), Inches(0.01),
+                    name="bg_grid_h",
+                )
+                line.fill.solid()
+                line.fill.fore_color.rgb = ctx.rgb_color(grid_color)
+                ctx.set_fill_transparency(line, 0.88 if style.dark_mode else 0.92)
+                line.line.fill.background()
+                y += 0.56
+        elif style.background_grid == "perspective":
+            horizon_y = SLIDE_HEIGHT_IN * 0.66
+            rail_y = horizon_y
+            rail_gap = 0.12
+            while rail_y < SLIDE_HEIGHT_IN:
+                rail = ctx.add_design_shape(
+                    slide.shapes,
+                    MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                    Inches(0), Inches(rail_y),
+                    Inches(SLIDE_WIDTH_IN), Inches(0.014),
+                    name="perspective_rail",
+                )
+                rail.fill.solid()
+                rail.fill.fore_color.rgb = ctx.rgb_color(grid_color)
+                ctx.set_fill_transparency(rail, 0.70 if style.dark_mode else 0.82)
+                rail.line.fill.background()
+                rail_y += rail_gap
+                rail_gap *= 1.23
+            vanish_x = SLIDE_WIDTH_IN / 2
+            bottom_y = SLIDE_HEIGHT_IN
+            for idx, base_x in enumerate([0.35, 1.4, 2.7, 4.2, 5.8, 7.2, 8.8, 10.3, 11.6, 12.5]):
+                dx = base_x - vanish_x
+                line_len = max(bottom_y - horizon_y, 1.6)
+                line = ctx.add_design_shape(
+                    slide.shapes,
+                    MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                    Inches(base_x), Inches(horizon_y),
+                    Inches(0.014), Inches(line_len),
+                    name=f"perspective_ray_{idx}",
+                )
+                line.rotation = max(min(-dx * 7.5, 42), -42)
+                line.fill.solid()
+                line.fill.fore_color.rgb = ctx.rgb_color(grid_color)
+                ctx.set_fill_transparency(line, 0.72 if style.dark_mode else 0.84)
+                line.line.fill.background()
+
+    if style.frame_outline != "none":
+        frame_color = _mix_hex(accent_a, accent_b, 0.30)
+        frame_specs = [(0.22, 0.22, SLIDE_WIDTH_IN - 0.44, SLIDE_HEIGHT_IN - 0.44, 1.2)]
+        if style.frame_outline == "double":
+            frame_specs.append((0.38, 0.38, SLIDE_WIDTH_IN - 0.76, SLIDE_HEIGHT_IN - 0.76, 0.8))
+        for idx, (x, y, w, h, width_pt) in enumerate(frame_specs):
+            frame = ctx.add_design_shape(
+                slide.shapes,
+                MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                Inches(x), Inches(y),
+                Inches(w), Inches(h),
+                name=f"frame_outline_{idx}",
+            )
+            frame.fill.background()
+            frame.line.fill.solid()
+            frame.line.color.rgb = ctx.rgb_color(frame_color)
+            frame.line.width = Pt(width_pt)
+
+    if style.corner_brackets:
+        bracket_color = _mix_hex(accent_a, accent_b, 0.45)
+        pad = 0.12
+        arm = max(min(ref.w * 0.10, 0.42), 0.24)
+        thick = 0.03
+        corners = [
+            (ref.x - pad, ref.y - pad, 1, 1),
+            (ref.x + ref.w + pad, ref.y - pad, -1, 1),
+            (ref.x - pad, ref.y + ref.h + pad, 1, -1),
+            (ref.x + ref.w + pad, ref.y + ref.h + pad, -1, -1),
+        ]
+        for idx, (cx, cy, sx, sy) in enumerate(corners):
+            h_bar = ctx.add_design_shape(
+                slide.shapes,
+                MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                Inches(cx if sx > 0 else cx - arm), Inches(cy if sy > 0 else cy - thick),
+                Inches(arm), Inches(thick),
+                name=f"corner_h_{idx}",
+            )
+            v_bar = ctx.add_design_shape(
+                slide.shapes,
+                MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                Inches(cx if sx > 0 else cx - thick), Inches(cy if sy > 0 else cy - arm),
+                Inches(thick), Inches(arm),
+                name=f"corner_v_{idx}",
+            )
+            for part in (h_bar, v_bar):
+                part.fill.solid()
+                part.fill.fore_color.rgb = ctx.rgb_color(bracket_color)
+                part.line.fill.background()
+
+    if style.accent_rings:
+        anchor = spec.icon_rect or spec.hero_rect or spec.sidebar_rect or ref
+        ring_color = _mix_hex(accent_b, accent_a, 0.45)
+        base_size = max(min(anchor.h * 0.28, 1.2), 0.62)
+        ring_x = min(anchor.x + anchor.w - base_size * 0.50, SLIDE_WIDTH_IN - base_size - 0.14)
+        ring_y = max(anchor.y - base_size * 0.08, 0.14)
+        for idx, scale in enumerate((1.0, 0.72, 0.44)):
+            size = base_size * scale
+            ring = ctx.add_design_shape(
+                slide.shapes,
+                MSO_AUTO_SHAPE_TYPE.OVAL,
+                Inches(ring_x + (base_size - size) / 2),
+                Inches(ring_y + (base_size - size) / 2),
+                Inches(size), Inches(size),
+                name=f"accent_ring_{idx}",
+            )
+            ring.fill.background()
+            ring.line.fill.solid()
+            ring.line.color.rgb = ctx.rgb_color(ring_color)
+            ring.line.width = Pt(1.6 if idx == 0 else 1.0)
+
+    # Vertical accent bar — thick enough to be a significant visual feature
     if style.title_accent_bar:
         bottom_limit = (spec.notes_rect.y - 0.08) if spec.notes_rect else min(ref.y + ref.h + 4.8, SLIDE_HEIGHT_IN - 0.12)
-        bar_w = max(min(ref.x * 0.12, 0.10), 0.05)
+        bar_w = max(min(ref.x * 0.28, 0.18), 0.10)
         bar_gap = max(min(ref.x * 0.10, 0.08), 0.04)
         bar_x = max(ref.x - bar_w - bar_gap, 0.02)
         bar_y = max(ref.y - min(ref.h * 0.15, 0.08), 0.0)
@@ -352,16 +545,17 @@ def _add_design_language(ctx: RenderContext, slide, spec: LayoutSpec,
         else:
             blob.fill.solid()
             blob.fill.fore_color.rgb = ctx.rgb_color(_mix_hex(accent_a, "FFFFFF", 0.45))
-        ctx.set_fill_transparency(blob, 0.78 if style.dark_mode else 0.88)
+        ctx.set_fill_transparency(blob, 0.65 if style.dark_mode else 0.78)
         blob.line.fill.background()
 
-    # Horizontal accent rule
+    # Horizontal accent rule — bold, extends full width of content area
     if style.title_accent_rule and spec.accent_rect is not None:
+        rule_h = max(spec.accent_rect.h, 0.06)  # at least 0.06" thick
         rule = ctx.add_design_shape(
             slide.shapes,
             MSO_AUTO_SHAPE_TYPE.RECTANGLE,
             Inches(spec.accent_rect.x), Inches(spec.accent_rect.y),
-            Inches(spec.accent_rect.w), Inches(spec.accent_rect.h),
+            Inches(spec.accent_rect.w), Inches(rule_h),
             name="accent_rule",
         )
         if style.color_treatment == "gradient":
@@ -372,10 +566,10 @@ def _add_design_language(ctx: RenderContext, slide, spec: LayoutSpec,
             rule.fill.fore_color.rgb = ctx.rgb_color(accent_a)
         rule.line.fill.background()
 
-    # Decorative circle
+    # Decorative circle — large enough to be a visible design element
     if style.decorative_circle:
         anchor = spec.content_rect or ref
-        circle_size = max(min(anchor.h * 0.16, 0.62), 0.34)
+        circle_size = max(min(anchor.h * 0.28, 1.0), 0.55)
         circle_x = min(anchor.x + anchor.w - circle_size * 0.55, SLIDE_WIDTH_IN - circle_size - 0.06)
         circle_y = (
             min(spec.notes_rect.y - circle_size - 0.10, SLIDE_HEIGHT_IN - circle_size - 0.06)
@@ -392,7 +586,70 @@ def _add_design_language(ctx: RenderContext, slide, spec: LayoutSpec,
         circle.fill.background()
         circle.line.fill.solid()
         circle.line.color.rgb = ctx.rgb_color(accent_b)
-        circle.line.width = Pt(1.2)
+        circle.line.width = Pt(2.0)
+
+    # Rainbow spectrum stripe bars — full-width bands at top and bottom
+    if style.rainbow_stripe_bars:
+        accent_keys = ["ACCENT1", "ACCENT2", "ACCENT3", "ACCENT4", "ACCENT5", "ACCENT6"]
+        stripe_count = len(accent_keys)
+        bar_height = 0.08  # inches per stripe
+        segment_w = SLIDE_WIDTH_IN / stripe_count
+        for pos, y_base in [("top", 0.0), ("bottom", SLIDE_HEIGHT_IN - bar_height)]:
+            for i, key in enumerate(accent_keys):
+                stripe = ctx.add_design_shape(
+                    slide.shapes,
+                    MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                    Inches(i * segment_w), Inches(y_base),
+                    Inches(segment_w + 0.01), Inches(bar_height),
+                    name=f"rainbow_{pos}_{i}",
+                )
+                stripe.fill.solid()
+                stripe.fill.fore_color.rgb = ctx.rgb_color(colors.get(key, accent_a))
+                stripe.line.fill.background()
+
+    # Sparkle stars — small star shapes in corners
+    if style.sparkle_stars:
+        star_positions = [
+            (0.20, 0.18, 0.28),   # top-left
+            (SLIDE_WIDTH_IN - 0.52, 0.14, 0.32),  # top-right
+            (0.30, SLIDE_HEIGHT_IN - 0.55, 0.24),  # bottom-left
+            (SLIDE_WIDTH_IN - 0.44, SLIDE_HEIGHT_IN - 0.48, 0.26),  # bottom-right
+        ]
+        star_colors = [accent_a, accent_b,
+                       colors.get("ACCENT3", accent_a),
+                       colors.get("ACCENT4", accent_b)]
+        for i, (sx, sy, sz) in enumerate(star_positions):
+            star = ctx.add_design_shape(
+                slide.shapes,
+                MSO_AUTO_SHAPE_TYPE.STAR_4_POINT,
+                Inches(sx), Inches(sy),
+                Inches(sz), Inches(sz),
+                name=f"sparkle_star_{i}",
+            )
+            star.fill.solid()
+            star.fill.fore_color.rgb = ctx.rgb_color(star_colors[i % len(star_colors)])
+            ctx.set_fill_transparency(star, 0.35)
+            star.line.fill.background()
+
+    # Scan-line overlay — thin horizontal lines across the slide
+    if style.scan_lines:
+        scan_color = colors.get("WHITE", "FFFFFF")
+        y = 0.0
+        idx = 0
+        while y < SLIDE_HEIGHT_IN:
+            line = ctx.add_design_shape(
+                slide.shapes,
+                MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                Inches(0), Inches(y),
+                Inches(SLIDE_WIDTH_IN), Inches(0.008),
+                name=f"scan_line_{idx}",
+            )
+            line.fill.solid()
+            line.fill.fore_color.rgb = ctx.rgb_color(scan_color)
+            ctx.set_fill_transparency(line, 0.92)
+            line.line.fill.background()
+            y += 0.16
+            idx += 1
 
 
 def _add_key_message_band(ctx: RenderContext, slide, spec: LayoutSpec,
@@ -444,6 +701,38 @@ def _adjust_body_font(width_in: float, height_in: float, text: str,
     return base_pt
 
 
+def _density_gap_multiplier(density: str) -> float:
+    if density == "compact":
+        return 0.82
+    if density == "spacious":
+        return 1.24
+    return 1.0
+
+
+def _density_line_spacing_multiplier(density: str) -> float:
+    if density == "compact":
+        return 0.94
+    if density == "spacious":
+        return 1.08
+    return 1.0
+
+
+def _density_padding_adjustment(density: str) -> float:
+    if density == "compact":
+        return -0.03
+    if density == "spacious":
+        return 0.04
+    return 0.0
+
+
+def _density_font_adjustment(density: str) -> float:
+    if density == "compact":
+        return -0.6
+    if density == "spacious":
+        return 0.5
+    return 0.0
+
+
 # ── Panel text writers ───────────────────────────────────────────────
 
 def _write_panel_text(ctx: RenderContext, shape, title_text: str, body_text: str,
@@ -455,26 +744,31 @@ def _write_panel_text(ctx: RenderContext, shape, title_text: str, body_text: str
     tf.word_wrap = True
     tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
     tf.vertical_anchor = MSO_ANCHOR.TOP
-    tf.margin_left = Inches(0.16 + left_reserve)
-    tf.margin_right = Inches(0.14)
-    tf.margin_top = Inches(0.12 + top_reserve)
-    tf.margin_bottom = Inches(0.10)
+    density_name = ctx.style.content_density
+    pad = _density_padding_adjustment(density_name)
+    spacing_mult = _density_line_spacing_multiplier(density_name)
+    title_pt = max(12, title_pt + _density_font_adjustment(density_name))
+    body_pt = max(11, body_pt + _density_font_adjustment(density_name))
+    tf.margin_left = Inches(max(0.10, 0.16 + left_reserve + pad))
+    tf.margin_right = Inches(max(0.08, 0.14 + pad))
+    tf.margin_top = Inches(max(0.08, 0.12 + top_reserve + pad))
+    tf.margin_bottom = Inches(max(0.06, 0.10 + pad))
 
     usable_w = max(shape.width / EMU_PER_INCH - (0.30 + left_reserve), 0.5)
     usable_h = max(shape.height / EMU_PER_INCH - (0.22 + top_reserve), 0.45)
     title_need = estimate_text_height_in(title_text, usable_w, title_pt, line_height=1.10) if title_text else 0.0
     body_need = estimate_text_height_in(body_text, usable_w, body_pt, line_height=1.16) if body_text else 0.0
-    density = (title_need + body_need + (0.06 if title_text and body_text else 0.0)) / usable_h
+    density_ratio = (title_need + body_need + (0.06 if title_text and body_text else 0.0)) / usable_h
 
-    line_spacing = 1.22
-    if density > 1.05:
+    line_spacing = 1.22 * spacing_mult
+    if density_ratio > 1.05:
         title_pt = max(12, title_pt - 1.6)
         body_pt = max(11, body_pt - 1.2)
-        line_spacing = 1.16
-    elif density > 0.85:
+        line_spacing = 1.16 * spacing_mult
+    elif density_ratio > 0.85:
         title_pt = max(12, title_pt - 0.8)
         body_pt = max(11, body_pt - 0.5)
-        line_spacing = 1.18
+        line_spacing = 1.18 * spacing_mult
 
     # Effective background for contrast check depends on panel fill
     bg_for_contrast = fill_hex if ctx.style.panel_fill not in ("transparent",) else colors["BG"]
@@ -502,10 +796,15 @@ def _write_bullets_panel(ctx: RenderContext, shape, heading: str, items: list[st
     tf.word_wrap = True
     tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
     tf.vertical_anchor = MSO_ANCHOR.TOP
-    tf.margin_left = Inches(0.16)
-    tf.margin_right = Inches(0.14)
-    tf.margin_top = Inches(0.12 + top_reserve)
-    tf.margin_bottom = Inches(0.10)
+    density_name = ctx.style.content_density
+    pad = _density_padding_adjustment(density_name)
+    spacing_mult = _density_line_spacing_multiplier(density_name)
+    heading_pt = max(12, heading_pt + _density_font_adjustment(density_name))
+    bullet_pt = max(11, bullet_pt + _density_font_adjustment(density_name))
+    tf.margin_left = Inches(max(0.10, 0.16 + pad))
+    tf.margin_right = Inches(max(0.08, 0.14 + pad))
+    tf.margin_top = Inches(max(0.08, 0.12 + top_reserve + pad))
+    tf.margin_bottom = Inches(max(0.06, 0.10 + pad))
 
     usable_w = max(shape.width / EMU_PER_INCH - 0.30, 0.5)
     usable_h = max(shape.height / EMU_PER_INCH - (0.22 + top_reserve), 0.5)
@@ -514,16 +813,16 @@ def _write_bullets_panel(ctx: RenderContext, shape, heading: str, items: list[st
         estimate_text_height_in(item, usable_w - 0.18, bullet_pt, line_height=1.16)
         for item in items
     )
-    density = total_need / usable_h
-    line_spacing = 1.20
-    if density > 1.05:
+    density_ratio = total_need / usable_h
+    line_spacing = 1.20 * spacing_mult
+    if density_ratio > 1.05:
         heading_pt = max(12, heading_pt - 1.4)
         bullet_pt = max(11, bullet_pt - 1.2)
-        line_spacing = 1.16
-    elif density > 0.85:
+        line_spacing = 1.16 * spacing_mult
+    elif density_ratio > 0.85:
         heading_pt = max(12, heading_pt - 0.7)
         bullet_pt = max(11, bullet_pt - 0.4)
-        line_spacing = 1.18
+        line_spacing = 1.18 * spacing_mult
 
     bg_for_contrast = fill_hex if ctx.style.panel_fill not in ("transparent",) else colors["BG"]
     title_color = ctx.ensure_contrast(colors["TEXT"], bg_for_contrast)
@@ -557,14 +856,15 @@ def _split_content_for_images(rect: RectSpec) -> tuple[RectSpec, RectSpec]:
     return text_rect, image_rect
 
 
-def _grid_rects(rect: RectSpec, count: int) -> list[RectSpec]:
+def _grid_rects(rect: RectSpec, count: int, density: str = "normal") -> list[RectSpec]:
     if count <= 0:
         return []
     use_two_cols = count >= 5 or (rect.h / max(count, 1)) < 0.82
     cols = 2 if use_two_cols and count > 1 else 1
     rows = int(math.ceil(count / cols))
-    gap_x = min(rect.w * 0.035, 0.18)
-    gap_y = min(rect.h * 0.04, 0.18)
+    gap_mult = _density_gap_multiplier(density)
+    gap_x = min(rect.w * 0.035, 0.18) * gap_mult
+    gap_y = min(rect.h * 0.04, 0.18) * gap_mult
     cell_w = rect.w if cols == 1 else (rect.w - gap_x * (cols - 1)) / cols
     cell_h = (rect.h - gap_y * (rows - 1)) / rows
     rects: list[RectSpec] = []
@@ -916,9 +1216,10 @@ def _add_title_and_key_message(
         spec.title_rect, data["title_text"], title_base_pt,
         scale=ctx.style.title_font_scale,
     )
+    title_align = PP_ALIGN.CENTER if ctx.style.title_centered else PP_ALIGN.LEFT
     _add_textbox(ctx, slide, spec.title_rect, data["title_text"],
                  title_pt, ctx.ensure_contrast(colors["TEXT"], colors["BG"]),
-                 bold=True, name="title")
+                 bold=True, name="title", align=title_align)
 
     key_fill = _add_key_message_band(ctx, slide, spec, accent_a, accent_b, colors)
     if data["key_message_text"] and spec.key_message_rect:
@@ -929,7 +1230,7 @@ def _add_title_and_key_message(
         )
         _add_textbox(ctx, slide, spec.key_message_rect, data["key_message_text"],
                      key_pt, ctx.ensure_contrast(km_color, colors["BG"]),
-                     name="key_message")
+                     name="key_message", align=title_align)
 
 
 # ── Layout-type renderers ────────────────────────────────────────────
@@ -962,7 +1263,8 @@ def _render_title_slide(ctx: RenderContext, slide, spec: LayoutSpec,
         )
         _add_textbox(ctx, slide, spec.key_message_rect, data["key_message_text"],
                      key_pt, ctx.ensure_contrast(km_color, colors["BG"]),
-                     name="key_message")
+                     name="key_message",
+                     align=PP_ALIGN.CENTER if ctx.style.title_centered else PP_ALIGN.LEFT)
 
     # Chip labels
     chip_texts = data.get("chip_labels") or data.get("bullets") or []
@@ -1014,7 +1316,7 @@ def _render_bullets_slide(ctx: RenderContext, slide, spec: LayoutSpec,
 
     _add_title_and_key_message(ctx, slide, spec, data, colors, accent_a, accent_b)
 
-    bullet_rects = _grid_rects(body_rect, len(data["bullets"])) if body_rect else []
+    bullet_rects = _grid_rects(body_rect, len(data["bullets"]), ctx.style.content_density) if body_rect else []
     show_icons = ctx.style.text_box_style in ("with-icons", "mixed")
 
     for idx, bullet in enumerate(data["bullets"][:len(bullet_rects)]):
@@ -1061,7 +1363,7 @@ def _render_cards_slide(ctx: RenderContext, slide, spec: LayoutSpec,
         header_band_h = spec.cards.header_band_h or 0.34
         header_icon_count = max(spec.cards.header_icon_count, 1)
     else:
-        card_rects = _grid_rects(spec.content_rect, len(data["bullets"])) if spec.content_rect else []
+        card_rects = _grid_rects(spec.content_rect, len(data["bullets"]), ctx.style.content_density) if spec.content_rect else []
         pattern = "standard"
         icon_size = 0.46
         header_band_h = 0.34
@@ -1269,7 +1571,7 @@ def _render_summary_slide(ctx: RenderContext, slide, spec: LayoutSpec,
                           colors: dict[str, str]) -> None:
     _add_title_and_key_message(ctx, slide, spec, data, colors, accent_a, accent_b)
 
-    rects = _grid_rects(spec.content_rect, len(data["bullets"])) if spec.content_rect else []
+    rects = _grid_rects(spec.content_rect, len(data["bullets"]), ctx.style.content_density) if spec.content_rect else []
     show_icons = ctx.style.text_box_style in ("with-icons", "mixed")
 
     for idx, bullet in enumerate(data["bullets"][:len(rects)]):
@@ -1382,11 +1684,13 @@ def _render_photo_fullbleed_slide(ctx: RenderContext, slide, spec: LayoutSpec,
         _add_textbox(ctx, slide, spec.title_rect, data["title_text"],
                      28 * ctx.style.title_font_scale,
                      ctx.ensure_contrast(colors["TEXT"], colors["BG"]),
-                     bold=True, name="title")
+                     bold=True, name="title",
+                     align=PP_ALIGN.CENTER if ctx.style.title_centered else PP_ALIGN.LEFT)
     if data["key_message_text"] and spec.key_message_rect:
         _add_textbox(ctx, slide, spec.key_message_rect, data["key_message_text"],
                      16, ctx.ensure_contrast(colors["TEXT"], colors["BG"]),
-                     name="key_message")
+                     name="key_message",
+                     align=PP_ALIGN.CENTER if ctx.style.title_centered else PP_ALIGN.LEFT)
     _set_speaker_notes(slide, data.get("notes", ""))
 
 
@@ -1444,7 +1748,7 @@ def _render_bullets_body(ctx: RenderContext, slide, spec: LayoutSpec,
     body_rect = spec.content_rect
     if not body_rect or not data["bullets"]:
         return
-    bullet_rects = _grid_rects(body_rect, len(data["bullets"]))
+    bullet_rects = _grid_rects(body_rect, len(data["bullets"]), ctx.style.content_density)
     for idx, bullet in enumerate(data["bullets"][:len(bullet_rects)]):
         rect = bullet_rects[idx]
         fill_hex = ctx.accent_cycle[(slide_index + idx) % len(ctx.accent_cycle)]
@@ -1557,6 +1861,30 @@ def render_presentation(
     colors = _build_colors(theme)
     accent_cycle = _build_accent_cycle(theme)
 
+    # When the style is dark-mode but the theme's BG is light (e.g. no palette
+    # generated or the TS side didn't swap BG/TEXT), swap them here so dark
+    # styles always get a dark background and light text.
+    if style.dark_mode:
+        bg_lum = _luminance(colors["BG"])
+        text_lum = _luminance(colors["TEXT"])
+        if bg_lum > text_lum:
+            # BG is lighter than TEXT — swap them
+            colors["BG"], colors["TEXT"] = colors["TEXT"], colors["BG"]
+            colors["LIGHT"], colors["DARK"] = colors["DARK"], colors["LIGHT"]
+            colors["LIGHT2"], colors["DARK2"] = colors["DARK2"], colors["LIGHT2"]
+            # Also update the raw theme dict so downstream _build_colors() stays
+            # consistent (e.g. _add_panel frosted uses _build_colors(ctx.theme)).
+            theme = dict(theme)
+            theme["BG"] = colors["BG"]
+            theme["TEXT"] = colors["TEXT"]
+            theme["LIGHT"] = colors["LIGHT"]
+            theme["DARK"] = colors["DARK"]
+            theme["LIGHT2"] = colors["LIGHT2"]
+            theme["DARK2"] = colors["DARK2"]
+
+    print(f"[renderer] BG={colors['BG']} TEXT={colors['TEXT']} ACCENT1={colors['ACCENT1']} "
+          f"style={style.panel_fill}/{style.color_treatment} dark={style.dark_mode}", file=sys.stderr)
+
     ctx = RenderContext(
         prs=prs,
         theme=theme,
@@ -1613,24 +1941,14 @@ def render_presentation(
         # Add slide
         slide = prs.slides.add_slide(blank_layout)
         if not template_path:
+            # Keep the slide background locked to the palette BG slot.
+            # Style variation belongs on decorative shapes and panels, not on
+            # foundational reading surfaces like the slide background itself.
             slide.background.fill.solid()
             slide.background.fill.fore_color.rgb = rgb_color(slide_colors["BG"])
 
-            if style.color_treatment == "gradient":
-                bg = ctx.add_design_shape(
-                    slide.shapes,
-                    MSO_AUTO_SHAPE_TYPE.RECTANGLE,
-                    Inches(0), Inches(0),
-                    Inches(SLIDE_WIDTH_IN), Inches(SLIDE_HEIGHT_IN),
-                    name="bg_gradient",
-                )
-                ctx.apply_gradient_fill(bg, [slide_colors["BG"], _mix_hex(accent_b, slide_colors["BG"], 0.35)],
-                                        angle_degrees=style.gradient_angle)
-                bg.line.fill.background()
-                ctx.set_fill_transparency(bg, 0.06 if style.dark_mode else 0.10)
-
         # Decorative accents (controlled by style)
-        _add_design_language(ctx, slide, spec, accent_a, accent_b)
+        _add_design_language(ctx, slide, spec, accent_a, accent_b, slide_colors)
 
         # Dispatch to layout-specific renderer
         layout_type = data["layout_type"]

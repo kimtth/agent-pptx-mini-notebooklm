@@ -1188,3 +1188,277 @@ These patterns are reusable card treatments that can be combined with many of th
 - Screen-blend mode (must be multiply for authentic CMYK overlap)
 
 ---
+
+## Template Motif Reference
+
+These motifs are compositional patterns used across presentation-template libraries and are also exposed in the current product model. Use them to control slide structure and pacing with the same level of fidelity as the 30 named styles above.
+
+---
+
+## M1. Editorial Split Hero
+
+**Mood**: Heroic, editorial, composed, keynote-ready  
+**Best For**: Pitch decks, proposals, keynote openers, quote-led title slides
+
+### Background
+- Light or dark base depending on the active theme
+- Keep one **narrow anchor column** visually quieter than the main stage
+
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Main stage background | `BG` or `DARK` | dominant field for hero content |
+| Anchor column | `LIGHT2` or `DARK2` | lower-contrast support zone |
+| Hero panel | `ACCENT1` + `ACCENT2` | optional gradient or tinted feature block |
+| Primary headline | `TEXT` | strongest text treatment |
+| Supporting rule / meta text | `BORDER` or `ACCENT4` | restrained navigation or label detail |
+
+### Layout
+- Use an **asymmetric split**: narrow left anchor column, large right hero stage
+- The anchor column carries brand, section label, navigation, or short metadata only
+- The hero stage carries **one dominant message** plus one image, quote block, or statement surface
+- Keep the text stack short and decisive; leave generous whitespace around the hero block
+
+### Signature Elements
+- Narrow anchor column that stays visually subordinate
+- Large hero surface or image window on the main stage
+- One dominant headline block with minimal supporting copy
+- Short horizontal rules or caption bars under the hero block
+
+### Avoid
+- Symmetric 50/50 splits
+- Multiple competing cards in the hero zone
+- Dense copy in the anchor column
+
+---
+
+## M2. Diagonal Block Narrative
+
+**Mood**: Directional, energetic, campaign-like, assertive  
+**Best For**: Launch slides, campaign narratives, strategic statements, transition slides
+
+### Background
+- Use a base field divided by **strong diagonal geometry**
+- Prefer 2 to 3 major tonal wedges rather than many fragmented slices
+
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Base wedge | `BG` or `LIGHT2` | calm reading zone |
+| Accent wedge | `ACCENT1` | directional emphasis band |
+| Dark wedge | `DARK` | contrast anchor |
+| Highlight chips / bars | `LIGHT` | skewed text supports |
+| Body text | `TEXT` or `LIGHT` | chosen by wedge contrast |
+
+### Layout
+- Build the slide around one **large diagonal sweep** that creates motion across the canvas
+- Tuck content into the calm pockets formed between wedges; do not place important text across the angled seam
+- Use skewed chips, pills, or short bars to reinforce the angle system
+- This motif works best when one idea leads and the diagonal does the framing work
+
+### Signature Elements
+- One dominant diagonal geometry spanning most of the slide
+- Skewed supporting bars or tags aligned to the same angle
+- Strong contrast between light wedge, accent wedge, and dark anchor zone
+- Directional flow that makes the eye move across the slide
+
+### Avoid
+- Tiny decorative diagonals with no structural role
+- Competing angles that break the scan path
+- Heavy paragraph text crossing wedge boundaries
+
+---
+
+## M3. KPI Dashboard Strip
+
+**Mood**: Analytical, compact, executive, high-signal  
+**Best For**: Reports, business reviews, dashboard summaries, operations updates
+
+### Background
+- Quiet base using `BG` or `DARK` depending on the deck tone
+- Reserve stronger emphasis for the top summary ribbon and the metric modules below
+
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Header strip | `LIGHT2` or `DARK2` | compact summary ribbon |
+| Metric tile 1 | `ACCENT1` | tinted or outlined widget |
+| Metric tile 2 | `ACCENT2` | tinted or outlined widget |
+| Metric tile 3 | `ACCENT3` | tinted or outlined widget |
+| Divider / grid line | `BORDER` | subtle separators |
+| Data text | `TEXT` | high-contrast numbers and labels |
+
+### Layout
+- Place a **compact summary strip** across the top to establish the story or reporting period
+- Divide the lower zone into modular widgets for KPIs, charts, deltas, or status blocks
+- Keep gutters disciplined and card heights aligned for fast scanning
+- Use the strip to summarize; use the lower modules to compare
+
+### Signature Elements
+- One horizontal ribbon above the data zone
+- 3 or more modular KPI tiles below
+- Subtle rule or divider line reinforcing structure
+- High-contrast data framing with restrained ornament
+
+### Avoid
+- Full-slide decoration that competes with the metrics
+- Inconsistent card heights or loose spacing
+- Overusing gradients on dense data surfaces
+
+---
+
+## M4. Geometric Proposal Grid
+
+**Mood**: Structured, modular, businesslike, methodical  
+**Best For**: Proposals, scope definition, workstreams, plans, capability breakdowns
+
+### Background
+- Neutral base using `BG` or `LIGHT2`
+- Let the tile system create the rhythm rather than using a busy backdrop
+
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Base tiles | `LIGHT2` | quiet modules |
+| Emphasis tile | `ACCENT1` or `ACCENT2` | one or two guidance tiles |
+| Secondary emphasis tile | `ACCENT3` | supporting highlight |
+| Grid line / border | `BORDER` | disciplined separators |
+| Text | `TEXT` | clear proposal copy |
+
+### Layout
+- Break the slide into **disciplined geometric tiles** with even gutters
+- Use square-ish or short-rectangle modules to segment scope, deliverables, timeline, team, and next steps
+- Promote only a small number of tiles to accent status so the scan path stays obvious
+- Maintain alignment rigor; the grid itself is the visual system
+
+### Signature Elements
+- Tile-based layout with consistent gutters
+- One or two accent cells guiding the reading order
+- Clear segmentation of categories or workstreams
+- Border or stripe treatment that reinforces proposal discipline
+
+### Avoid
+- Random card sizes without a grid logic
+- Too many accent-colored tiles
+- Decorative shapes floating outside the tile system
+
+---
+
+## M5. Accent Monochrome Focus
+
+**Mood**: Controlled, premium, emphatic, executive  
+**Best For**: Executive summary, quote slide, single-point message, keynote pull-quote
+
+### Background
+- Mostly neutral monochrome field using `BG`, `LIGHT2`, `TEXT`, and `DARK2`
+- Introduce a **single saturated emphasis block** only where the focal message needs it
+
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Base field | `BG` or `LIGHT2` | quiet monochrome ground |
+| Main dark block | `DARK` | anchor band or title zone |
+| Accent block | `ACCENT1` | singular emphasis surface |
+| Divider / bar | `DARK2` or `BORDER` | slim vertical or horizontal punctuation |
+| Statement text | `TEXT` or `LIGHT` | depends on surface contrast |
+
+### Layout
+- Keep most of the slide neutral so one block, phrase, or quoted idea carries the tension
+- Use typography as the main visual driver; the accent surface exists to amplify, not decorate
+- A centered or near-centered composition works well when paired with generous margins
+- Best on slides with one assertion, one stat, or one key takeaway
+
+### Signature Elements
+- Predominantly monochrome composition
+- Exactly one saturated emphasis block or keyword treatment
+- Strong title bar or accent bar supporting the focal statement
+- Spacious composition with minimal competing elements
+
+### Avoid
+- Multiple accent colors
+- Busy iconography or illustration
+- Turning it into a standard multi-card layout
+
+---
+
+## M6. Process Timeline Ribbon
+
+**Mood**: Sequential, clear, paced, roadmap-oriented  
+**Best For**: Roadmaps, onboarding, phase plans, process walkthroughs, delivery schedules
+
+### Background
+- Neutral or dark base with a clearly visible **horizontal ribbon or rail**
+- Keep the explanation zone separate from the sequence line
+
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Ribbon / rail | `ACCENT1` + `ACCENT2` + `ACCENT3` | gradient or segmented line |
+| Step marker 1 | `ACCENT1` | circular node |
+| Step marker 2 | `ACCENT2` | circular node |
+| Step marker 3 | `ACCENT3` | circular node |
+| Explanation panel | `LIGHT2` or `DARK2` | unified caption band |
+| Step text | `TEXT` or `LIGHT` | ensure contrast by surface |
+
+### Layout
+- Use a **horizontal ribbon** with connected step markers to establish order at a glance
+- Keep labels concise above, below, or near the markers; place fuller explanation in a shared lower band
+- Space nodes evenly so the timing feels paced and intentional
+- Prefer 3 to 5 phases on one slide; beyond that, split the sequence
+
+### Signature Elements
+- Continuous ribbon or rail across the slide
+- Evenly spaced circular phase markers
+- One shared lower explanation band rather than scattered note boxes
+- Clear left-to-right narrative pacing
+
+### Avoid
+- Vertical process lists masquerading as a ribbon motif
+- Long captions attached to each node
+- Uneven node spacing or inconsistent marker styling
+
+---
+
+## M7. Organic Editorial Canvas
+
+**Mood**: Soft, tactile, lifestyle-oriented, premium but human  
+**Best For**: Creative briefs, brand storytelling, lifestyle decks, editorial brand narratives
+
+### Background
+- Soft neutral field using `BG` or `LIGHT2`
+- Use one biomorphic accent mass and one softened image or content window
+
+### Color Mapping
+
+| Role | Token | Technique |
+|------|-------|-----------|
+| Base field | `BG` or `LIGHT2` | warm neutral ground |
+| Organic mass | `ACCENT4` or `DARK2` | low-contrast biomorphic shape |
+| Image / content window | `LIGHT` | softened framed block |
+| Title text | `TEXT` | editorial headline treatment |
+| Supporting rule / caption | `ACCENT2` or `BORDER` | subtle guidance detail |
+
+### Layout
+- Build the slide from a calm field, one **organic accent shape**, and one rounded image or quote window
+- Keep the composition airy, with the biomorphic mass offset from the main content window
+- Use editorial spacing and restrained copy; the softness comes from shape and pacing, not clutter
+- This motif pairs well with storytelling slides that need one visual and one reflective headline
+
+### Signature Elements
+- One biomorphic or blob-like accent mass
+- One softened rectangular or rounded-corner image window
+- Warm neutral palette impression driven by theme tokens
+- Spacious editorial composition with gentle asymmetry
+
+### Avoid
+- Hard geometric grids dominating the slide
+- Saturated neon accents
+- Crowding the canvas with many small decorative shapes
+
+---

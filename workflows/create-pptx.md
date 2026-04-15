@@ -29,8 +29,38 @@ Use the approved slide content, icon set, theme, colors, and slide images to gen
 2. Apply the selected theme, palette, icon set, and slide-specific attached images consistently.
 3. Ensure contrast safety (no white-on-white, dark-on-dark, or mid-tone-on-mid-tone) and readability.
 4. Generate the final python-pptx code. The layout validator automatically checks for overlap, out-of-bounds, and text overflow after generation.
-5. If layout validation fails, use `patch_layout_infrastructure` to fix layout_specs.py or layout_validator.py, then call `rerun_pptx`.
+5. If layout validation fails, inspect and repair `layout_specs.py` or `layout_validator.py` with the available app repair tooling, then rerun the render.
 6. Return only the final python code block for the app's rendering pipeline.
+
+## Efficiency Directive — No Codebase Exploration
+
+**CRITICAL: Do NOT explore, read, or grep the application codebase during PPTX generation.**
+
+The conversation already provides everything needed to generate python-pptx code:
+- Slide content, titles, bullets, key messages, notes, and layout types
+- Theme palette and OOXML slot values
+- Design style rules and signature elements
+- Icon names and image paths per slide
+- The full runtime namespace (all available functions, variables, and classes)
+- The `manipulation-pptx` skill with API contracts, code patterns, and rules
+
+The **only** workspace files that may be read are these three small JSON artifacts:
+1. `{workspace}/previews/layout-input.json` — slide content for `layout_input[]`
+2. `{workspace}/previews/layout-specs.json` — precomputed geometry for `PRECOMPUTED_LAYOUT_SPECS[]`
+3. `{workspace}/previews/slide-assets.json` — icon/image metadata per slide
+
+**Prohibited during this workflow:**
+- Reading `pptx-python-runner.py`, `pptx-handler.ts`, `slide_renderer.py`, or `layout_validator.py`
+- Reading `AGENTS.md`, `CLAUDE.md`, or instruction files from other projects
+- Grepping for function signatures, import paths, or module internals
+- Running the Python runner manually or attempting to validate locally — the app handles execution and validation automatically
+- Reading previously generated `generated-source.py` files from other sample workspaces (unless explicitly asked to replicate a pattern)
+
+**Allowed efficiency shortcuts:**
+- Reading one existing `generated-source.py` sample to confirm the code pattern (one-time, first generation only)
+- Reading the `manipulation-pptx` SKILL.md if the skill context was not already loaded
+
+**Target: 3 file reads → code output.** Not 15+ exploratory reads.
 
 ## Rules
 

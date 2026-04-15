@@ -50,7 +50,7 @@
       {
         "title": "TEXT & OVERFLOW RULES",
         "items": [
-          "For free textboxes placed directly in spec.title_rect, spec.key_message_rect, or spec.notes_rect, set text_frame.word_wrap = True and text_frame.auto_size = MSO_AUTO_SIZE.NONE. For fixed-height panel/card shapes, use MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE. There is no runtime geometry repair pass — generated code must be overlap-safe on its own: reserve notes/footer space, reduce or split content instead of crowding, keep aligned layouts aligned, and use estimate_text_height_in() to size every paragraph-bearing box before placement.",
+          "For free textboxes placed directly in spec.title_rect, spec.key_message_rect, or spec.notes_rect, set text_frame.word_wrap = True and text_frame.auto_size = MSO_AUTO_SIZE.NONE. For fixed-height panel/card shapes, use MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE. Generated code must be overlap-safe on its own: reserve notes/footer space, reduce or split content instead of crowding, keep aligned layouts aligned, and use estimate_text_height_in() to size every paragraph-bearing box before placement. The app's layout repair tooling exists as a fallback — do not rely on it as a primary strategy.",
           "If estimated text height consumes most of a box, the box is too small or the slide is too dense. Use fewer boxes or split the slide."
         ]
       },
@@ -96,7 +96,7 @@
       {
         "title": "VALIDATION & FIX TOOLS",
         "items": [
-          "The layout validator runs automatically after generation and catches overlap, out-of-bounds, and text-overflow issues. When validation fails with ERROR-level issues, use patch_layout_infrastructure to read and fix layout_specs.py or layout_validator.py, then call rerun_pptx to re-execute the same code."
+          "The layout validator runs automatically after generation and catches overlap, out-of-bounds, and text-overflow issues. When validation fails with ERROR-level issues, inspect and repair layout_specs.py or layout_validator.py with the available app tooling, then rerun the same code."
         ]
       },
       {
@@ -117,8 +117,8 @@
           "Return exactly one fenced code block. The opening fence must be exactly ```python on its own line, followed by a newline.",
           "Preserve normal Python newlines and indentation. Do not compress multiple imports, defs, classes, or statements onto one line.",
           "Do not suggest frameworks.",
-          "Do not call set_scenario.",
-          "Do not call update_slide.",
+          "Do not modify slide-panel state during PPTX generation.",
+          "Do not apply individual slide edits during PPTX generation.",
           "Do not narrate status."
         ]
       },
@@ -157,7 +157,7 @@
           "When generating PPTX later, treat slide layout and icon values as hints rather than rigid instructions, and choose a stronger visual composition when it communicates the approved story better.",
           "For image consistency, treat slide.imagePath as the primary approved preview image and use that same image in the exported PPTX whenever it is present.",
           "When a slide has multiple images listed (image[0], image[1], ...), use ALL of them in the slide composition and create a multi-image layout rather than picking just one.",
-          "When updating a single slide, use update_slide.",
+          "When updating a single slide, apply the change directly to the existing slide in the workspace panel.",
           "Never output slide listings in the chat message itself.",
           "Keep chat messages short. Action summaries only."
         ]

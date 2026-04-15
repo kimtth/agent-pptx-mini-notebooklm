@@ -133,6 +133,8 @@ export interface IpcPptxAPI {
     templateMeta?: TemplateMeta | null,
   ): Promise<{ success: boolean; imagePaths?: string[]; error?: string; warning?: string; qa?: { contrastFixes: number; missingIcons: Array<{ icon: string; reason: string }>; missingImages: string[]; layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }> } }>;
   readExistingPreviews(): Promise<{ success: boolean; imagePaths: string[] }>;
+  rerenderPreview(): Promise<{ success: boolean; imagePaths: string[]; error?: string }>;
+  openPreviewPptx(): Promise<{ success: boolean; path?: string; error?: string }>;
   importTemplate(): Promise<{ success: boolean; templatePath?: string; meta?: TemplateMeta; error?: string; warning?: string }>;
   removeTemplate(): Promise<{ success: boolean }>;
   clearWorkspaceArtifacts(): Promise<{ success: boolean }>;

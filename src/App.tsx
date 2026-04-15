@@ -177,10 +177,10 @@ export default function App() {
         useSlidesStore.getState().setPptxCode(code)
         useSlidesStore.getState().setPptxBuildError(null)
         autoRetryCount.current = 0
-        // Chunked path: images were rendered server-side; let CenterArea re-read from disk.
-        window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
+        // Notify CenterArea to reload preview images from disk
+        window.dispatchEvent(new CustomEvent('pptx-preview-ready', {}))
         useChatStore.getState().addMessage(
-          createAssistantMessage('✅ Deck generated! Preview images are ready.'),
+          createAssistantMessage('✅ Deck generated! Preview is ready in PowerPoint.'),
         )
         useSlidesStore.getState().setStreaming(false)
         useSlidesStore.getState().setPptxBusy(false)
@@ -224,15 +224,15 @@ export default function App() {
             )
             const pptxTitle = currentWork.title || 'presentation'
             useChatStore.getState().addMessage(
-              createAssistantMessage('✅ Generating the deck and preview images…'),
+              createAssistantMessage('✅ Generating the deck…'),
             )
             window.electronAPI.pptx.renderPreview(currentWork.designStyle, paletteTokens, pptxTitle, selectedIconCollection, currentWork.slides, currentWork.templateMeta)
               .then((result) => {
                 if (result.success) {
                   autoRetryCount.current = 0
-                  window.dispatchEvent(new CustomEvent('pptx-preview-ready', {
-                    detail: { imagePaths: result.imagePaths ?? [] },
-                  }))
+
+                  // Notify CenterArea about preview images so they display immediately
+                  window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: result.imagePaths ?? [] } }))
 
                   const qa = result.qa as QaReport | undefined
                   if (qa) {
@@ -240,7 +240,7 @@ export default function App() {
                   } else {
                     const warningNote = result.warning ? `\n\n⚠️ ${result.warning}` : ''
                     useChatStore.getState().addMessage(
-                      createAssistantMessage(`✅ Deck generated! Preview images are ready.${warningNote}`),
+                      createAssistantMessage(`✅ Deck generated!${warningNote}`),
                     )
                     useSlidesStore.getState().setStreaming(false)
                     useSlidesStore.getState().setPptxBusy(false)

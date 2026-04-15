@@ -83,7 +83,6 @@ export function WorkspaceAreaButton() {
     useSlidesStore.getState().reset()
     useChatStore.getState().clear()
     await window.electronAPI.pptx.clearWorkspaceArtifacts().catch(() => undefined)
-    window.dispatchEvent(new CustomEvent('pptx-preview-ready', { detail: { imagePaths: [] } }))
     usePaletteStore.setState({
       seeds: [],
       colors: [],
