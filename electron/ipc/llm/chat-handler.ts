@@ -30,6 +30,7 @@ import type {
 import type { DataFile, ScrapeResult } from '../../../src/domain/ports/ipc';
 import { getIconifyCollectionById } from '../../../src/domain/icons/iconify';
 import type { IconifyCollectionId } from '../../../src/domain/icons/iconify';
+import { formatCatalogForPrompt } from '../../../src/domain/icons/icon-catalog';
 import { formatWorkflowForPrompt, getWorkflowConfig, type WorkflowConfig } from '../../../src/domain/workflows/workflow-config';
 import { renderPresentationToFile, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace } from '../pptx/pptx-handler.ts';
 import { buildManagedSystemPrompt } from './system-prompts.ts';
@@ -614,7 +615,6 @@ async function buildPrompt(
       '| `accent_rings` | bool | Concentric outline rings |',
       '| `color_treatment` | str | "solid" / "gradient" / "mixed" |',
       '| `gradient_angle` | int | 0–180 degrees |',
-      '| `text_box_style` | str | "plain" / "with-icons" / "mixed" |',
       '| `bullet_marker` | str | "•" / "—" / "✔" / "▸" |',
       '| `bullet_marker_bold` | bool | Render bullet marker in bold |',
       '| `content_density` | str | "compact" / "normal" / "spacious" |',
@@ -715,10 +715,18 @@ async function buildPrompt(
 
   {
     const collection = getIconifyCollectionById(workspace.iconCollection);
+    const collectionId = collection.id as IconifyCollectionId;
     parts.push('## Icon Constraints\n');
     parts.push(`Icon provider: ${workspace.iconProvider}`);
-    parts.push(`Preferred icon set: ${collection.label} (${collection.id})`);
-    parts.push('Icons are fetched live from the Iconify public API at runtime. Use any valid Iconify ID from the selected collection. Prefer icon names already attached to slides for slide-level hero/anchor icons, but for text-box companions choose icons that match each box\'s own content. Do not invent icon names — fetch_icon() will return None for invalid IDs. If network is unavailable, icons are omitted gracefully.');
+    parts.push(`Selected icon set: ${collection.label} (\`${collectionId}\`)\n`);
+    parts.push('**Pick icons ONLY from the catalog below.** Do not invent icon names or use IDs from other collections.');
+    parts.push('Each icon must be a full Iconify ID with the collection prefix (e.g., `fluent:database-24-regular`).');
+    parts.push('If no icon in the catalog fits a slide, omit the icon field.\n');
+    const catalogText = formatCatalogForPrompt(collectionId);
+    if (catalogText) {
+      parts.push('### Icon Catalog\n');
+      parts.push(catalogText);
+    }
     parts.push('');
   }
 
@@ -783,7 +791,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
       let slideAssetsPromise: Promise<void> | null = null;
       const workflow = resolveWorkflow(message, workspace);
       if (mode === 'pptx' && workspace.slides.length > 0) {
-        layoutSpecsPromise = computeLayoutSpecs(workspace.slides, workspace.theme?.fontFamily)
+        layoutSpecsPromise = computeLayoutSpecs(workspace.slides, workspace.theme?.fontFamily, workspace.theme?.textBoxCornerStyle)
           .then((result) => {
             if (result.success && result.specs) layoutSpecsJson = result.specs;
           })
@@ -854,7 +862,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           'For table layout, encode rows as pipe-delimited bullets: first bullet is the header row (e.g. "Region | Q1 | Q2 | Q3"), subsequent bullets are data rows. ' +
           'The layout and icon are guidance for the later PPTX design step, not a rigid rendering contract. ' +
           'When helpful, include a designBrief describing tone, audience, visual style, density, and layout approach. ' +
-          `Use Iconify icon IDs for icons and stay within the selected collection (${workspace.iconCollection}). Prefer slide-specific icon hints over invented names.`,
+          `Use full Iconify icon IDs for icons and stay within the selected collection (${workspace.iconCollection}). Never emit bare icon names without the collection prefix. Prefer slide-specific icon hints over invented names.`,
         parameters: {
           type: 'object' as const,
           properties: {
@@ -897,7 +905,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         },
         handler: async (args: ScenarioPayload) => {
           win.webContents.send('chat:scenario', args);
-          computeLayoutSpecs(args.slides, workspace.theme?.fontFamily).catch((err) => {
+          computeLayoutSpecs(args.slides, workspace.theme?.fontFamily, workspace.theme?.textBoxCornerStyle).catch((err) => {
             console.log('[chat] Failed to compute layout specs for storyboard (non-blocking):', err);
           });
           return { success: true, message: `Scenario "${args.title}" set with ${args.slides.length} slides.` };

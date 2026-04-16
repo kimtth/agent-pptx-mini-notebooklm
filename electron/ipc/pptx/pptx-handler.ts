@@ -7,6 +7,8 @@ import { promisify } from 'util'
 import type { ThemeTokens } from '../../../src/domain/entities/palette'
 import type { TemplateMeta } from '../../../src/domain/entities/slide-work'
 import { DEFAULT_THEME_C } from '../../../src/domain/theme/default-theme'
+import { enforceIconCollection } from '../../../src/domain/icons/iconify'
+import type { IconifyCollectionId } from '../../../src/domain/icons/iconify'
 import { ensurePythonModule, pythonSetupHint, resolvePythonExecutable } from './python-runtime.ts'
 import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts'
 
@@ -26,12 +28,21 @@ function resolveThemeFontFamily(theme: ThemeTokens | null | undefined): string {
 
 function resolveThemeColorTreatment(theme: ThemeTokens | null | undefined): 'solid' | 'gradient' | 'mixed' {
   const v = theme?.colorTreatment
-  return v === 'gradient' || v === 'mixed' ? v : 'mixed'
+  return v === 'solid' || v === 'gradient' || v === 'mixed' ? v : 'mixed'
 }
 
 function resolveThemeTextBoxStyle(theme: ThemeTokens | null | undefined): 'plain' | 'with-icons' | 'mixed' {
   const v = theme?.textBoxStyle
-  return v === 'with-icons' || v === 'mixed' ? v : 'mixed'
+  return v === 'plain' || v === 'with-icons' || v === 'mixed' ? v : 'mixed'
+}
+
+function resolveThemeTextBoxCornerStyle(theme: ThemeTokens | null | undefined): 'square' | 'rounded' {
+  const v = theme?.textBoxCornerStyle
+  return v === 'rounded' ? v : 'square'
+}
+
+function resolveThemeShowSlideIcons(theme: ThemeTokens | null | undefined): string {
+  return theme?.showSlideIcons === false ? '0' : '1'
 }
 
 function applyLayoutFontFamily(slides: LayoutInputSlide[], fontFamily?: string): LayoutInputSlide[] {
@@ -390,12 +401,14 @@ export function buildSlideAssetMetadata(slides: SlideAssetSourceSlide[], iconCol
       thumbnailUrl: image.thumbnailUrl ?? null,
     }))
 
+    const enforcedIcon = enforceIconCollection(slide.icon, iconCollection as IconifyCollectionId)
+
     return {
       number: slide.number,
       title: slide.title,
       layout: slide.layout,
-      icon: slide.icon ?? null,
-      iconName: slide.icon ?? null,
+      icon: enforcedIcon,
+      iconName: enforcedIcon,
       iconCollection,
       iconProvider: 'iconify',
       imageQuery: slide.imageQuery ?? null,
@@ -458,12 +471,13 @@ async function refreshPreviewArtifacts(
 
 /**
  * Compute content-adaptive layout specs via the hybrid layout engine
- * (PowerPoint COM AutoFit + kiwisolver constraint solver).
+ * (hybrid_layout.py + kiwisolver constraint solver).
  * Can be called from any IPC handler — does not depend on ipcMain.handle.
  */
 async function computeLayoutSpecsInternal(
   slides: LayoutInputSourceSlide[] | string,
   fontFamily?: string,
+  cornerStyle?: string,
 ): Promise<{ success: boolean; specs?: string; error?: string }> {
   try {
     const persisted = await persistLayoutInputToWorkspace(slides, fontFamily)
@@ -482,7 +496,11 @@ async function computeLayoutSpecsInternal(
         windowsHide: true,
         timeout: 60_000,
         maxBuffer: 4 * 1024 * 1024,
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        env: {
+          ...process.env,
+          PYTHONIOENCODING: 'utf-8',
+          PPTX_TEXT_BOX_CORNER_STYLE: cornerStyle || 'square',
+        },
         cwd: path.dirname(hybridScript),
       },
     )
@@ -501,8 +519,9 @@ async function computeLayoutSpecsInternal(
 export async function computeLayoutSpecs(
   slides: LayoutInputSourceSlide[] | string,
   fontFamily?: string,
+  cornerStyle?: string,
 ): Promise<{ success: boolean; specs?: string; error?: string }> {
-  return queuePowerPointAutomation(() => computeLayoutSpecsInternal(slides, fontFamily))
+  return queuePowerPointAutomation(() => computeLayoutSpecsInternal(slides, fontFamily, cornerStyle))
 }
 
 async function renderPresentationInternal(
@@ -528,16 +547,19 @@ async function renderPresentationInternal(
   )
 
   const themePayload = JSON.stringify(theme?.C ?? DEFAULT_THEME_C)
+  const themeExplicit = theme?.C ? '1' : '0'
   const fontFamily = resolveThemeFontFamily(theme)
   const colorTreatment = resolveThemeColorTreatment(theme)
   const textBoxStyle = resolveThemeTextBoxStyle(theme)
+  const textBoxCornerStyle = resolveThemeTextBoxCornerStyle(theme)
+  const showSlideIcons = resolveThemeShowSlideIcons(theme)
   const workspaceDir = await readWorkspaceDir()
   await assertValidLayoutInputArtifact(workspaceDir)
   let layoutSpecsJson = opts?.layoutSpecsJson?.trim() ?? ''
   if (!layoutSpecsJson) {
     const { inputPath } = buildLayoutArtifactPaths(workspaceDir)
     const layoutInputJson = await fs.readFile(inputPath, 'utf-8')
-    const computed = await computeLayoutSpecsInternal(layoutInputJson, fontFamily)
+    const computed = await computeLayoutSpecsInternal(layoutInputJson, fontFamily, textBoxCornerStyle)
     if (!computed.success || !computed.specs?.trim()) {
       throw new Error(computed.error ?? 'Failed to compute hybrid layout specs.')
     }
@@ -585,10 +607,13 @@ async function renderPresentationInternal(
         ...process.env,
         PYTHONIOENCODING: 'utf-8',
         PPTX_THEME_JSON: themePayload,
+        PPTX_THEME_EXPLICIT: themeExplicit,
         PPTX_TITLE: title || 'Presentation',
         PPTX_FONT_FAMILY: fontFamily,
         PPTX_COLOR_TREATMENT: colorTreatment,
         PPTX_TEXT_BOX_STYLE: textBoxStyle,
+        PPTX_TEXT_BOX_CORNER_STYLE: textBoxCornerStyle,
+        PPTX_SHOW_SLIDE_ICONS: showSlideIcons,
         PPTX_DESIGN_STYLE: designStyle,
         PPTX_ICON_COLLECTION: opts?.iconCollection ?? 'all',
         ...(opts?.renderDir ? { PPTX_SKIP_TEXT_OVERFLOW_FIX: '1' } : {}),

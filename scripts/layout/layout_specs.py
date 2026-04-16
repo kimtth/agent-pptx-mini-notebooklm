@@ -7,7 +7,7 @@ helper used by the constraint solver and hybrid layout engine.
 Production code must use PRECOMPUTED_LAYOUT_SPECS from the hybrid layout
 engine (hybrid_layout.py → constraint_solver.py).
 
-Usage in generated code:
+Runtime usage:
 
     spec = PRECOMPUTED_LAYOUT_SPECS[slide_index]
     title = spec.title_rect          # RectSpec(x, y, w, h)
@@ -236,12 +236,30 @@ def _cascade_subzone(rect: RectSpec | None, content_y: float, content_bottom: fl
     return replace(rect, y=content_y, h=max(min(h, max_h), 0.8))
 
 
+def _rounded_corner_margin_insets(
+    shape_h_in: float,
+    corner_style: str = "square",
+) -> tuple[float, float]:
+    """Return (extra_x, extra_y) margin insets for rounded-rectangle shapes.
+
+    This mirrors the renderer's ``_rounded_panel_text_inset`` formula so the
+    layout engine reserves the same usable-text reduction that the renderer
+    applies at draw time.  For square corners the insets are zero.
+    """
+    if corner_style != "rounded":
+        return 0.0, 0.0
+    extra_x = min(max(shape_h_in * 0.14, 0.04), 0.12)
+    extra_y = min(max(shape_h_in * 0.08, 0.03), 0.08)
+    return extra_x, extra_y
+
+
 def _compute_chip_height(
     chips: RectSpec | None,
     *,
     chip_texts: list[str] | None = None,
     chip_font_pt: float = 11.0,
     chip_count: int | None = None,
+    corner_style: str = "square",
 ) -> float:
     """Return the rendered chip band height, expanding for wrapped chip text."""
     if chips is None:
@@ -252,16 +270,19 @@ def _compute_chip_height(
         count = chip_count or len(chip_texts)
         gap = chips.w * 0.02
         chip_w = (chips.w - gap * max(count - 1, 0)) / max(count, 1)
-        usable_w = chip_w - 0.12  # subtract left+right margins
+        cx, cy = _rounded_corner_margin_insets(chips.h, corner_style)
+        # left+right base margin (0.08+0.08) plus rounded-corner insets
+        usable_w = chip_w - 0.16 - 2 * cx
         max_needed = 0.0
         for text in chip_texts:
             needed = estimate_text_height_in(
-                text, usable_w, chip_font_pt, line_height=1.12,
+                text, max(usable_w, 0.3), chip_font_pt, line_height=1.12,
             )
             if needed > max_needed:
                 max_needed = needed
-        # add top+bottom margin (0.04 + 0.04) + small cushion
-        new_h = max(chips.h, max_needed + 0.10)
+        # top+bottom base margin (0.04+0.04) plus rounded insets + cushion
+        vert_margin = 0.10 + 2 * cy
+        new_h = max(chips.h, max_needed + vert_margin)
 
     return new_h
 
@@ -275,6 +296,7 @@ def _cascade_chips(
     chip_font_pt: float = 11.0,
     chip_count: int | None = None,
     fallback_y: float | None = None,
+    corner_style: str = "square",
 ) -> RectSpec | None:
     """Place chips rect below content or at a fraction of content bottom.
 
@@ -295,6 +317,7 @@ def _cascade_chips(
         chip_texts=chip_texts,
         chip_font_pt=chip_font_pt,
         chip_count=chip_count,
+        corner_style=corner_style,
     )
 
     max_y = max(content_bottom - new_h, 0.0)
@@ -347,6 +370,7 @@ def flow_layout_spec(
     key_font_pt: float = 18,
     chip_texts: list[str] | None = None,
     chip_font_pt: float = 11.0,
+    corner_style: str = "square",
 ) -> LayoutSpec:
     """Return a layout spec adjusted in display order for title -> key message -> content.
 
@@ -393,6 +417,7 @@ def flow_layout_spec(
         spec.chips_rect,
         chip_texts=chip_texts,
         chip_font_pt=chip_font_pt,
+        corner_style=corner_style,
     )
     chips_reserved = (chip_height + 0.12) if spec.chips_rect is not None else 0.0
     chips_bottom = content_bottom - footer_reserved
@@ -451,7 +476,7 @@ def flow_layout_spec(
     cascaded_chips = _cascade_chips(
         spec.chips_rect, content_rect, chips_bottom,
         chip_texts=chip_texts, chip_font_pt=chip_font_pt,
-        fallback_y=next_y,
+        fallback_y=next_y, corner_style=corner_style,
     )
 
     return replace(

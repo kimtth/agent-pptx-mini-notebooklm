@@ -33,8 +33,6 @@ JSON schema for ``--input`` (array of slide content objects)::
 
 from __future__ import annotations
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys
@@ -42,11 +40,41 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from layout_blueprint import LayoutBlueprint, ZoneRole, get_blueprint
-from layout_specs import LayoutSpec
+if __package__ in {None, ''}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+    from scripts.layout.layout_blueprint import LayoutBlueprint, ZoneRole, get_blueprint
+    from scripts.layout.layout_specs import (
+        CardsSpec,
+        ComparisonSpec,
+        LayoutSpec,
+        RectSpec,
+        SLIDE_WIDTH_IN,
+        SolveQuality,
+        StatsSpec,
+        TimelineSpec,
+        estimate_text_height_in,
+        _rounded_corner_margin_insets,
+    )
+else:
+    from .layout_blueprint import LayoutBlueprint, ZoneRole, get_blueprint
+    from .layout_specs import (
+        CardsSpec,
+        ComparisonSpec,
+        LayoutSpec,
+        RectSpec,
+        SLIDE_WIDTH_IN,
+        SolveQuality,
+        StatsSpec,
+        TimelineSpec,
+        estimate_text_height_in,
+        _rounded_corner_margin_insets,
+    )
 
 if TYPE_CHECKING:
-    from font_text_measure import TextMeasureRequest
+    if __package__ in {None, ''}:
+        from scripts.layout.font_text_measure import TextMeasureRequest
+    else:
+        from .font_text_measure import TextMeasureRequest
 
 
 # ---------------------------------------------------------------------------
@@ -175,16 +203,17 @@ def _zone_width(
     has_icon: bool,
 ) -> float:
     """Compute the available width (inches) for a zone."""
-    from layout_specs import SLIDE_WIDTH_IN
     tokens = blueprint.tokens
     avail_w = SLIDE_WIDTH_IN - 2 * tokens.margin_x
-    w = avail_w
+    header_w = avail_w
     if has_icon and blueprint.icon_size > 0:
-        w -= blueprint.icon_size + tokens.icon_corner_margin_x
+        header_w -= blueprint.icon_size + tokens.icon_corner_margin_x
     if zone.width_fraction < 1.0:
         w = avail_w * zone.width_fraction
     elif role in (ZoneRole.TITLE, ZoneRole.KEY_MESSAGE):
-        w *= tokens.header_w_ratio
+        w = header_w * tokens.header_w_ratio
+    else:
+        w = avail_w
     return round(w, 2)
 
 
@@ -222,14 +251,19 @@ def _get_measure_backend() -> tuple[type, callable]:
     falls back to the shared heuristic only if Pillow cannot be imported.
     """
     try:
-        from font_text_measure import TextMeasureRequest, measure_text_heights
+        if __package__ in {None, ''}:
+            from scripts.layout.font_text_measure import TextMeasureRequest, measure_text_heights
+        else:
+            from .font_text_measure import TextMeasureRequest, measure_text_heights
         return TextMeasureRequest, measure_text_heights
     except ImportError:
         pass
 
     # Heuristic fallback — synthesise a compatible measure function
-    from font_text_measure import TextMeasureRequest
-    from layout_specs import estimate_text_height_in
+    if __package__ in {None, ''}:
+        from scripts.layout.font_text_measure import TextMeasureRequest
+    else:
+        from .font_text_measure import TextMeasureRequest
 
     def _heuristic_measure(requests: list) -> list[float]:
         return [
@@ -242,10 +276,16 @@ def _get_measure_backend() -> tuple[type, callable]:
     return TextMeasureRequest, _heuristic_measure
 
 
-def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
+def compute_adaptive_specs(
+    slides: list[SlideContent],
+    *,
+    corner_style: str = "square",
+) -> list[LayoutSpec]:
     """Compute content-adaptive layout specs for all slides.
 
     Uses Pillow font metrics with heuristic fallback when Pillow is unavailable.
+    When *corner_style* is ``"rounded"``, measurement widths are narrowed and
+    chip heights expanded to account for rounded-corner margin insets.
     Returns a list of ``LayoutSpec`` in the same order as *slides*.
     """
     TextMeasureRequest, measure_text_heights = _get_measure_backend()
@@ -285,12 +325,15 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
                 total_w = _zone_width(bp, zd, zd.role, slide.has_icon)
                 chip_gap = min(total_w * 0.025, 0.18)
                 chip_w = (total_w - chip_gap * (len(visible_chips) - 1)) / len(visible_chips)
+                # Estimate chip height for rounded-corner inset calculation
+                cx, _ = _rounded_corner_margin_insets(zd.preferred_h, corner_style)
+                chip_h_margin = 0.16 + 2 * cx  # base 0.08 per side + corner inset
                 for chip_text in visible_chips:
                     chip_measure_queue.append((
                         i,
                         TextMeasureRequest(
                             text=chip_text,
-                            width_in=max(round(chip_w - 0.16, 2), 0.5),
+                            width_in=max(round(chip_w - chip_h_margin, 2), 0.5),
                             font_family=slide.font_family,
                             font_size_pt=11.2,
                             bold=False,
@@ -370,10 +413,13 @@ def compute_adaptive_specs(slides: list[SlideContent]) -> list[LayoutSpec]:
 
     chip_max_h: dict[int, float] = {}
     chip_idx = 0
+    # Estimate rounded-corner vertical inset for chips
+    _, chip_cy = _rounded_corner_margin_insets(0.65, corner_style)  # typical chip height
+    chip_vert_pad = 0.10 + 2 * chip_cy  # base top/bottom + corner insets
     for si, _ in chip_measure_queue:
         h = chip_heights[chip_idx]
         chip_idx += 1
-        chip_total_h = round(h + 0.10, 4)
+        chip_total_h = round(h + chip_vert_pad, 4)
         if si not in chip_max_h:
             chip_max_h[si] = chip_total_h
         else:
@@ -498,16 +544,6 @@ def layout_spec_to_dict(spec: LayoutSpec) -> dict:
 
 def layout_spec_from_dict(d: dict) -> LayoutSpec:
     """Deserialize a LayoutSpec from a dict."""
-    from layout_specs import (
-        CardsSpec,
-        ComparisonSpec,
-        RectSpec,
-        StatsSpec,
-        TimelineSpec,
-    )
-
-    from layout_specs import SolveQuality
-
     def _r(v: dict | None) -> 'RectSpec | None':
         return RectSpec(**v) if v else None
 
@@ -595,6 +631,9 @@ def main() -> int:
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
+    import os
+    corner_style = (os.environ.get('PPTX_TEXT_BOX_CORNER_STYLE', 'square') or 'square').strip().lower()
+
     args = _parse_args()
     input_path = Path(args.input).resolve()
     output_path = Path(args.output).resolve()
@@ -608,7 +647,7 @@ def main() -> int:
 
     # print(f'[hybrid-layout] Computing specs for {len(slides)} slide(s)…', file=sys.stderr)
 
-    specs = compute_adaptive_specs(slides)
+    specs = compute_adaptive_specs(slides, corner_style=corner_style)
     output_json = serialize_specs(specs)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

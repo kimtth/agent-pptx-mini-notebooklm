@@ -1,12 +1,13 @@
 """Deterministic slide renderer — converts layout-input.json + layout-specs.json to PPTX.
 
-This module replaces the former approach of LLM-generated python-pptx code.
-Instead of ``exec()``-ing AI-written rendering code, this fixed, tested renderer
-reads structured slide data and produces the PPTX directly.
+This module is the app's structured PPTX renderer. It reads slide data,
+precomputed layout specs, theme/style settings, and slide assets, then writes
+the deck directly.
 
-The renderer uses the *same* utility functions already in ``pptx-python-runner.py``
-(``fetch_icon``, ``safe_add_picture``, ``ensure_contrast``, etc.) — it simply
-calls them from deterministic code instead of from dynamically-generated code.
+The renderer uses the shared utility functions already defined in
+``pptx-python-runner.py`` (``fetch_icon``, ``safe_add_picture``,
+``ensure_contrast``, etc.) so rendering, repair, and validation all operate on
+the same runtime contract.
 
 Usage (standalone test)::
 
@@ -28,8 +29,11 @@ import json
 import math
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+if __package__ in {None, ''}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -37,20 +41,14 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
 
-# Layout dataclasses
-sys.path.insert(0, str(Path(__file__).resolve().parent / "layout"))
-from layout_specs import (  # noqa: E402
+from scripts.layout.layout_specs import (  # noqa: E402
     LayoutSpec,
     RectSpec,
-    CardsSpec,
-    StatsSpec,
-    TimelineSpec,
-    ComparisonSpec,
     SLIDE_WIDTH_IN,
     SLIDE_HEIGHT_IN,
     estimate_text_height_in,
 )
-from style_config import StyleConfig  # noqa: E402
+from scripts.style_config import StyleConfig  # noqa: E402
 
 # ── Constants ────────────────────────────────────────────────────────
 EMU_PER_INCH = 914400
@@ -70,6 +68,9 @@ class RenderContext:
     accent_cycle: list[str]
     template_path: str | None
     workspace_dir: str
+    theme_explicit: bool  # True when user provided custom theme colors
+    text_box_style: str
+    show_slide_icons: bool
 
     # ── Utilities (injected by caller) ───────────────────────────
     # These are references to the same functions from pptx-python-runner.py
@@ -77,7 +78,7 @@ class RenderContext:
     ensure_contrast: object  # Callable[[str, str, float], str]
     set_fill_transparency: object  # Callable[[shape, float], None]
     apply_gradient_fill: object  # Callable[[shape, list[str], int], None]
-    fetch_icon: object  # Callable[[str, str, int], str | None]
+    fetch_icon: object  # Callable[[str, str, int, str | None], str | None]
     safe_add_picture: object  # Callable[..., object | None]
     safe_add_design_picture: object  # Callable[..., object | None]
     add_design_shape: object  # Callable[..., object]
@@ -89,6 +90,7 @@ class RenderContext:
     apply_widescreen: object  # Callable[[object], object]
     slide_image_paths: object  # Callable[[int], list[str]]
     slide_icon_name: object  # Callable[[int], str | None]
+    slide_icon_collection: object  # Callable[[int], str | None]
     ensure_parent_dir: object  # Callable[[str], None]
     safe_image_path: object  # Callable[[str], str | None]
 
@@ -157,6 +159,67 @@ def _luminance(hex_color: str) -> float:
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
+def _effective_panel_bg(ctx: RenderContext, fill_hex: str, colors: dict[str, str]) -> str:
+    """Return the colour text will actually sit on after frosted/tinted mixing.
+
+    During rendering, frosted panels mix ``fill_hex`` toward white (or dark),
+    and tinted panels use ``fill_hex`` at reduced opacity over the slide BG.
+    Contrast must be checked against this effective colour, not ``fill_hex``.
+    """
+    style = ctx.style
+    if style.panel_fill == "frosted":
+        if style.dark_mode:
+            return _mix_hex(fill_hex, colors.get("DARK", "1B1B1B"), 0.45)
+        return _mix_hex(fill_hex, colors.get("LIGHT", "FFFFFF"), 0.55)
+    if style.panel_fill == "tinted":
+        # Tinted panels are fill_hex at panel_fill_opacity over the slide BG.
+        # Approximate the blended visual result.
+        opacity = style.panel_fill_opacity
+        return _mix_hex(colors["BG"], fill_hex, opacity)
+    if style.panel_fill == "transparent":
+        return colors["BG"]
+    # solid — fill_hex as-is
+    return fill_hex
+
+
+def _apply_slide_bg_gradient(
+    slide, color_stops: tuple[str, ...], angle_degrees: float = 90.0,
+) -> None:
+    """Apply a linear gradient background to a slide via DrawingML XML."""
+    from lxml import etree
+
+    ns_a = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    ns_p = "http://schemas.openxmlformats.org/presentationml/2006/main"
+
+    # Ensure the background XML structure exists
+    slide.background.fill.solid()
+
+    bg_pr = slide.background._element.find(f"{{{ns_p}}}bg/{{{ns_p}}}bgPr")
+    if bg_pr is None:
+        return
+
+    # Remove existing fill elements
+    for tag in ("solidFill", "gradFill", "pattFill", "blipFill", "noFill"):
+        for el in list(bg_pr.findall(f"{{{ns_a}}}{tag}")):
+            bg_pr.remove(el)
+
+    # Build gradient fill
+    grad = etree.Element(f"{{{ns_a}}}gradFill")
+    gs_lst = etree.SubElement(grad, f"{{{ns_a}}}gsLst")
+    n = max(len(color_stops) - 1, 1)
+    for i, c in enumerate(color_stops):
+        gs = etree.SubElement(gs_lst, f"{{{ns_a}}}gs")
+        gs.set("pos", str(int(round(i * 100000 / n))))
+        srgb = etree.SubElement(gs, f"{{{ns_a}}}srgbClr")
+        srgb.set("val", c.lstrip("#").upper())
+    lin = etree.SubElement(grad, f"{{{ns_a}}}lin")
+    lin.set("ang", str(int(round((angle_degrees % 360) * 60000))))
+    lin.set("scaled", "1")
+
+    # Insert before effectLst (must come first per OOXML schema)
+    bg_pr.insert(0, grad)
+
+
 def _resolve_slide_colors(
     ctx: RenderContext,
     base_colors: dict[str, str],
@@ -173,8 +236,12 @@ def _resolve_slide_colors(
     style = ctx.style
     colors = dict(base_colors)
 
-    # Background: use the palette colour directly
+    # Background: use style fallback when the user has not provided explicit
+    # theme colors and the style defines its own characteristic background.
+    # First color in bg_colors is the representative solid for contrast math.
     bg_hex = colors["BG"]
+    if style.bg_colors:
+        bg_hex = style.bg_colors[0]
 
     if style.dark_mode:
         panel_base = _mix_hex(colors["DARK2"], accent_a, 0.28)
@@ -279,13 +346,18 @@ def _add_panel(ctx: RenderContext, slide, rect: RectSpec,
                accent_b_hex: str = "", name: str = "") -> object:
     """Add a panel shape with fill controlled by StyleConfig."""
     style = ctx.style
+    panel_shape_type = (
+        MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE
+        if style.text_box_corner_style == "rounded"
+        else MSO_AUTO_SHAPE_TYPE.RECTANGLE
+    )
     colors = _build_colors(ctx.theme)
     if style.panel_shadow != "none" and style.panel_fill != "transparent":
         shadow_dx = 0.10 if style.panel_shadow == "hard" else 0.06
         shadow_dy = 0.11 if style.panel_shadow == "hard" else 0.08
         shadow = ctx.add_design_shape(
             slide.shapes,
-            MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+            panel_shape_type,
             Inches(rect.x + shadow_dx), Inches(rect.y + shadow_dy),
             Inches(rect.w), Inches(rect.h),
             name=f"{name}_shadow" if name else "panel_shadow",
@@ -300,7 +372,7 @@ def _add_panel(ctx: RenderContext, slide, rect: RectSpec,
         shadow.line.fill.background()
     shape = ctx.add_managed_shape(
         slide.shapes,
-        MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+        panel_shape_type,
         Inches(rect.x), Inches(rect.y),
         Inches(rect.w), Inches(rect.h),
         name=name,
@@ -680,14 +752,25 @@ def _add_key_message_band(ctx: RenderContext, slide, spec: LayoutSpec,
 
 # ── Font sizing helpers ──────────────────────────────────────────────
 
-def _adjust_title_font(rect: RectSpec, text: str, base_pt: float,
-                       scale: float = 1.0) -> float:
-    size = base_pt * scale
+def _adjust_title_font(
+    rect: RectSpec,
+    text: str,
+    base_pt: float,
+    scale: float = 1.0,
+    *,
+    min_pt: float = 22,
+) -> float:
+    size = max(base_pt * scale, min_pt)
     required = estimate_text_height_in(text, rect.w, size, line_height=1.08)
-    if required > rect.h * 1.05:
-        size = max(22, size - 4)
-    elif required > rect.h * 0.86:
-        size = max(24, size - 2)
+    if required <= rect.h * 0.86:
+        return size
+
+    while size > min_pt and required > rect.h * 1.02:
+        size = max(min_pt, size - 2)
+        required = estimate_text_height_in(text, rect.w, size, line_height=1.08)
+
+    if required > rect.h * 0.92 and size > min_pt:
+        size = max(min_pt, size - 1)
     return size
 
 
@@ -701,11 +784,79 @@ def _adjust_body_font(width_in: float, height_in: float, text: str,
     return base_pt
 
 
+def _is_metric_like_title(text: str) -> bool:
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    words = stripped.split()
+    digit_count = sum(ch.isdigit() for ch in stripped)
+    alpha_count = sum(ch.isalpha() for ch in stripped)
+    if digit_count == 0:
+        return len(words) <= 2 and len(stripped) <= 12
+    return len(words) <= 4 and digit_count >= max(1, alpha_count // 6)
+
+
+def _reflow_big_number_spec(
+    spec: LayoutSpec,
+    title_text: str,
+    key_message_text: str,
+    *,
+    title_pt: float,
+    key_pt: float,
+) -> LayoutSpec:
+    if spec.title_rect is None:
+        return spec
+
+    title_height = max(
+        min(
+            estimate_text_height_in(title_text, spec.title_rect.w, title_pt, line_height=1.08) + 0.08,
+            spec.title_rect.h,
+        ),
+        0.9,
+    )
+    title_rect = replace(spec.title_rect, h=round(title_height, 4))
+
+    next_y = round(title_rect.y + title_rect.h + 0.12, 4)
+    key_rect = spec.key_message_rect
+    if key_rect is not None:
+        key_height = key_rect.h
+        if key_message_text.strip():
+            key_height = max(
+                estimate_text_height_in(key_message_text, key_rect.w, key_pt, line_height=1.16) + 0.06,
+                0.4,
+            )
+        key_rect = replace(key_rect, y=next_y, h=round(key_height, 4))
+        next_y = round(key_rect.y + key_rect.h + 0.18, 4)
+
+    content_rect = spec.content_rect
+    if content_rect is not None:
+        notes_top = spec.notes_rect.y if spec.notes_rect is not None else (SLIDE_HEIGHT_IN - 0.62)
+        content_bottom = max(notes_top - 0.18, next_y + 0.8)
+        content_rect = replace(
+            content_rect,
+            y=next_y,
+            h=round(max(content_bottom - next_y, 0.8), 4),
+        )
+
+    return replace(spec, title_rect=title_rect, key_message_rect=key_rect, content_rect=content_rect)
+
+
 def _density_gap_multiplier(density: str) -> float:
     if density == "compact":
         return 0.82
     if density == "spacious":
         return 1.24
+    return 1.0
+
+
+def _whitespace_gap_multiplier(bias: str) -> float:
+    """Additional gap scaling from ``StyleLayoutPolicy.whitespace_bias``."""
+    if bias == "tight":
+        return 0.85
+    if bias == "generous":
+        return 1.15
+    if bias == "editorial":
+        return 1.20
     return 1.0
 
 
@@ -733,6 +884,20 @@ def _density_font_adjustment(density: str) -> float:
     return 0.0
 
 
+def _rounded_panel_text_inset(shape_h_in: float, *, corner_style: str) -> tuple[float, float]:
+    """Approximate PowerPoint's extra text inset for rounded rectangles.
+
+    Rounded rectangles expose less usable text area than plain rectangles even
+    when the explicit text-frame margins are identical. Reserve that shoulder
+    space up front so panel text fitting does not assume the full bounding box.
+    """
+    if corner_style != "rounded":
+        return 0.0, 0.0
+    extra_x = min(max(shape_h_in * 0.14, 0.04), 0.12)
+    extra_y = min(max(shape_h_in * 0.08, 0.03), 0.08)
+    return extra_x, extra_y
+
+
 # ── Panel text writers ───────────────────────────────────────────────
 
 def _write_panel_text(ctx: RenderContext, shape, title_text: str, body_text: str,
@@ -747,15 +912,23 @@ def _write_panel_text(ctx: RenderContext, shape, title_text: str, body_text: str
     density_name = ctx.style.content_density
     pad = _density_padding_adjustment(density_name)
     spacing_mult = _density_line_spacing_multiplier(density_name)
+    corner_x, corner_y = _rounded_panel_text_inset(
+        shape.height / EMU_PER_INCH,
+        corner_style=ctx.style.text_box_corner_style,
+    )
     title_pt = max(12, title_pt + _density_font_adjustment(density_name))
     body_pt = max(11, body_pt + _density_font_adjustment(density_name))
-    tf.margin_left = Inches(max(0.10, 0.16 + left_reserve + pad))
-    tf.margin_right = Inches(max(0.08, 0.14 + pad))
-    tf.margin_top = Inches(max(0.08, 0.12 + top_reserve + pad))
-    tf.margin_bottom = Inches(max(0.06, 0.10 + pad))
+    left_margin = max(0.10, 0.16 + left_reserve + pad + corner_x)
+    right_margin = max(0.08, 0.14 + pad + corner_x)
+    top_margin = max(0.08, 0.12 + top_reserve + pad + corner_y)
+    bottom_margin = max(0.06, 0.10 + pad + corner_y)
+    tf.margin_left = Inches(left_margin)
+    tf.margin_right = Inches(right_margin)
+    tf.margin_top = Inches(top_margin)
+    tf.margin_bottom = Inches(bottom_margin)
 
-    usable_w = max(shape.width / EMU_PER_INCH - (0.30 + left_reserve), 0.5)
-    usable_h = max(shape.height / EMU_PER_INCH - (0.22 + top_reserve), 0.45)
+    usable_w = max(shape.width / EMU_PER_INCH - (left_margin + right_margin), 0.5)
+    usable_h = max(shape.height / EMU_PER_INCH - (top_margin + bottom_margin), 0.45)
     title_need = estimate_text_height_in(title_text, usable_w, title_pt, line_height=1.10) if title_text else 0.0
     body_need = estimate_text_height_in(body_text, usable_w, body_pt, line_height=1.16) if body_text else 0.0
     density_ratio = (title_need + body_need + (0.06 if title_text and body_text else 0.0)) / usable_h
@@ -770,8 +943,8 @@ def _write_panel_text(ctx: RenderContext, shape, title_text: str, body_text: str
         body_pt = max(11, body_pt - 0.5)
         line_spacing = 1.18 * spacing_mult
 
-    # Effective background for contrast check depends on panel fill
-    bg_for_contrast = fill_hex if ctx.style.panel_fill not in ("transparent",) else colors["BG"]
+    # Effective background for contrast check — use the actual rendered fill
+    bg_for_contrast = _effective_panel_bg(ctx, fill_hex, colors)
     title_color = ctx.ensure_contrast(colors["TEXT"], bg_for_contrast)
     body_color = ctx.ensure_contrast(colors["TEXT"], bg_for_contrast)
 
@@ -799,15 +972,23 @@ def _write_bullets_panel(ctx: RenderContext, shape, heading: str, items: list[st
     density_name = ctx.style.content_density
     pad = _density_padding_adjustment(density_name)
     spacing_mult = _density_line_spacing_multiplier(density_name)
+    corner_x, corner_y = _rounded_panel_text_inset(
+        shape.height / EMU_PER_INCH,
+        corner_style=ctx.style.text_box_corner_style,
+    )
     heading_pt = max(12, heading_pt + _density_font_adjustment(density_name))
     bullet_pt = max(11, bullet_pt + _density_font_adjustment(density_name))
-    tf.margin_left = Inches(max(0.10, 0.16 + pad))
-    tf.margin_right = Inches(max(0.08, 0.14 + pad))
-    tf.margin_top = Inches(max(0.08, 0.12 + top_reserve + pad))
-    tf.margin_bottom = Inches(max(0.06, 0.10 + pad))
+    left_margin = max(0.10, 0.16 + pad + corner_x)
+    right_margin = max(0.08, 0.14 + pad + corner_x)
+    top_margin = max(0.08, 0.12 + top_reserve + pad + corner_y)
+    bottom_margin = max(0.06, 0.10 + pad + corner_y)
+    tf.margin_left = Inches(left_margin)
+    tf.margin_right = Inches(right_margin)
+    tf.margin_top = Inches(top_margin)
+    tf.margin_bottom = Inches(bottom_margin)
 
-    usable_w = max(shape.width / EMU_PER_INCH - 0.30, 0.5)
-    usable_h = max(shape.height / EMU_PER_INCH - (0.22 + top_reserve), 0.5)
+    usable_w = max(shape.width / EMU_PER_INCH - (left_margin + right_margin), 0.5)
+    usable_h = max(shape.height / EMU_PER_INCH - (top_margin + bottom_margin), 0.5)
     total_need = estimate_text_height_in(heading, usable_w, heading_pt, line_height=1.10)
     total_need += sum(
         estimate_text_height_in(item, usable_w - 0.18, bullet_pt, line_height=1.16)
@@ -824,7 +1005,7 @@ def _write_bullets_panel(ctx: RenderContext, shape, heading: str, items: list[st
         bullet_pt = max(11, bullet_pt - 0.4)
         line_spacing = 1.18 * spacing_mult
 
-    bg_for_contrast = fill_hex if ctx.style.panel_fill not in ("transparent",) else colors["BG"]
+    bg_for_contrast = _effective_panel_bg(ctx, fill_hex, colors)
     title_color = ctx.ensure_contrast(colors["TEXT"], bg_for_contrast)
     bullet_color = ctx.ensure_contrast(colors["TEXT"], bg_for_contrast)
 
@@ -856,15 +1037,21 @@ def _split_content_for_images(rect: RectSpec) -> tuple[RectSpec, RectSpec]:
     return text_rect, image_rect
 
 
-def _grid_rects(rect: RectSpec, count: int, density: str = "normal") -> list[RectSpec]:
+def _grid_rects(rect: RectSpec, count: int, density: str = "normal",
+                whitespace_bias: str = "normal",
+                corner_style: str = "square") -> list[RectSpec]:
     if count <= 0:
         return []
     use_two_cols = count >= 5 or (rect.h / max(count, 1)) < 0.82
     cols = 2 if use_two_cols and count > 1 else 1
     rows = int(math.ceil(count / cols))
-    gap_mult = _density_gap_multiplier(density)
+    gap_mult = _density_gap_multiplier(density) * _whitespace_gap_multiplier(whitespace_bias)
     gap_x = min(rect.w * 0.035, 0.18) * gap_mult
     gap_y = min(rect.h * 0.04, 0.18) * gap_mult
+    # Rounded panels lose usable area to corner insets — reclaim space from
+    # inter-panel gaps so each cell is taller within the same total zone.
+    if corner_style == "rounded" and rows > 1:
+        gap_y *= 0.5
     cell_w = rect.w if cols == 1 else (rect.w - gap_x * (cols - 1)) / cols
     cell_h = (rect.h - gap_y * (rows - 1)) / rows
     rects: list[RectSpec] = []
@@ -1021,8 +1208,6 @@ def _render_table_slide(ctx: RenderContext, slide, spec: LayoutSpec,
         stripe_fill = _lighten_hex(accent_a, 0.92)
         header_text_color = ctx.ensure_contrast(colors['BG'], header_fill)
         body_text_color = ctx.ensure_contrast(colors['TEXT'], bg_base)
-        border_color = _lighten_hex(accent_a, 0.75)
-
         # ── Font sizing — adaptive based on table density ──
         font_name = ctx.font_family
         cell_count = row_count * col_count
@@ -1164,10 +1349,13 @@ def _tile_images(ctx: RenderContext, slide, image_paths: list[str],
 
 def _place_slide_icon(ctx: RenderContext, slide, spec: LayoutSpec,
                       slide_index: int, accent_hex: str) -> None:
+    if not ctx.show_slide_icons:
+        return
     icon_name = ctx.slide_icon_name(slide_index)
     if not icon_name:
         return
-    icon_path = ctx.fetch_icon(icon_name, color_hex=accent_hex)
+    icon_collection = ctx.slide_icon_collection(slide_index)
+    icon_path = ctx.fetch_icon(icon_name, color_hex=accent_hex, required_collection=icon_collection)
     if not icon_path:
         return
     if spec.icon_rect:
@@ -1190,8 +1378,9 @@ def _place_slide_icon(ctx: RenderContext, slide, spec: LayoutSpec,
 
 
 def _place_panel_icon(ctx: RenderContext, slide, icon_id: str, accent_hex: str,
-                      *, size_in: float, x: float, y: float) -> None:
-    icon_path = ctx.fetch_icon(icon_id, color_hex=accent_hex)
+                      *, size_in: float, x: float, y: float,
+                      required_collection: str | None = None) -> None:
+    icon_path = ctx.fetch_icon(icon_id, color_hex=accent_hex, required_collection=required_collection)
     if icon_path:
         ctx.safe_add_design_picture(
             slide.shapes, icon_path,
@@ -1292,15 +1481,28 @@ def _render_title_slide(ctx: RenderContext, slide, spec: LayoutSpec,
             tf.word_wrap = True
             tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
             tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-            tf.margin_left = Inches(0.08)
-            tf.margin_right = Inches(0.08)
-            tf.margin_top = Inches(0.04)
-            tf.margin_bottom = Inches(0.04)
+            corner_x, corner_y = _rounded_panel_text_inset(
+                chip_rect.h,
+                corner_style=ctx.style.text_box_corner_style,
+            )
+            left_margin = 0.08 + corner_x
+            right_margin = 0.08 + corner_x
+            top_margin = 0.04 + corner_y
+            bottom_margin = 0.04 + corner_y
+            tf.margin_left = Inches(left_margin)
+            tf.margin_right = Inches(right_margin)
+            tf.margin_top = Inches(top_margin)
+            tf.margin_bottom = Inches(bottom_margin)
             p = tf.paragraphs[0]
             p.alignment = PP_ALIGN.CENTER
             p.line_spacing = 1.16
-            chip_pt = _adjust_body_font(chip_rect.w - 0.16, chip_rect.h - 0.08, chip_text, 11.2)
-            bg_for_contrast = fill_hex if ctx.style.panel_fill != "transparent" else colors["BG"]
+            chip_pt = _adjust_body_font(
+                chip_rect.w - (left_margin + right_margin),
+                chip_rect.h - (top_margin + bottom_margin),
+                chip_text,
+                11.2,
+            )
+            bg_for_contrast = _effective_panel_bg(ctx, fill_hex, colors)
             _write_run(p, chip_text, chip_pt,
                        ctx.ensure_contrast(colors["TEXT"], bg_for_contrast),
                        bold=False, font_name=ctx.font_family)
@@ -1324,8 +1526,10 @@ def _render_bullets_slide(ctx: RenderContext, slide, spec: LayoutSpec,
 
     _add_title_and_key_message(ctx, slide, spec, data, colors, accent_a, accent_b)
 
-    bullet_rects = _grid_rects(body_rect, len(data["bullets"]), ctx.style.content_density) if body_rect else []
-    show_icons = ctx.style.text_box_style in ("with-icons", "mixed")
+    bullet_rects = _grid_rects(body_rect, len(data["bullets"]), ctx.style.content_density,
+                               ctx.style.layout_policy.whitespace_bias,
+                               ctx.style.text_box_corner_style) if body_rect else []
+    show_icons = ctx.text_box_style in ("with-icons", "mixed")
 
     for idx, bullet in enumerate(data["bullets"][:len(bullet_rects)]):
         rect = bullet_rects[idx]
@@ -1338,12 +1542,15 @@ def _render_bullets_slide(ctx: RenderContext, slide, spec: LayoutSpec,
         top_reserve = 0.0
 
         if show_icons:
-            icon_id = ctx.slide_icon_name(slide_index) or "tabler:point"
+            slide_icon = ctx.slide_icon_name(slide_index)
+            icon_id = slide_icon or "fluent:checkmark-24-regular"
+            icon_collection = ctx.slide_icon_collection(slide_index)
             icon_size = max(min(rect.h * 0.18, 0.34), 0.24)
             _place_panel_icon(ctx, slide, icon_id, fill_hex,
                               size_in=icon_size,
                               x=rect.x + rect.w - icon_size - 0.10,
-                              y=rect.y + 0.10)
+                              y=rect.y + 0.10,
+                              required_collection=icon_collection)
             top_reserve = 0.06
 
         stripe_w = (max(min(rect.w * 0.02, 0.08), 0.04) + 0.02) if ctx.style.panel_stripe else 0.0
@@ -1371,13 +1578,15 @@ def _render_cards_slide(ctx: RenderContext, slide, spec: LayoutSpec,
         header_band_h = spec.cards.header_band_h or 0.34
         header_icon_count = max(spec.cards.header_icon_count, 1)
     else:
-        card_rects = _grid_rects(spec.content_rect, len(data["bullets"]), ctx.style.content_density) if spec.content_rect else []
+        card_rects = _grid_rects(spec.content_rect, len(data["bullets"]), ctx.style.content_density,
+                                 ctx.style.layout_policy.whitespace_bias,
+                                 ctx.style.text_box_corner_style) if spec.content_rect else []
         pattern = "standard"
         icon_size = 0.46
         header_band_h = 0.34
         header_icon_count = 1
 
-    show_icons = ctx.style.text_box_style in ("with-icons", "mixed")
+    show_icons = ctx.text_box_style in ("with-icons", "mixed")
 
     for idx, bullet in enumerate(data["bullets"][:len(card_rects)]):
         rect = card_rects[idx]
@@ -1387,13 +1596,16 @@ def _render_cards_slide(ctx: RenderContext, slide, spec: LayoutSpec,
         panel = _add_panel(ctx, slide, rect, fill_hex, fill_hex,
                            accent_b_hex=accent_b, name=f"card_{idx}")
         title_text, body_text, _ = _split_bullet_text(bullet)
-        card_icon = ctx.slide_icon_name(slide_index) or "tabler:sparkles"
+        slide_icon = ctx.slide_icon_name(slide_index)
+        card_icon = slide_icon or "fluent:sparkle-24-regular"
+        card_icon_collection = ctx.slide_icon_collection(slide_index)
         top_reserve = 0.0
 
         if pattern == "icon_card":
             ico = max(min(icon_size, rect.h * 0.22), 0.34)
             _place_panel_icon(ctx, slide, card_icon, fill_hex,
-                              size_in=ico, x=rect.x + 0.14, y=rect.y + 0.10)
+                              size_in=ico, x=rect.x + 0.14, y=rect.y + 0.10,
+                              required_collection=card_icon_collection)
             top_reserve = ico + 0.08
         elif pattern == "header_icon_card":
             band_h = min(header_band_h, rect.h * 0.22)
@@ -1419,19 +1631,21 @@ def _render_cards_slide(ctx: RenderContext, slide, spec: LayoutSpec,
             total_w = ico * n_icons + gap * (n_icons - 1)
             start_x = rect.x + max((rect.w - total_w) / 2, 0.10)
             for icon_idx in range(n_icons):
-                bg_for_icon = fill_hex if ctx.style.panel_fill != "transparent" else colors["BG"]
+                bg_for_icon = _effective_panel_bg(ctx, fill_hex, colors)
                 _place_panel_icon(ctx, slide, card_icon,
                                   ctx.ensure_contrast(colors["TEXT"], bg_for_icon),
                                   size_in=ico,
                                   x=start_x + icon_idx * (ico + gap),
-                                  y=rect.y + (band_h - ico) / 2)
+                                  y=rect.y + (band_h - ico) / 2,
+                                  required_collection=card_icon_collection)
             top_reserve = band_h + 0.05
         elif show_icons:
             ico = max(min(rect.h * 0.15, 0.28), 0.18)
             _place_panel_icon(ctx, slide, card_icon, fill_hex,
                               size_in=ico,
                               x=rect.x + rect.w - ico - 0.10,
-                              y=rect.y + 0.10)
+                              y=rect.y + 0.10,
+                              required_collection=card_icon_collection)
             top_reserve = 0.06
 
         _write_panel_text(ctx, panel, title_text, body_text, fill_hex, colors,
@@ -1466,19 +1680,22 @@ def _render_comparison_slide(ctx: RenderContext, slide, spec: LayoutSpec,
     right_panel = _add_panel(ctx, slide, right_rect, accent_b, accent_b,
                              accent_b_hex=accent_a, name="comparison_right")
 
-    show_icons = ctx.style.text_box_style in ("with-icons", "mixed")
+    show_icons = ctx.text_box_style in ("with-icons", "mixed")
     top_left = top_right = 0.0
     if show_icons:
+        comparison_icon_collection = ctx.slide_icon_collection(slide_index)
         left_ico = max(min(left_rect.h * 0.12, 0.26), 0.18)
         right_ico = max(min(right_rect.h * 0.12, 0.26), 0.18)
-        _place_panel_icon(ctx, slide, "tabler:alert-triangle", accent_a,
+        _place_panel_icon(ctx, slide, "fluent:warning-24-regular", accent_a,
                           size_in=left_ico,
                           x=left_rect.x + left_rect.w - left_ico - 0.10,
-                          y=left_rect.y + 0.10)
-        _place_panel_icon(ctx, slide, "tabler:circle-check", accent_b,
+                          y=left_rect.y + 0.10,
+                          required_collection=comparison_icon_collection)
+        _place_panel_icon(ctx, slide, "fluent:checkmark-24-regular", accent_b,
                           size_in=right_ico,
                           x=right_rect.x + right_rect.w - right_ico - 0.10,
-                          y=right_rect.y + 0.10)
+                          y=right_rect.y + 0.10,
+                          required_collection=comparison_icon_collection)
         top_left = top_right = 0.05
 
     left_heading = data.get("comparison_left_label", "Before")
@@ -1580,8 +1797,10 @@ def _render_summary_slide(ctx: RenderContext, slide, spec: LayoutSpec,
                           colors: dict[str, str]) -> None:
     _add_title_and_key_message(ctx, slide, spec, data, colors, accent_a, accent_b)
 
-    rects = _grid_rects(spec.content_rect, len(data["bullets"]), ctx.style.content_density) if spec.content_rect else []
-    show_icons = ctx.style.text_box_style in ("with-icons", "mixed")
+    rects = _grid_rects(spec.content_rect, len(data["bullets"]), ctx.style.content_density,
+                        ctx.style.layout_policy.whitespace_bias,
+                        ctx.style.text_box_corner_style) if spec.content_rect else []
+    show_icons = ctx.text_box_style in ("with-icons", "mixed")
 
     for idx, bullet in enumerate(data["bullets"][:len(rects)]):
         rect = rects[idx]
@@ -1590,11 +1809,13 @@ def _render_summary_slide(ctx: RenderContext, slide, spec: LayoutSpec,
                            name=f"summary_{idx}")
         top_reserve = 0.0
         if show_icons:
+            summary_icon_collection = ctx.slide_icon_collection(slide_index)
             ico = max(min(rect.h * 0.15, 0.26), 0.18)
-            _place_panel_icon(ctx, slide, "tabler:checklist", fill_hex,
+            _place_panel_icon(ctx, slide, "fluent:task-list-24-regular", fill_hex,
                               size_in=ico,
                               x=rect.x + rect.w - ico - 0.10,
-                              y=rect.y + 0.10)
+                              y=rect.y + 0.10,
+                              required_collection=summary_icon_collection)
             top_reserve = 0.05
         _write_panel_text(ctx, panel, bullet, "", fill_hex, colors,
                           title_pt=14, body_pt=12, top_reserve=top_reserve)
@@ -1664,19 +1885,49 @@ def _render_big_number_slide(ctx: RenderContext, slide, spec: LayoutSpec,
                              accent_a: str, accent_b: str,
                              colors: dict[str, str]) -> None:
     """Hero number + supporting text."""
+    metric_like_title = _is_metric_like_title(data["title_text"])
+    title_base_pt = 72 if metric_like_title else 42
+    title_min_pt = 28 if metric_like_title else 24
+    title_pt = title_base_pt * ctx.style.title_font_scale
     if spec.title_rect:
-        _add_textbox(ctx, slide, spec.title_rect, data["title_text"],
-                     72 * ctx.style.title_font_scale,
+        title_pt = _adjust_title_font(
+            spec.title_rect,
+            data["title_text"],
+            title_base_pt,
+            scale=ctx.style.title_font_scale,
+            min_pt=title_min_pt,
+        )
+
+    key_pt = 18.0
+    if data["key_message_text"] and spec.key_message_rect:
+        key_pt = _adjust_body_font(
+            spec.key_message_rect.w,
+            max(spec.key_message_rect.h, 0.4),
+            data["key_message_text"],
+            18,
+        )
+
+    render_spec = _reflow_big_number_spec(
+        spec,
+        data["title_text"],
+        data.get("key_message_text", ""),
+        title_pt=title_pt,
+        key_pt=key_pt,
+    )
+
+    if render_spec.title_rect:
+        _add_textbox(ctx, slide, render_spec.title_rect, data["title_text"],
+                     title_pt,
                      ctx.ensure_contrast(accent_a, colors["BG"]),
                      bold=True, name="big_number",
                      align=PP_ALIGN.CENTER)
-    if data["key_message_text"] and spec.key_message_rect:
-        _add_textbox(ctx, slide, spec.key_message_rect, data["key_message_text"],
-                     18, ctx.ensure_contrast(colors["TEXT"], colors["BG"]),
+    if data["key_message_text"] and render_spec.key_message_rect:
+        _add_textbox(ctx, slide, render_spec.key_message_rect, data["key_message_text"],
+                     key_pt, ctx.ensure_contrast(colors["TEXT"], colors["BG"]),
                      name="key_message", align=PP_ALIGN.CENTER)
-    if data["bullets"] and spec.content_rect:
-        _render_bullets_body(ctx, slide, spec, data, slide_index, accent_a, accent_b, colors)
-    _place_slide_icon(ctx, slide, spec, slide_index, accent_a)
+    if data["bullets"] and render_spec.content_rect:
+        _render_bullets_body(ctx, slide, render_spec, data, slide_index, accent_a, accent_b, colors)
+    _place_slide_icon(ctx, slide, render_spec, slide_index, accent_a)
     _set_speaker_notes(slide, data.get("notes", ""))
 
 
@@ -1757,7 +2008,9 @@ def _render_bullets_body(ctx: RenderContext, slide, spec: LayoutSpec,
     body_rect = spec.content_rect
     if not body_rect or not data["bullets"]:
         return
-    bullet_rects = _grid_rects(body_rect, len(data["bullets"]), ctx.style.content_density)
+    bullet_rects = _grid_rects(body_rect, len(data["bullets"]), ctx.style.content_density,
+                               ctx.style.layout_policy.whitespace_bias,
+                               ctx.style.text_box_corner_style)
     for idx, bullet in enumerate(data["bullets"][:len(bullet_rects)]):
         rect = bullet_rects[idx]
         fill_hex = ctx.accent_cycle[(slide_index + idx) % len(ctx.accent_cycle)]
@@ -1829,9 +2082,13 @@ def render_presentation(
     apply_widescreen=None,
     slide_image_paths=None,
     slide_icon_name=None,
+    slide_icon_collection=None,
     ensure_parent_dir=None,
     safe_image_path=None,
     workspace_dir: str = "",
+    theme_explicit: bool = False,
+    text_box_style: str = "plain",
+    show_slide_icons: bool = True,
 ) -> str:
     """Render a PPTX file from structured slide data.
 
@@ -1852,6 +2109,7 @@ def render_presentation(
         "apply_widescreen": apply_widescreen,
         "slide_image_paths": slide_image_paths,
         "slide_icon_name": slide_icon_name,
+        "slide_icon_collection": slide_icon_collection,
     }
     missing = [k for k, v in required_fns.items() if v is None]
     if missing:
@@ -1903,6 +2161,9 @@ def render_presentation(
         accent_cycle=accent_cycle,
         template_path=template_path,
         workspace_dir=workspace_dir,
+        theme_explicit=theme_explicit,
+        text_box_style=text_box_style,
+        show_slide_icons=show_slide_icons,
         rgb_color=rgb_color,
         ensure_contrast=ensure_contrast,
         set_fill_transparency=set_fill_transparency,
@@ -1919,6 +2180,7 @@ def render_presentation(
         apply_widescreen=apply_widescreen,
         slide_image_paths=slide_image_paths,
         slide_icon_name=slide_icon_name,
+        slide_icon_collection=slide_icon_collection,
         ensure_parent_dir=ensure_parent_dir or (lambda p: os.makedirs(os.path.dirname(p), exist_ok=True)),
         safe_image_path=safe_image_path or (lambda p: p),
     )
@@ -1950,11 +2212,19 @@ def render_presentation(
         # Add slide
         slide = prs.slides.add_slide(blank_layout)
         if not template_path:
-            # Keep the slide background locked to the palette BG slot.
-            # Style variation belongs on decorative shapes and panels, not on
-            # foundational reading surfaces like the slide background itself.
-            slide.background.fill.solid()
-            slide.background.fill.fore_color.rgb = rgb_color(slide_colors["BG"])
+            # Apply style-specific gradient background when available.
+            # bg_colors is a signature element of the design style and
+            # should be honoured even when the user has set an explicit
+            # theme palette (theme_explicit only gates content colours).
+            use_style_bg = (
+                style.bg_colors
+                and len(style.bg_colors) >= 2
+            )
+            if use_style_bg:
+                _apply_slide_bg_gradient(slide, style.bg_colors)
+            else:
+                slide.background.fill.solid()
+                slide.background.fill.fore_color.rgb = rgb_color(slide_colors["BG"])
 
         # Decorative accents (controlled by style)
         _add_design_language(ctx, slide, spec, accent_a, accent_b, slide_colors)
@@ -1996,7 +2266,7 @@ def _cli_main() -> int:
         specs_raw = json.load(f)
 
     # Deserialize layout specs
-    from hybrid_layout import deserialize_specs  # noqa: E402
+    from scripts.layout.hybrid_layout import deserialize_specs  # noqa: E402
     layout_specs = deserialize_specs(json.dumps(specs_raw))
 
     # Theme
@@ -2038,7 +2308,7 @@ def _cli_main() -> int:
         shape.fill.solid()
         shape.fill.fore_color.rgb = RGBColor.from_string(stops[0] if stops else "000000")
 
-    def _stub_fetch_icon(name, color_hex="000000", size=256):
+    def _stub_fetch_icon(name, color_hex="000000", size=256, required_collection=None):
         return None
 
     def _make_shape_adder(shapes, shape_type, left, top, w, h, name=""):
@@ -2066,6 +2336,11 @@ def _cli_main() -> int:
             return slide_assets[idx].get("iconName")
         return None
 
+    def _stub_icon_collection(idx):
+        if idx < len(slide_assets):
+            return slide_assets[idx].get("iconCollection")
+        return None
+
     render_presentation(
         layout_input=layout_input,
         layout_specs=layout_specs,
@@ -2091,6 +2366,7 @@ def _cli_main() -> int:
         apply_widescreen=lambda prs: prs,
         slide_image_paths=_stub_image_paths,
         slide_icon_name=_stub_icon_name,
+        slide_icon_collection=_stub_icon_collection,
         ensure_parent_dir=lambda p: os.makedirs(os.path.dirname(p), exist_ok=True) if os.path.dirname(p) else None,
         safe_image_path=lambda p: p if os.path.isfile(p) else None,
     )
