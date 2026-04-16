@@ -108,7 +108,6 @@ export interface IpcThemeAPI {
   listFonts(): Promise<string[]>;
   generatePalette(seeds: string[]): Promise<PaletteColor[]>;
   autoAssign(colors: PaletteColor[], seeds?: string[]): Promise<ThemeSlots>;
-  exportThmx(tokens: ThemeTokens): Promise<{ success: boolean; path?: string; error?: string }>;
 }
 
 export interface IpcPptxAPI {
@@ -122,7 +121,8 @@ export interface IpcPptxAPI {
     iconCollection?: string,
     slides?: Array<{ number: number; title: string; layout: string; icon?: string | null; imageQuery?: string | null; imageQueries?: string[]; imagePath?: string | null; selectedImages?: Array<{ id: string; imageQuery?: string | null; imageUrl?: string | null; imagePath?: string | null; thumbnailUrl?: string | null }> }>,
     templateMeta?: TemplateMeta | null,
-  ): Promise<{ success: boolean; imagePaths?: string[]; error?: string; warning?: string; qa?: { contrastFixes: number; missingIcons: Array<{ icon: string; reason: string }>; iconStats: { requested: number; missing: number; missingRatio: number }; missingImages: string[]; layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }> } }>;
+    customBackgroundColor?: string | null,
+  ): Promise<{ success: boolean; imagePaths?: string[]; error?: string; warning?: string; qa?: { contrastFixes: number; missingIcons: Array<{ icon: string; reason: string }>; rejectedIcons: Array<{ icon: string; reason: string }>; iconStats: { requested: number; missing: number; missingRatio: number; rejectedByCollection?: number; rejectedRatio?: number }; missingImages: string[]; layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }> } }>;
   readExistingPreviews(): Promise<{ success: boolean; imagePaths: string[] }>;
   rerenderPreview(): Promise<{ success: boolean; imagePaths: string[]; error?: string }>;
   openPreviewPptx(): Promise<{ success: boolean; path?: string; error?: string }>;
@@ -216,9 +216,11 @@ export interface PptAppProject {
     selectedFont?: string;
     selectedColorTreatment?: import('../entities/palette').ThemeColorTreatment;
     selectedTextBoxStyle?: import('../entities/palette').ThemeTextBoxStyle;
+    selectedTextBoxCornerStyle?: import('../entities/palette').ThemeTextBoxCornerStyle;
     styleTone?: 'dark' | 'light' | null;
     iconDir?: string | null;
     selectedIconCollection?: IconifyCollectionId;
+    selectedSlideIcons?: boolean;
   };
   dataSources?: {
     files: DataFile[];

@@ -119,7 +119,7 @@ def _hex_color(theme: dict[str, str], *keys: str) -> str:
 
 def _build_colors(theme: dict[str, str]) -> dict[str, str]:
     return {
-        "BG": _hex_color(theme, "BG", "LT1", "LIGHT", "WHITE"),
+        "BG": _hex_color(theme, "BG", "WHITE"),
         "TEXT": _hex_color(theme, "TEXT", "DK1", "DARK"),
         "DARK": _hex_color(theme, "DARK", "DK1", "TEXT"),
         "DARK2": _hex_color(theme, "DARK2", "DK2", "BORDER", "TEXT"),
@@ -229,9 +229,9 @@ def _resolve_slide_colors(
 ) -> dict[str, str]:
     """Derive per-slide colour roles from the user's palette + the active style.
 
-    The palette BG is used as-is for the slide background — no accent mixing.
-    Panels, borders, and secondary tones are derived from palette slots with
-    accent colouring so they complement the style.
+    Slide background comes from the runtime BG role (or the style background
+    gradient fallback). Panels, borders, and secondary tones are then derived
+    from the remaining theme roles so they complement the active style.
     """
     style = ctx.style
     colors = dict(base_colors)
@@ -1027,8 +1027,8 @@ def _grid_rects(rect: RectSpec, count: int, density: str = "normal",
     gap_mult = _density_gap_multiplier(density) * _whitespace_gap_multiplier(whitespace_bias)
     gap_x = min(rect.w * 0.035, 0.18) * gap_mult
     gap_y = min(rect.h * 0.04, 0.18) * gap_mult
-    # Rounded panels lose usable area to corner insets — reclaim space from
-    # inter-panel gaps so each cell is taller within the same total zone.
+    # Rounded panels read tighter in dense grids, so trim vertical gaps a bit
+    # to preserve usable cell height without changing the solved outer zone.
     if corner_style == "rounded" and rows > 1:
         gap_y *= 0.5
     cell_w = rect.w if cols == 1 else (rect.w - gap_x * (cols - 1)) / cols

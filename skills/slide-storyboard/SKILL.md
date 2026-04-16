@@ -195,7 +195,7 @@ N+1. Appendix section (layout: section)
 
 ## Available Icons
 
-Icons are fetched live from the **Iconify** public API. Use any valid Iconify icon ID from the selected collection (e.g., `mdi:brain`, `lucide:rocket`). Invalid or unavailable icons are omitted gracefully. Assign one icon per slide as a design hint.
+Icons are fetched live from the **Iconify** public API. Use a full valid Iconify icon ID from the selected collection (e.g., `mdi:brain`, `lucide:rocket`, `fluent:accessibility-28-filled`). Do not emit bare icon names without the collection prefix. Invalid or unavailable icons are omitted gracefully. Assign one icon per slide as a design hint.
 
 ## Language Rules
 

@@ -5,11 +5,16 @@
 ## ⚠️ Theme Priority & Contrast Rules
 
 > **These rules override every individual style spec below.**
+>
+> **Color priority (highest → lowest):**
+> 1. **User-provided theme colors** — when the user explicitly sets palette/seed colors
+> 2. **Style-specific defaults** — background and signature elements from each style section below
+> 3. **System defaults** — generic fallback palette (white BG, dark text)
 
-1. **`PPTX_THEME` is the sole colour source.** Every style below uses theme token names (`DARK`, `ACCENT1`, etc.) — resolve them via `PPTX_THEME` at runtime. Map each style colour role to the corresponding theme slot:
+1. **Background follows the priority chain above.** When the user has provided explicit theme colors, the theme `BG` slot wins. When no user theme is set, use the style-specific background specified in each `### Background` section below (which may be a solid color or a gradient). Map each non-background style colour role to the corresponding theme slot:
    | Style role | Theme slot (preferred → fallback) |
    |---|---|
-   | Background | `BG` → `DARK` (dark styles) / `LIGHT` (light styles) |
+   | Background | User theme `BG` → style `### Background` → `FFFFFF` |
    | Title text | `TEXT` → `LIGHT` (dark bg) / `DARK` (light bg) |
    | Body text | `TEXT` → `LIGHT2` (dark bg) / `DARK2` (light bg) |
    | Accent / highlight | `ACCENT1` → `PRIMARY` |
@@ -26,22 +31,22 @@
 
 3. **Never produce dark text on a dark background** or light text on a light background. If a style's default palette creates this conflict with the active theme, invert the text colour or use `ensure_contrast()` to fix it.
 
-4. **Style = mood + structure + technique. Theme = actual colours.** Follow each style's layout rules, signature elements, and design techniques faithfully — but always draw colours from the theme.
+4. **Style = mood + structure + technique. Theme = working palette.** Follow each style's **layout rules**, **signature elements**, and design techniques faithfully — these define the style's identity and are not optional. Use theme colors for accent/text roles when available.
 
 ---
 
 Each style is documented with:
-- **Background** — slide background using theme tokens (`DARK`, `BG`, etc.)
-- **Color Mapping** — role → theme token table (always resolved via `PPTX_THEME` at runtime)
-- **Layout** — slide composition approach (always follow)
-- **Signature Elements** — must-have design details for authenticity (always follow)
+- **Background** — style-specific background (solid or gradient); used when the user has not set explicit theme colors
+- **Color Mapping** — role → theme token table (resolved via `PPTX_THEME` at runtime)
+- **Layout** — slide composition approach (**always follow — defines the style's structure**)
+- **Signature Elements** — must-have design details for authenticity (**always follow — defines the style's identity**)
 - **Avoid** — common mistakes that break the style (always follow)
 
 ---
 
 ## Theme Token Legend
 
-All colors in this guide reference `PPTX_THEME` tokens — **never hardcoded hex values**. The actual colors are resolved from the active workspace palette at runtime.
+All non-background colors in this guide reference `PPTX_THEME` tokens. Background sections may include explicit fallback HEX values or gradients that should be used only when the active workspace palette does not define a background.
 
 | Token | Semantic Role |
 |-------|---------------|
@@ -54,7 +59,7 @@ All colors in this guide reference `PPTX_THEME` tokens — **never hardcoded hex
 | `ACCENT2` | Secondary accent — use for supporting color |
 | `ACCENT3`–`ACCENT6` | Additional accents — distribute across visual elements |
 
-**Rule**: The style defines *mood, structure, and visual technique*. The theme defines *actual colors*. Map each style's color role to the closest-matching theme token.
+**Rule**: The style defines *mood, structure, and visual technique*. The theme defines the working palette. When the user provides explicit theme colors, those take priority for all color roles. When no user theme is set, use the style-specific background from the `### Background` section and system defaults for other roles.
 
 ---
 
@@ -90,9 +95,8 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: SaaS, app launches, AI product decks
 
 ### Background
-- Deep dark gradient using `DARK` as the base
-- Multi-stop gradient: `DARK` → `DARK2` → accent-tinted variant
-- Or deep single-tone: `DARK`
+- Deep 3-color gradient: `#1A1A4E → #6B21A8 → #1E3A5F`
+- Or deep single-tone blue: `#0F0F2D`
 
 ### Color Mapping
 
@@ -128,8 +132,8 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Startup pitches, marketing campaigns, creative agencies
 
 ### Background
-- High-saturation solid using `ACCENT1` as the dominant fill
-- Or pure `WHITE` for inverted version
+- High-saturation solid: Yellow `#F5F500`, Lime `#CCFF00`, Hot pink `#FF2D55`
+- Or pure white `#FFFFFF`
 
 ### Color Mapping
 
@@ -164,7 +168,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Feature comparisons, product overviews, data summaries
 
 ### Background
-- Near-white using `BG` as the base
+- Near-white: `#F8F8F2` or `#F0F0F0`
 
 ### Color Mapping
 
@@ -201,8 +205,8 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Education, historical research, book presentations, university talks
 
 ### Background
-- Deep warm dark using `DARK` as the base
-- Or darker variant of `DARK` for maximum drama
+- Deep warm dark brown: `#1A1208`
+- Or `#0E0A05` for maximum drama
 
 ### Color Mapping
 
@@ -235,8 +239,8 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Brand launches, creative portfolios, music/film promotions
 
 ### Background
-- Multi-point radial gradient blend (4–6 colors overlapping)
-- Blend of `ACCENT1` + `ACCENT2` + `ACCENT3` + `ACCENT4` bleeding into each other
+- Multi-point radial gradient blend (4-6 colors overlapping)
+- Example: `#FF6EC7` + `#7B61FF` + `#00D4FF` + `#FFB347` bleeding into each other
 
 ### Color Mapping
 
@@ -272,7 +276,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Product launches, education, children's content, app UI decks
 
 ### Background
-- Warm pastel gradient using `LIGHT2` as the base (warm tone from theme)
+- Warm pastel gradient: `#FFECD2 → #FCB69F` or `#E0F7FA → #B2EBF2`
 
 ### Color Mapping
 
@@ -308,8 +312,8 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Consulting, finance, government, institutional presentations
 
 ### Background
-- Pure `BG` base
-- Or subtle off-white variant of `BG`
+- Pure white: `#FFFFFF`
+- Or off-white: `#FAFAFA`
 
 ### Color Mapping
 
@@ -345,7 +349,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: AI products, cybersecurity, deep tech, innovation summits
 
 ### Background
-- Near-black deep space using `DARK` as the base
+- Near-black deep space: `#050510` or `#020208`
 
 ### Color Mapping
 
@@ -382,7 +386,8 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Events, lifestyle marketing, fashion, creative campaigns
 
 ### Background
-- Dark base using `DARK`
+- Navy blue: `#000080`
+- Or electric blue: `#0020C2`
 
 ### Color Mapping
 
@@ -418,7 +423,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Wellness, lifestyle, non-profit, sustainable brands
 
 ### Background
-- Warm light base using `BG`
+- Warm cream: `#F4F1EC` or `#F0EDE8`
 
 ### Color Mapping
 
@@ -454,8 +459,8 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Brand statements, manifestos, headline announcements
 
 ### Background
-- Light base using `BG`
-- Or `DARK` for inverted version
+- Off-white linen: `#F0EDE8`
+- Or pure black: `#0A0A0A` (inverted version)
 
 ### Color Mapping
 
@@ -490,8 +495,8 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Strategy decks, before/after, compare/contrast slides
 
 ### Background
-- Left half: `ACCENT1` (vivid accent)
-- Right half: `DARK` (deep dark)
+- Left half: vivid orange-red `#FF4500`
+- Right half: deep navy `#1A1A2E`
 
 ### Color Mapping
 
@@ -527,8 +532,8 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Luxury brands, portfolio, art direction, high-end consulting
 
 ### Background
-- Near-white using `BG`
-- Or `DARK` for dark variant
+- Near-white: `#FAFAFA`
+- Or jet black: `#0A0A0A` (dark variant)
 
 ### Color Mapping
 
@@ -564,7 +569,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Gaming, AI infrastructure, security, data engineering decks
 
 ### Background
-- Near-black using `DARK`
+- Near-black: `#0D0D0D`
 
 ### Color Mapping
 
@@ -601,7 +606,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Annual reports, brand stories, long-form content decks
 
 ### Background
-- `BG` base with dark block accent
+- White `#FFFFFF` with dark block
 
 ### Color Mapping
 
@@ -638,7 +643,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Healthcare, beauty, education startups, consumer apps
 
 ### Background
-- Soft tricolor gradient: blend of `ACCENT1` + `ACCENT3` + `ACCENT5` (lightened/pastel variants)
+- Soft tricolor gradient: `#FCE4F3 → #E8F4FF → #F0FCE4`
 
 ### Color Mapping
 
@@ -674,7 +679,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Entertainment, music festivals, events, nightlife brands
 
 ### Background
-- Deep dark using `DARK`
+- Deep purple-black: `#0A0014`
 
 ### Color Mapping
 
@@ -709,7 +714,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Eco brands, food/beverage, craft studios, wellness
 
 ### Background
-- Warm light base using `BG` (craft paper feel)
+- Craft paper warm off-white: `#FDF6EE`
 
 ### Color Mapping
 
@@ -745,7 +750,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: IT architecture, data flow, system diagrams, infrastructure
 
 ### Background
-- Dark base using `DARK`
+- Dark navy: `#1E1E2E`
 
 ### Color Mapping
 
@@ -781,7 +786,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Creative agencies, music/art portfolios, subculture brands
 
 ### Background
-- Dark gradient using `DARK` as the base
+- Dark purple gradient: `#1A0533 → #2D0057 → #570038`
 
 ### Color Mapping
 
@@ -816,7 +821,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Luxury brands, gala events, premium annual reports, high-end hospitality
 
 ### Background
-- Deep dark using `DARK`
+- Deep black-brown: `#0E0A05`
 
 ### Color Mapping
 
@@ -854,7 +859,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Media companies, research institutes, content industry decks
 
 ### Background
-- Light base using `BG` (aged paper feel)
+- Aged paper off-white: `#F2EFE8`
 
 ### Color Mapping
 
@@ -891,7 +896,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Cultural institutions, museums, arts organizations, creative festivals
 
 ### Background
-- Near-black grid frame using `DARK` (grout color)
+- Near-black grid frame: `#0A0A12`
 
 ### Color Mapping
 
@@ -929,7 +934,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Biotech, environmental tech, innovation labs, wellness brands
 
 ### Background
-- Deep dark gradient using `DARK` as the base
+- Deep ocean gradient: `#0F2027 → #203A43 → #2C5364`
 
 ### Color Mapping
 
@@ -966,7 +971,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Fashion brands, lifestyle products, retail, youth marketing
 
 ### Background
-- Warm light base using `BG`
+- Warm off-white: `#FFF5E0`
 
 ### Color Mapping
 
@@ -1003,7 +1008,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Environmental brands, adventure/outdoor, sustainable luxury, conservation
 
 ### Background
-- Radial dark gradient using `DARK` (center lighter, edges darker)
+- Radial dark gradient: `#0D2B14` center → `#060E08` edges
 
 ### Color Mapping
 
@@ -1042,7 +1047,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Architecture, urban planning, engineering, spatial design firms
 
 ### Background
-- Dark base using `DARK` (blueprint tone)
+- Blueprint blue: `#0D2240`
 
 ### Color Mapping
 
@@ -1080,7 +1085,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Advertising agencies, fashion brands, music promotions, editorial
 
 ### Background
-- Light base using `BG` with diagonal pattern overlay
+- Warm antique cream: `#E8DDD0` with diagonal pattern overlay
 
 ### Color Mapping
 
@@ -1118,7 +1123,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Defense tech, AI research, quantum, advanced data engineering
 
 ### Background
-- Deep dark using `DARK` (deep space base)
+- Deep space black: `#03050D`
 
 ### Color Mapping
 
@@ -1157,7 +1162,7 @@ These patterns are reusable card treatments that can be combined with many of th
 **Best For**: Independent publishers, music labels, art zines, boutique studios
 
 ### Background
-- Light base using `BG` (aged paper feel)
+- Aged paper: `#F7F2E8`
 
 ### Color Mapping
 

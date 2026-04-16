@@ -1,0 +1,10 @@
+title = "Project Gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore icon dictionary false positives"
+paths = [
+  '''^src/domain/icons/iconify-dict\.json$''',
+]

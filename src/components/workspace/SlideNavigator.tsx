@@ -21,12 +21,24 @@ const LAYOUT_BADGE: Record<string, string> = {
   diagram: 'DGM', summary: 'SUM', chart: 'CHT', table: 'TBL',
 }
 
+const DEFAULT_CUSTOM_BACKGROUND_COLOR = '#F5F5F5'
+
+function getToneFromHex(hex: string): 'dark' | 'light' {
+  const normalized = hex.replace('#', '')
+  const r = parseInt(normalized.slice(0, 2), 16) / 255
+  const g = parseInt(normalized.slice(2, 4), 16) / 255
+  const b = parseInt(normalized.slice(4, 6), 16) / 255
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+  return luminance < 0.45 ? 'dark' : 'light'
+}
+
 export function SlideNavigator() {
-  const { work, deleteSlide, moveToAppendix, setDesignStyle, setFramework, setCustomFrameworkPrompt, setTemplatePath, setTemplateMeta } = useSlidesStore()
+  const { work, deleteSlide, moveToAppendix, setDesignStyle, setCustomBackgroundColor, setFramework, setCustomFrameworkPrompt, setTemplatePath, setTemplateMeta } = useSlidesStore()
   const slides = work.slides
   const selectedFramework = getFrameworkMeta(work.framework)
   const selectedStyle = getDesignStyleMeta(work.designStyle)
   const isCustomTemplate = work.designStyle === 'Custom Template'
+  const isCustomBlank = work.designStyle === 'Blank Custom Color'
   const isCustomFramework = work.framework === 'custom-prompt'
   const [templateLoading, setTemplateLoading] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
@@ -158,7 +170,14 @@ export function SlideNavigator() {
               // Sync style tone to palette store so BG/TEXT tokens flip correctly
               const meta = next ? getDesignStyleMeta(next as Parameters<typeof setDesignStyle>[0]) : null
               const { setStyleTone, commitTokens } = usePaletteStore.getState()
-              setStyleTone(meta?.tone ?? null)
+              const backgroundColor = next === 'Blank Custom Color'
+                ? (work.customBackgroundColor ?? DEFAULT_CUSTOM_BACKGROUND_COLOR)
+                : null
+              setStyleTone(
+                next === 'Blank Custom Color'
+                  ? getToneFromHex(backgroundColor)
+                  : meta?.tone ?? null,
+              )
               commitTokens()
             }}
             className="h-8 border px-2 text-xs outline-none"
@@ -183,6 +202,56 @@ export function SlideNavigator() {
               ? `${selectedStyle.mood}. Best for ${selectedStyle.bestFor}.`
               : 'Choose one of the available brand styles to guide layout, typography, and visual treatment before generating slides.'}
           </p>
+          {isCustomBlank && (
+            <div className="flex flex-col gap-1.5 mt-1 p-2 border" style={{ borderColor: 'var(--panel-border)', background: 'var(--surface-hover)' }}>
+              <label className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                Blank background color
+              </label>
+              <div className="flex items-center gap-2">
+                <div
+                  className="relative h-8 w-10 overflow-hidden border"
+                  style={{ borderColor: 'var(--panel-border)' }}
+                >
+                  <input
+                    type="color"
+                    value={work.customBackgroundColor ?? DEFAULT_CUSTOM_BACKGROUND_COLOR}
+                    onChange={(e) => {
+                      const nextColor = e.target.value.toUpperCase()
+                      setCustomBackgroundColor(nextColor)
+                      const { setStyleTone, commitTokens } = usePaletteStore.getState()
+                      setStyleTone(getToneFromHex(nextColor))
+                      commitTokens()
+                    }}
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    aria-label="Blank background color"
+                  />
+                  <div className="h-full w-full" style={{ background: work.customBackgroundColor ?? DEFAULT_CUSTOM_BACKGROUND_COLOR }} />
+                </div>
+                <input
+                  type="text"
+                  value={(work.customBackgroundColor ?? DEFAULT_CUSTOM_BACKGROUND_COLOR).toUpperCase()}
+                  onChange={(e) => {
+                    const nextColor = e.target.value.toUpperCase()
+                    if (!/^#[0-9A-F]{0,6}$/.test(nextColor)) return
+                    setCustomBackgroundColor(nextColor)
+                    if (/^#[0-9A-F]{6}$/.test(nextColor)) {
+                      const { setStyleTone, commitTokens } = usePaletteStore.getState()
+                      setStyleTone(getToneFromHex(nextColor))
+                      commitTokens()
+                    }
+                  }}
+                  className="h-8 flex-1 border px-2 text-xs font-mono outline-none"
+                  style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
+                  placeholder="#F5F5F5"
+                  maxLength={7}
+                  spellCheck={false}
+                />
+              </div>
+              <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
+                Uses a plain solid slide background with your selected color.
+              </p>
+            </div>
+          )}
           {isCustomTemplate && (
             <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
               The attached PPTX blank page will be used for theme colors and background template styling.

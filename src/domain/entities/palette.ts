@@ -9,6 +9,7 @@ export interface PaletteColor {
 
 export type ThemeColorTreatment = 'solid' | 'gradient' | 'mixed';
 export type ThemeTextBoxStyle = 'plain' | 'with-icons' | 'mixed';
+export type ThemeTextBoxCornerStyle = 'square' | 'rounded';
 
 /** 12 OOXML theme color slots */
 export interface ThemeSlots {
@@ -32,6 +33,8 @@ export interface ThemeTokens {
   fontFamily?: string;
   colorTreatment?: ThemeColorTreatment;
   textBoxStyle?: ThemeTextBoxStyle;
+  textBoxCornerStyle?: ThemeTextBoxCornerStyle;
+  showSlideIcons?: boolean;
   slots: ThemeSlots;
   /** Flat map name→hex for dropdown rendering */
   colors: PaletteColor[];

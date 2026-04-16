@@ -17,6 +17,8 @@ import type {
   TemplateMeta,
 } from '../domain/entities/slide-work';
 
+const DEFAULT_CUSTOM_BACKGROUND_COLOR = '#F5F5F5'
+
 function normalizeImageQueries(imageQuery: string | null | undefined, imageQueries?: string[]): string[] {
   const explicit = (imageQueries ?? []).map((query) => query.trim()).filter(Boolean)
   if (explicit.length > 0) return explicit
@@ -97,6 +99,7 @@ interface SlidesStore {
   setSlideImageQuery(number: number, imageQuery: string | null): void;
   removeSlideImage(number: number, imageId: string): void;
   setDesignStyle(style: DesignStyle | null): void;
+  setCustomBackgroundColor(color: string | null): void;
   setFramework(fw: FrameworkType): void;
   setCustomFrameworkPrompt(prompt: string | null): void;
   setTemplatePath(path: string | null): void;
@@ -117,6 +120,7 @@ const initial: SlideWork = {
   story: null,
   designBrief: null,
   designStyle: null,
+  customBackgroundColor: null,
   framework: null,
   customFrameworkPrompt: null,
   templatePath: null,
@@ -266,11 +270,23 @@ export const useSlidesStore = create<SlidesStore>()(persist(
       work: {
         ...state.work,
         designStyle: style,
+        customBackgroundColor: style === 'Blank Custom Color'
+          ? state.work.customBackgroundColor ?? DEFAULT_CUSTOM_BACKGROUND_COLOR
+          : state.work.customBackgroundColor,
         designBrief: state.work.designBrief
           ? { ...state.work.designBrief, visualStyle: style ?? state.work.designBrief.visualStyle }
           : state.work.designBrief,
         // Clear template when switching away from Custom Template
         ...(style !== 'Custom Template' ? { templatePath: null, templateMeta: null } : {}),
+      },
+    }));
+  },
+
+  setCustomBackgroundColor(customBackgroundColor) {
+    set((state) => ({
+      work: {
+        ...state.work,
+        customBackgroundColor,
       },
     }));
   },

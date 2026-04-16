@@ -691,7 +691,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('output_path')
     parser.add_argument('--render-dir', default=None,
-                        help='Preview render directory (accepted for compatibility; managed by the caller)')
+                        help='Preview render directory managed by the caller')
     parser.add_argument('--workspace-dir', default=None,
                         help='Absolute path to the user workspace directory')
     parser.add_argument('--post-process-only', action='store_true',
@@ -1714,7 +1714,8 @@ def main() -> int:
 
         # Style config
         from style_config import resolve_style_config  # type: ignore
-        style = resolve_style_config(design_style, color_treatment, text_box_corner_style)
+        custom_background_color = os.environ.get('PPTX_CUSTOM_BACKGROUND_COLOR', '')
+        style = resolve_style_config(design_style, color_treatment, text_box_corner_style, custom_background_color)
         global _ACTIVE_GUARDRAILS  # noqa: PLW0603
         _ACTIVE_GUARDRAILS = style.guardrails
         theme_explicit = os.environ.get('PPTX_THEME_EXPLICIT', '0') == '1'

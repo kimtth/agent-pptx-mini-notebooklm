@@ -1,5 +1,5 @@
 /**
- * ThemeSlotEditor: 12 OOXML theme color slots with colored dropdowns
+ * ThemeSlotEditor: curated OOXML theme color slots with colored dropdowns
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -8,8 +8,6 @@ import { usePaletteStore } from '../../stores/palette-store'
 import type { ThemeSlots } from '../../domain/entities/palette'
 
 const SLOT_LABELS: { key: keyof ThemeSlots; label: string; description: string }[] = [
-  { key: 'lt1', label: 'Slide Background', description: 'Main canvas' },
-  { key: 'lt2', label: 'Panel Background', description: 'Cards and panels' },
   { key: 'dk1', label: 'Primary Text', description: 'Main text' },
   { key: 'dk2', label: 'Secondary Text / Borders', description: 'Muted text and lines' },
   { key: 'accent1', label: 'Brand Color', description: 'Hero accents, key numbers, primary emphasis' },
@@ -23,7 +21,7 @@ const SLOT_LABELS: { key: keyof ThemeSlots; label: string; description: string }
 ]
 
 export function ThemeSlotEditor() {
-  const { slots, colors, setSlots, themeName, setThemeName, commitTokens } = usePaletteStore()
+  const { slots, colors, setSlots, clearThemeColors, themeName, setThemeName, commitTokens } = usePaletteStore()
   const [openKey, setOpenKey] = useState<keyof ThemeSlots | null>(null)
   const rootRef = useRef<HTMLElement | null>(null)
 
@@ -63,10 +61,20 @@ export function ThemeSlotEditor() {
       style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)' }}
     >
       <div
-        className="flex items-center px-4 border-b text-xs font-semibold uppercase tracking-wider"
+        className="flex items-center justify-between gap-3 px-4 border-b text-xs font-semibold uppercase tracking-wider"
         style={{ color: 'var(--text-secondary)', borderColor: 'var(--panel-border)', height: 40, minHeight: 40 }}
       >
-        Theme Colors
+        <span>Theme Colors</span>
+        <button
+          type="button"
+          onClick={() => clearThemeColors()}
+          className="flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-widest transition-opacity"
+          style={{ color: 'var(--text-muted)' }}
+          aria-label="Clear theme colors"
+          title="Clear theme colors"
+        >
+          <span>Clear</span>
+        </button>
       </div>
 
       <div className="px-4 py-4">

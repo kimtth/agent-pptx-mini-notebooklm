@@ -1,3 +1,6 @@
+import { iconExistsInCollection } from './icon-dict-lookup'
+import { findClosestCatalogIcon } from './icon-catalog'
+
 export const ICONIFY_API_HOSTS = [
   'https://api.iconify.design',
   'https://api.simplesvg.com',
@@ -78,20 +81,82 @@ export function getIconifyExamples(collectionId: IconifyCollectionId = DEFAULT_I
   return [...getIconifyCollectionById(collectionId).examples]
 }
 
-export function normalizeIconName(value: string | null | undefined): string | null {
+export function getDefaultIconifyPrefix(collectionId: IconifyCollectionId = DEFAULT_ICONIFY_COLLECTION): string {
+  return collectionId === 'all' ? 'mdi' : collectionId
+}
+
+export function normalizeIconName(
+  value: string | null | undefined,
+  collectionId: IconifyCollectionId = DEFAULT_ICONIFY_COLLECTION,
+): string | null {
   const raw = value?.trim()
   if (!raw) return null
   const lowered = raw.toLowerCase()
   if (lowered.includes(':')) return lowered
-  return `mdi:${lowered}`
+  return `${getDefaultIconifyPrefix(collectionId)}:${lowered}`
+}
+
+/**
+ * Ensure the icon ID carries the correct collection prefix and that the
+ * stem actually exists in the target collection (verified against the
+ * offline dictionary generated from @iconify/json).
+ *
+ * Strategy:
+ * 1. If the stem exists in the full dictionary for the target collection
+ *    → accept as-is (with correct prefix).
+ * 2. Otherwise look up the closest match from the curated catalog —
+ *    a small, deterministic set of verified icon names.
+ * 3. If nothing matches, return null (icon omitted rather than hallucinated).
+ *
+ * When `collectionId` is `'all'`, no enforcement is applied.
+ */
+export function enforceIconCollection(
+  value: string | null | undefined,
+  collectionId: IconifyCollectionId = DEFAULT_ICONIFY_COLLECTION,
+): string | null {
+  const raw = value?.trim()
+  if (!raw) return null
+  const lowered = raw.toLowerCase()
+
+  if (collectionId === 'all') {
+    return normalizeIconName(lowered, collectionId)
+  }
+
+  // Extract the stem (strip any prefix)
+  let stem: string
+  if (lowered.includes(':')) {
+    const [, ...rest] = lowered.split(':')
+    stem = rest.join(':')
+  } else {
+    stem = lowered
+  }
+
+  // 1. Exact match in full dictionary → use it
+  if (iconExistsInCollection(stem, collectionId)) {
+    return `${collectionId}:${stem}`
+  }
+
+  // 2. Deterministic fallback: find closest from curated catalog
+  const catalogMatch = findClosestCatalogIcon(stem, collectionId)
+  if (catalogMatch) {
+    return `${collectionId}:${catalogMatch}`
+  }
+
+  // 3. No match → omit the icon entirely (no guessing)
+  return null
 }
 
 export function getAvailableIconChoices(collectionId: IconifyCollectionId = DEFAULT_ICONIFY_COLLECTION): string[] {
   return [...new Set([...getIconifyExamples(collectionId)])]
 }
 
-export function buildIconifySvgUrl(iconName: string, colorHex?: string, hostIndex?: number): string {
-  const normalized = normalizeIconName(iconName)
+export function buildIconifySvgUrl(
+  iconName: string,
+  colorHex?: string,
+  hostIndex?: number,
+  collectionId: IconifyCollectionId = DEFAULT_ICONIFY_COLLECTION,
+): string {
+  const normalized = normalizeIconName(iconName, collectionId)
   if (!normalized) throw new Error('Icon name is required')
   const [prefix, ...nameParts] = normalized.split(':')
   if (!prefix || nameParts.length === 0) throw new Error(`Invalid Iconify icon name: ${iconName}`)

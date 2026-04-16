@@ -11,7 +11,7 @@ import { usePaletteStore } from './palette-store';
 import { useDataSourcesStore } from './data-sources-store';
 import { useNotebookLMStore } from './notebooklm-store';
 import { DEFAULT_ICONIFY_COLLECTION } from '../domain/icons/iconify';
-import { applyThemeColorTreatment, applyThemeFontFamily, applyThemeTextBoxStyle } from '../application/palette-use-case';
+import { applyThemeColorTreatment, applyThemeFontFamily, applyThemeSlideIcons, applyThemeTextBoxCornerStyle, applyThemeTextBoxStyle, buildThemeTokens } from '../application/palette-use-case';
 
 function serializeSlidesWork(work: PptAppProject['slidesWork']): PptAppProject['slidesWork'] {
   return {
@@ -54,6 +54,7 @@ function normalizeLoadedWork(work: PptAppProject['slidesWork']) {
   return {
     ...work,
     designStyle: work.designStyle ?? null,
+    customBackgroundColor: typeof work.customBackgroundColor === 'string' ? work.customBackgroundColor : null,
     framework: work.framework ?? null,
     customFrameworkPrompt: typeof work.customFrameworkPrompt === 'string' ? work.customFrameworkPrompt : null,
     isStreaming: false,
@@ -126,7 +127,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   buildSnapshot(): PptAppProject {
     const { work } = useSlidesStore.getState();
     const { messages } = useChatStore.getState();
-    const { seeds, colors, slots, tokens, themeName, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore.getState();
+    const { seeds, colors, slots, tokens, themeName, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedTextBoxCornerStyle, selectedIconCollection } = usePaletteStore.getState();
     const { files, urls } = useDataSourcesStore.getState();
     const { enabled: nlmEnabled, infographicPaths } = useNotebookLMStore.getState();
     const { workspaceDir } = get();
@@ -138,7 +139,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       title: work.title || 'Untitled',
       slidesWork: serializeSlidesWork(work),
       chatMessages: messages,
-      palette: { seeds, colors, slots, tokens, themeName, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection, styleTone: usePaletteStore.getState().styleTone },
+      palette: { seeds, colors, slots, tokens, themeName, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedTextBoxCornerStyle, selectedIconCollection, selectedSlideIcons: usePaletteStore.getState().selectedSlideIcons, styleTone: usePaletteStore.getState().styleTone },
       dataSources: { files, urls },
       notebookLM: { enabled: nlmEnabled, infographicPaths },
     };
@@ -173,25 +174,44 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     });
 
     // Restore palette store
+    const themeName = data.palette.themeName ?? 'My Theme';
     const selectedFont = data.palette.selectedFont ?? 'Calibri';
     const selectedColorTreatment = data.palette.selectedColorTreatment ?? 'mixed';
     const selectedTextBoxStyle = data.palette.selectedTextBoxStyle ?? data.palette.tokens?.textBoxStyle ?? 'mixed';
+    const selectedTextBoxCornerStyle = data.palette.selectedTextBoxCornerStyle ?? data.palette.tokens?.textBoxCornerStyle ?? 'square';
+    const selectedSlideIcons = data.palette.selectedSlideIcons ?? data.palette.tokens?.showSlideIcons ?? true;
+    const baseTokens = data.palette.slots
+      ? buildThemeTokens(
+          themeName,
+          data.palette.slots,
+          data.palette.colors,
+          data.palette.styleTone ?? null,
+        )
+      : data.palette.tokens;
     usePaletteStore.setState({
       seeds: data.palette.seeds,
       colors: data.palette.colors,
       slots: data.palette.slots,
-      tokens: applyThemeTextBoxStyle(
-        applyThemeColorTreatment(
-          applyThemeFontFamily(data.palette.tokens, selectedFont),
-          selectedColorTreatment,
+      tokens: applyThemeSlideIcons(
+        applyThemeTextBoxCornerStyle(
+          applyThemeTextBoxStyle(
+            applyThemeColorTreatment(
+              applyThemeFontFamily(baseTokens, selectedFont),
+              selectedColorTreatment,
+            ),
+            selectedTextBoxStyle,
+          ),
+          selectedTextBoxCornerStyle,
         ),
-        selectedTextBoxStyle,
+        selectedSlideIcons,
       ),
-      themeName: data.palette.themeName,
+      themeName,
       selectedFont,
       selectedColorTreatment,
       selectedTextBoxStyle,
+      selectedTextBoxCornerStyle,
       selectedIconCollection: data.palette.selectedIconCollection ?? DEFAULT_ICONIFY_COLLECTION,
+      selectedSlideIcons,
       styleTone: data.palette.styleTone ?? null,
     });
 

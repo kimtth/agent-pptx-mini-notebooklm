@@ -137,9 +137,7 @@ For packaged builds, `.venv` is bundled into the app's `resources` directory. `p
 
 https://python-pptx.readthedocs.io/
 
-PPTX generation runs through a bundled Python runner at [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py), which executes agent-generated `python-pptx` code with runtime variables including `OUTPUT_PATH`, `PPTX_TITLE`, `PPTX_THEME`, `PPTX_COLOR_TREATMENT`, and `PPTX_TEXT_BOX_STYLE`.
-
-In the Palette panel, `Mixed` is the default for both `Text Box Type` and `Text Box Fill Style`; it adaptively chooses icon usage and fill treatment by slide context.
+PPTX generation runs through the bundled Python runner at [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py), which loads the storyboard, theme, and precomputed layout artifacts, then invokes the deterministic renderer in [scripts/slide_renderer.py](scripts/slide_renderer.py) with runtime variables including `OUTPUT_PATH`, `PPTX_TITLE`, `PPTX_THEME_JSON`, `PPTX_COLOR_TREATMENT`, and `PPTX_TEXT_BOX_STYLE`.
 
 ### Embedding Model & RAPTOR Retrieval
 
@@ -159,7 +157,7 @@ Model files are stored at `resources/models/embed/` (git-ignored) and bundled in
 
 ### Layout Engine
 
-Layout modules live in `scripts/layout/` and compute content-adaptive slide coordinates **before** the LLM generates `python-pptx` code.
+Layout modules live in `scripts/layout/` and compute content-adaptive slide coordinates **before** the Python renderer writes the deck.
 
 #### Execution Order
 
@@ -176,10 +174,10 @@ pptx-handler.ts
   │       ↓
   │     LayoutSpec JSON (stdout)
   │
-  ├─ 2. executeGeneratedPythonCodeToFile()
+  ├─ 2. renderPresentationToFile()
   │       ↓  PPTX_LAYOUT_SPECS_JSON env var
   │     pptx-python-runner.py          Deserialize specs → PRECOMPUTED_LAYOUT_SPECS
-  │       └─ exec(generated code)      LLM code uses specs for positioning
+  │       └─ slide_renderer.py         Deterministic renderer consumes specs for positioning
   │
   └─ 3. Post-generation
           layout_validator.py           Validate overlap, bounds, text overflow
@@ -194,7 +192,7 @@ pptx-handler.ts
 | `layout_specs.py` | `LayoutSpec` / `RectSpec` dataclasses and `flow_layout_spec()` cascade helper |
 | `layout_validator.py` | Post-generation validation (overlap, bounds, text overflow) |
 
-Pre-computed specs are injected as `PRECOMPUTED_LAYOUT_SPECS` into the generated code namespace. Requires `kiwisolver`.
+Pre-computed specs are injected into `pptx-python-runner.py` through `PPTX_LAYOUT_SPECS_JSON`, then deserialized into `PRECOMPUTED_LAYOUT_SPECS` for the deterministic renderer. Requires `kiwisolver`.
 
 Hybrid layout artifacts are stored in the active workspace under `previews/`:
 - `layout-input.json` — the storyboard-derived `SlideContent[]` payload written immediately when the slide scenario is set and refreshed again before layout computation

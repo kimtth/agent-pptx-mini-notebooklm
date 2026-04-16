@@ -49,14 +49,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listFonts: () => ipcRenderer.invoke('theme:listFonts'),
     generatePalette: (seeds: string[]) => ipcRenderer.invoke('theme:generatePalette', seeds),
     autoAssign: (colors: unknown[], seeds?: string[]) => ipcRenderer.invoke('theme:autoAssign', colors, seeds ?? []),
-    exportThmx: (tokens: unknown) => ipcRenderer.invoke('theme:exportThmx', tokens),
   },
 
   pptx: {
     generate: (title: string) =>
       ipcRenderer.invoke('pptx:generate', '', null, title),
-    renderPreview: (designStyle: string | null, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[], templateMeta?: unknown) =>
-      ipcRenderer.invoke('pptx:renderPreview', designStyle, themeTokens, title, iconCollection, slides, templateMeta),
+    renderPreview: (designStyle: string | null, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[], templateMeta?: unknown, customBackgroundColor?: string | null) =>
+      ipcRenderer.invoke('pptx:renderPreview', designStyle, themeTokens, title, iconCollection, slides, templateMeta, customBackgroundColor),
     readExistingPreviews: () =>
       ipcRenderer.invoke('pptx:readExistingPreviews'),
     rerenderPreview: () =>

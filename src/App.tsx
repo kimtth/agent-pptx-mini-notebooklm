@@ -12,7 +12,7 @@ import { usePaletteStore } from './stores/palette-store.ts'
 import { useProjectStore } from './stores/project-store.ts'
 import { useDataSourcesStore } from './stores/data-sources-store.ts'
 import { createAssistantMessage, createUserMessage, historyToIpc } from './application/chat-use-case.ts'
-import { applyThemeColorTreatment, applyThemeFontFamily, applyThemeTextBoxStyle } from './application/palette-use-case.ts'
+import { applyThemeBackground, applyThemeColorTreatment, applyThemeFontFamily, applyThemeSlideIcons, applyThemeTextBoxCornerStyle, applyThemeTextBoxStyle } from './application/palette-use-case.ts'
 import type { WorkspaceContext } from './application/chat-use-case.ts'
 import { getAvailableIconChoices } from './domain/icons/iconify.ts'
 import { getWorkflowConfig } from './domain/workflows/workflow-config.ts'
@@ -23,7 +23,8 @@ const MAX_AUTO_RETRIES = 3
 interface QaReport {
   contrastFixes: number
   missingIcons: Array<{ icon: string; reason: string }>
-  iconStats: { requested: number; missing: number; missingRatio: number }
+  rejectedIcons: Array<{ icon: string; reason: string }>
+  iconStats: { requested: number; missing: number; missingRatio: number; rejectedByCollection?: number; rejectedRatio?: number }
   missingImages: string[]
   layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }>
 }
@@ -42,6 +43,13 @@ function summarizeMissingIcons(missingIcons: QaReport['missingIcons']): string {
 function formatQaSummary(qa: QaReport): string {
   const parts: string[] = []
   if (qa.contrastFixes > 0) parts.push(`Contrast: ${qa.contrastFixes} fix(es) applied automatically.`)
+  if (qa.rejectedIcons.length > 0) {
+    const requested = qa.iconStats?.requested ?? qa.rejectedIcons.length
+    const rejected = qa.iconStats?.rejectedByCollection ?? qa.rejectedIcons.length
+    const rejectedRatio = qa.iconStats?.rejectedRatio ?? (requested > 0 ? rejected / requested : 0)
+    const percent = Math.round(rejectedRatio * 100)
+    parts.push(`Icons rejected by selected collection (${rejected}/${requested}, ${percent}%): ${summarizeMissingIcons(qa.rejectedIcons)}.`)
+  }
   if (qa.missingIcons.length > 0) {
     const requested = qa.iconStats?.requested ?? qa.missingIcons.length
     const missing = qa.iconStats?.missing ?? qa.missingIcons.length
@@ -82,7 +90,7 @@ export default function App() {
     useSlidesStore.getState().setPptxBusy(true)
 
     const { work } = useSlidesStore.getState()
-    const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore.getState()
+    const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedTextBoxCornerStyle, selectedIconCollection, selectedSlideIcons, styleTone } = usePaletteStore.getState()
     const { files: dataSources, urls: urlSources } = useDataSourcesStore.getState()
     const availableIcons = getAvailableIconChoices(selectedIconCollection)
 
@@ -91,15 +99,26 @@ export default function App() {
       slides: work.slides,
       designBrief: work.designBrief,
       designStyle: work.designStyle,
+      customBackgroundColor: work.customBackgroundColor,
       framework: work.framework,
       customFrameworkPrompt: work.customFrameworkPrompt,
       templateMeta: work.templateMeta,
-      theme: applyThemeTextBoxStyle(
-        applyThemeColorTreatment(
-          applyThemeFontFamily(tokens, selectedFont),
-          selectedColorTreatment,
+      theme: applyThemeSlideIcons(
+        applyThemeTextBoxCornerStyle(
+          applyThemeTextBoxStyle(
+            applyThemeColorTreatment(
+              applyThemeFontFamily(
+                applyThemeBackground(tokens, work.designStyle, styleTone, work.customBackgroundColor),
+                selectedFont,
+                work.designStyle,
+              ),
+              selectedColorTreatment,
+            ),
+            selectedTextBoxStyle,
+          ),
+          selectedTextBoxCornerStyle,
         ),
-        selectedTextBoxStyle,
+        selectedSlideIcons,
       ),
       workflow,
       dataSources,
@@ -148,19 +167,37 @@ export default function App() {
 
           if (isPptxMode && currentWork.slides.length > 0) {
             // Deterministic renderer: use designStyle + layout data, no code extraction needed
-            const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore.getState()
-            const paletteTokens = applyThemeTextBoxStyle(
-              applyThemeColorTreatment(
-                applyThemeFontFamily(tokens, selectedFont),
-                selectedColorTreatment,
+            const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedTextBoxCornerStyle, selectedIconCollection, selectedSlideIcons, styleTone } = usePaletteStore.getState()
+            const paletteTokens = applyThemeSlideIcons(
+              applyThemeTextBoxCornerStyle(
+                applyThemeTextBoxStyle(
+                  applyThemeColorTreatment(
+                    applyThemeFontFamily(
+                      applyThemeBackground(tokens, currentWork.designStyle, styleTone, currentWork.customBackgroundColor),
+                      selectedFont,
+                      currentWork.designStyle,
+                    ),
+                    selectedColorTreatment,
+                  ),
+                  selectedTextBoxStyle,
+                ),
+                selectedTextBoxCornerStyle,
               ),
-              selectedTextBoxStyle,
+              selectedSlideIcons,
             )
             const pptxTitle = currentWork.title || 'presentation'
             useChatStore.getState().addMessage(
               createAssistantMessage('✅ Generating the deck…'),
             )
-            window.electronAPI.pptx.renderPreview(currentWork.designStyle, paletteTokens, pptxTitle, selectedIconCollection, currentWork.slides, currentWork.templateMeta)
+            window.electronAPI.pptx.renderPreview(
+              currentWork.designStyle,
+              paletteTokens,
+              pptxTitle,
+              selectedIconCollection,
+              currentWork.slides,
+              currentWork.templateMeta,
+              currentWork.customBackgroundColor,
+            )
               .then((result) => {
                 if (result.success) {
                   autoRetryCount.current = 0

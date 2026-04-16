@@ -133,6 +133,24 @@ export function WorkspaceAreaButton() {
 
       {/* Quick action buttons */}
       <button
+        onClick={() => { void handleChangeDir() }}
+        className="flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-[var(--surface-hover)]"
+        style={{ color: 'var(--text-muted)' }}
+        title="Change workspace folder"
+      >
+        <FolderInput size={14} />
+      </button>
+
+      <button
+        onClick={() => { void handleNew() }}
+        className="flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-[var(--surface-hover)]"
+        style={{ color: 'var(--text-muted)' }}
+        title="New project"
+      >
+        <FilePlus2 size={14} />
+      </button>
+
+      <button
         onClick={handleSave}
         disabled={saving}
         className="flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-[var(--surface-hover)]"
@@ -149,16 +167,7 @@ export function WorkspaceAreaButton() {
         style={{ color: 'var(--text-muted)' }}
         title="Open project (.pptapp)"
       >
-        <FolderInput size={14} />
-      </button>
-
-      <button
-        onClick={() => { void handleNew() }}
-        className="flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-[var(--surface-hover)]"
-        style={{ color: 'var(--text-muted)' }}
-        title="New project"
-      >
-        <FilePlus2 size={14} />
+        <FolderOpen size={14} />
       </button>
 
       {/* Dropdown menu */}

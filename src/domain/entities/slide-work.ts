@@ -107,6 +107,7 @@ export interface SlideWork {
   story: SlideStory | null;
   designBrief: DesignBrief | null;
   designStyle: DesignStyle | null;
+  customBackgroundColor: string | null;
   framework: FrameworkType | null;
   customFrameworkPrompt: string | null;
   templatePath: string | null;

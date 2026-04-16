@@ -58,6 +58,7 @@ interface WorkspaceContext {
   slides: SlideItem[];
   designBrief: DesignBrief | null;
   designStyle: import('../../../src/domain/entities/slide-work').DesignStyle | null;
+  customBackgroundColor: string | null;
   framework: FrameworkType | null;
   customFrameworkPrompt: string | null;
   templateMeta: TemplateMeta | null;
@@ -552,7 +553,10 @@ async function buildPrompt(
       parts.push(`Palette colors: ${workspace.theme.colors.slice(0, 20).map((color) => `${color.name} ${color.hex}`).join(' | ')}`);
     }
     parts.push('CRITICAL: The palette colors above are the ONLY color source for this deck. Use OOXML slot and palette hex values exclusively. Do NOT use any hardcoded hex colors from the design style spec — those are overridden by this palette. Readability is mandatory: when text sits on any colored or image background, ensure adequate contrast. If style conflicts with readability, readability wins.');
-    parts.push('CRITICAL: The renderer uses PPTX_THEME for role colors and PPTX_THEME_SLOTS for OOXML slot values. Slide backgrounds, primary text, borders, and foundational surfaces use slot-derived values. Do NOT invent blended or averaged hex colors. Only use gradients or tints when the selected style explicitly calls for them on accent or decorative surfaces.');
+    parts.push('CRITICAL: The renderer uses PPTX_THEME for role colors and PPTX_THEME_SLOTS for OOXML slot values. Slide background comes from the selected design style or template background logic. Use BG only as the runtime-provided slide surface color. Do NOT invent blended or averaged hex colors. Only use gradients or tints when the selected style explicitly calls for them on accent or decorative surfaces.');
+    if (workspace.designStyle === 'Blank Custom Color' && workspace.customBackgroundColor) {
+      parts.push(`CRITICAL: The selected blank canvas background color is ${workspace.customBackgroundColor}. Treat it as the slide background color for the entire deck unless a template image explicitly overrides the surface.`);
+    }
     parts.push('CRITICAL: These style controls are not advisory only. They affect the deterministic renderer output. PPTX_COLOR_TREATMENT controls fill style (solid, gradient, or mixed). PPTX_TEXT_BOX_STYLE controls icon companions on text panels (plain, with-icons, or mixed). These are applied automatically by the renderer.');
     parts.push('CRITICAL: Horizontally aligned card/stat/process/comparison rows MUST stay within slide bounds. Use the pre-computed spec geometry (spec.cards.card_rect, spec.stats.box_rect, spec.comparison.left/right) without adding offsets that push the last item past the right edge. If content exceeds the available width, reduce copy instead of widening boxes.');
     parts.push('');

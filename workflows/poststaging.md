@@ -19,8 +19,9 @@ After the create-pptx workflow produces a deck, inspect the structured QA report
 
 - **QA Report** — structured findings from the PPTX pipeline covering:
   - `contrastFixes` — number of low-contrast text/fill pairs auto-corrected during generation.
-  - `missingIcons` — list of icon IDs that `fetch_icon()` could not resolve, with slide context.
-  - `iconStats` — aggregate icon fetch counts with `requested`, `missing`, and `missingRatio` so QA can distinguish isolated misses from systemic icon failures.
+  - `missingIcons` — list of icon IDs that failed to fetch or render after resolution.
+  - `rejectedIcons` — list of icon IDs rejected because they are outside the selected icon collection.
+  - `iconStats` — aggregate icon fetch counts with `requested`, `missing`, `missingRatio`, `rejectedByCollection`, and `rejectedRatio` so QA can distinguish fetch failures from collection-policy mismatches.
   - `missingImages` — list of approved images omitted from the generated slides.
   - `layoutIssues` — overlap, out-of-bounds, cramped spacing, and text overflow findings from the layout validator, each with severity (`error` | `warning` | `info`).
 - Approved slide panel content (same source of truth used by create-pptx).
@@ -31,7 +32,7 @@ After the create-pptx workflow produces a deck, inspect the structured QA report
 1. **Receive QA Report** — the app injects the structured QA findings into the chat context automatically after deck generation succeeds.
 2. **Classify Findings** — sort each finding into one of the four categories and assign a severity:
   - **Blocking** — any missing approved image, missing icons only when `iconStats.missingRatio >= 0.70`, any ERROR-level overlap or text overflow.
-  - **Actionable** — missing icons when `iconStats.missingRatio < 0.70`, WARNING-level overlap or cramped spacing, unresolved contrast issues that survived the automatic Python fix.
+  - **Actionable** — missing icons when `iconStats.missingRatio < 0.70`, any `rejectedIcons` caused by collection mismatch, WARNING-level overlap or cramped spacing, unresolved contrast issues that survived the automatic Python fix.
    - **Informational** — INFO-level spacing notices, successfully applied contrast fixes.
 3. **Report Summary** — present a concise per-slide summary to the user:
    - ✅ slides that passed with zero or only informational findings.

@@ -1,15 +1,16 @@
 /**
- * PalettePanel: Seed pickers → Generate → Canvas preview → Slot editor → Export
+ * PalettePanel: Seed pickers → Generate → Canvas preview → Slot editor
  */
 
 import { useState, useEffect } from 'react'
 import { Icon } from '@iconify/react'
-import { Loader2, Sparkles, Download, X } from 'lucide-react'
+import { Loader2, Sparkles, X } from 'lucide-react'
 import { usePaletteStore } from '../../stores/palette-store.ts'
+import { useSlidesStore } from '../../stores/slides-store.ts'
 import { PaletteCanvas } from './PaletteCanvas.tsx'
 import { ThemeSlotEditor } from './ThemeSlotEditor.tsx'
 import { getIconifyCollectionById, getIconifyCollectionOptions, getIconifyExamples } from '../../domain/icons/iconify.ts'
-import type { ThemeColorTreatment, ThemeTextBoxStyle } from '../../domain/entities/palette.ts'
+import type { ThemeColorTreatment, ThemeTextBoxCornerStyle, ThemeTextBoxStyle } from '../../domain/entities/palette.ts'
 
 const COLOR_TREATMENT_OPTIONS: Array<{
   value: ThemeColorTreatment;
@@ -63,15 +64,37 @@ const TEXT_BOX_STYLE_OPTIONS: Array<{
   },
 ]
 
+const TEXT_BOX_CORNER_OPTIONS: Array<{
+  value: ThemeTextBoxCornerStyle;
+  label: string;
+  description: string;
+  previewRadius: string;
+}> = [
+  {
+    value: 'square',
+    label: 'Square Corners',
+    description: 'Use crisp rectangular panel edges.',
+    previewRadius: '0px',
+  },
+  {
+    value: 'rounded',
+    label: 'Rounded Corners',
+    description: 'Render text panels and cards with softened rounded corners.',
+    previewRadius: '18px',
+  },
+]
+
 const MIXED_TEXT_BOX_STYLE_OPTION = TEXT_BOX_STYLE_OPTIONS.find((option) => option.value === 'mixed')
 const PRIMARY_TEXT_BOX_STYLE_OPTIONS = TEXT_BOX_STYLE_OPTIONS.filter((option) => option.value !== 'mixed')
 const MIXED_COLOR_TREATMENT_OPTION = COLOR_TREATMENT_OPTIONS.find((option) => option.value === 'mixed')
 const PRIMARY_COLOR_TREATMENT_OPTIONS = COLOR_TREATMENT_OPTIONS.filter((option) => option.value !== 'mixed')
 
 export function PalettePanel() {
+  const designStyle = useSlidesStore((state) => state.work.designStyle)
   const {
     seeds,
     setSeeds,
+    clearSeeds,
     colors,
     setColors,
     slots,
@@ -86,14 +109,19 @@ export function PalettePanel() {
     setSelectedColorTreatment,
     selectedTextBoxStyle,
     setSelectedTextBoxStyle,
+    selectedTextBoxCornerStyle,
+    setSelectedTextBoxCornerStyle,
     selectedIconCollection,
     setSelectedIconCollection,
+    selectedSlideIcons,
+    setSelectedSlideIcons,
   } = usePaletteStore()
   const [error, setError] = useState<string | null>(null)
   const [systemFonts, setSystemFonts] = useState<string[]>([])
   const iconCollectionOptions = getIconifyCollectionOptions()
   const selectedCollection = getIconifyCollectionById(selectedIconCollection)
   const iconExamples = getIconifyExamples(selectedIconCollection)
+  const showThemeSourceWarning = !tokens && !designStyle
 
   useEffect(() => {
     window.electronAPI.theme.listFonts().then((fonts: string[]) => setSystemFonts(fonts))
@@ -120,21 +148,30 @@ export function PalettePanel() {
     }
   }
 
-  const exportThmx = async () => {
-    if (!tokens) return
-    await window.electronAPI.theme.exportThmx(tokens)
-  }
-
   return (
     <div className="flex flex-col h-full overflow-y-auto gap-3 p-3" style={{ background: 'var(--surface)' }}>
 
       {/* ── Seed colors ── */}
       <section className="border" style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)' }}>
         <div
-          className="flex items-center px-4 border-b text-xs font-semibold uppercase tracking-wider"
+          className="flex items-center justify-between gap-3 px-4 border-b text-xs font-semibold uppercase tracking-wider"
           style={{ color: 'var(--text-secondary)', borderColor: 'var(--panel-border)', height: 40, minHeight: 40 }}
         >
-          Seed Colors
+          <span>Seed Colors</span>
+          <button
+            type="button"
+            onClick={() => {
+              clearSeeds()
+              setError(null)
+            }}
+            disabled={seeds.length === 0}
+            className="flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-widest transition-opacity disabled:opacity-40"
+            style={{ color: 'var(--text-muted)' }}
+            aria-label="Clear seed colors"
+            title="Clear seed colors"
+          >
+            <span>Clear</span>
+          </button>
         </div>
         <div className="px-4 py-4">
         <div className="flex flex-wrap gap-3 mb-4">
@@ -260,6 +297,18 @@ export function PalettePanel() {
           Palette Styling
         </div>
         <div className="px-4 py-4 flex flex-col gap-3">
+          {showThemeSourceWarning && (
+            <div
+              className="border px-3 py-2 text-xs leading-5"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--warning, #d97706) 35%, var(--panel-border))',
+                background: 'color-mix(in srgb, var(--warning, #d97706) 10%, var(--surface))',
+                color: 'var(--text-primary)',
+              }}
+            >
+              No palette or brand style is active yet. Generate a palette or select a brand style to provide theme colors for these styling options.
+            </div>
+          )}
           <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
             Text Box Type
           </span>
@@ -318,6 +367,42 @@ export function PalettePanel() {
               </div>
             </button>
           )}
+          <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+            Text Box Corner Style
+          </span>
+          <div className="grid gap-3 md:grid-cols-2">
+            {TEXT_BOX_CORNER_OPTIONS.map((option) => {
+              const active = option.value === selectedTextBoxCornerStyle
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => { setSelectedTextBoxCornerStyle(option.value); commitTokens(); }}
+                  className="border px-3 py-2.5 text-left transition-colors"
+                  style={{
+                    borderColor: active ? 'var(--accent)' : 'var(--panel-border)',
+                    background: active ? 'color-mix(in srgb, var(--accent) 10%, var(--surface))' : 'var(--surface)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <div className="mb-2 flex h-9 items-center border px-2.5" style={{ borderColor: 'rgba(255,255,255,0.18)' }}>
+                    <div
+                      className="h-5 w-full border"
+                      style={{
+                        borderColor: 'rgba(255,255,255,0.28)',
+                        borderRadius: option.previewRadius,
+                        background: 'linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.05))',
+                      }}
+                    />
+                  </div>
+                  <div className="text-[13px] font-semibold leading-4">{option.label}</div>
+                  <p className="mt-1 text-xs leading-4" style={{ color: 'var(--text-muted)' }}>
+                    {option.description}
+                  </p>
+                </button>
+              )
+            })}
+          </div>
           <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
             Text Box Fill Style
           </span>
@@ -387,6 +472,26 @@ export function PalettePanel() {
           <p className="text-xs leading-5" style={{ color: 'var(--text-muted)' }}>
             Slides use live Iconify IDs from the selected collection. Pick an icon set to constrain the examples and the IDs suggested to the slide generator.
           </p>
+          <label
+            className="flex items-start justify-between gap-3 border px-3 py-2.5"
+            style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)' }}
+          >
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold leading-4" style={{ color: 'var(--text-primary)' }}>
+                Slide corner icon
+              </div>
+              <p className="mt-1 text-xs leading-4" style={{ color: 'var(--text-muted)' }}>
+                Show or hide the decorative icon placed in the top-right corner of each slide.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={selectedSlideIcons}
+              onChange={(e) => { setSelectedSlideIcons(e.target.checked); commitTokens(); }}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]"
+              aria-label="Toggle slide corner icon"
+            />
+          </label>
           <label className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
               Icon set
@@ -431,21 +536,6 @@ export function PalettePanel() {
         </div>
       </section>
 
-      {/* ── Export ── */}
-      {tokens && (
-        <section className="border" style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)' }}>
-          <div className="px-4 py-4">
-          <button
-            onClick={exportThmx}
-            className="w-full flex items-center justify-center gap-2 border text-sm font-medium transition-colors"
-            style={{ borderColor: 'var(--accent)', color: 'var(--accent)', background: 'transparent', height: 36 }}
-          >
-            <Download size={14} />
-            Export .thmx
-          </button>
-          </div>
-        </section>
-      )}
     </div>
   )
 }

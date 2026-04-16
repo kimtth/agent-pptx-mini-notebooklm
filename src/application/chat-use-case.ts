@@ -22,6 +22,7 @@ export interface WorkspaceContext {
   slides: SlideItem[];
   designBrief: DesignBrief | null;
   designStyle: DesignStyle | null;
+  customBackgroundColor: string | null;
   framework: FrameworkType | null;
   customFrameworkPrompt: string | null;
   templateMeta: TemplateMeta | null;

@@ -2,21 +2,19 @@
  * IPC Handler: Theme / Palette
  * - LLM palette generation via Copilot SDK
  * - Auto-assignment of 12 OOXML slots (ported from oppadu source)
- * - .thmx export via JSZip
+ * - Theme slot auto-assignment
  */
 
-import { ipcMain, dialog } from 'electron';
+import { ipcMain } from 'electron';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import fs from 'fs/promises';
-import JSZip from 'jszip';
 
 const execFileAsync = promisify(execFile);
 import { CopilotClient, approveAll } from '@github/copilot-sdk';
 import { normalizeGitHubToken, resolveCopilotCliPath } from '../llm/copilot-runtime.ts';
 import { onSettingsSaved } from './settings-handler.ts';
 import type { SessionConfig } from '@github/copilot-sdk';
-import type { PaletteColor, ThemeSlots, ThemeTokens } from '../../../src/domain/entities/palette';
+import type { PaletteColor, ThemeSlots } from '../../../src/domain/entities/palette';
 import { DEFAULT_THEME_SLOTS } from '../../../src/domain/theme/default-theme';
 
 // ---------------------------------------------------------------------------
@@ -112,167 +110,6 @@ export function autoAssignThemeColors(colors: PaletteColor[], seeds: string[] = 
     accent4: accents[3], accent5: accents[4], accent6: accents[5],
     hlink, folHlink,
   };
-}
-
-// ---------------------------------------------------------------------------
-// .thmx export via JSZip (matching oppadu's structure exactly)
-// ---------------------------------------------------------------------------
-
-function srgbClr(hex: string): string {
-  return `<a:srgbClr val="${hex.toUpperCase()}"/>`;
-}
-
-function buildFontSchemeXml(name: string, fontFamily?: string): string {
-  const latinMajor = fontFamily ? `${fontFamily} Light` : 'Calibri Light';
-  const latinMinor = fontFamily || 'Calibri';
-  const eastAsia = 'Noto Sans JP';
-  const scriptFonts = [
-    ['Jpan', 'Noto Sans JP'],
-    ['Hans', 'Noto Sans SC'],
-    ['Hant', 'Noto Sans TC'],
-    ['Hang', 'Noto Sans KR'],
-  ] as const;
-  const majorScripts = scriptFonts.map(([script, typeface]) => `        <a:font script="${script}" typeface="${typeface}"/>`).join('\n');
-  const minorScripts = scriptFonts.map(([script, typeface]) => `        <a:font script="${script}" typeface="${typeface}"/>`).join('\n');
-
-  return `    <a:fontScheme name="${name}">
-      <a:majorFont>
-        <a:latin typeface="${latinMajor}" panose="020F0302020204030204"/>
-        <a:ea typeface="${eastAsia}"/>
-        <a:cs typeface="${latinMajor}"/>
-${majorScripts}
-      </a:majorFont>
-      <a:minorFont>
-        <a:latin typeface="${latinMinor}" panose="020F0502020204030204"/>
-        <a:ea typeface="${eastAsia}"/>
-        <a:cs typeface="${latinMinor}"/>
-${minorScripts}
-      </a:minorFont>
-    </a:fontScheme>`;
-}
-
-function buildTheme1Xml(name: string, slots: ThemeSlots, fontFamily?: string): string {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="${name}">
-  <a:themeElements>
-    <a:clrScheme name="${name}">
-      <a:dk1>${srgbClr(slots.dk1)}</a:dk1>
-      <a:lt1>${srgbClr(slots.lt1)}</a:lt1>
-      <a:dk2>${srgbClr(slots.dk2)}</a:dk2>
-      <a:lt2>${srgbClr(slots.lt2)}</a:lt2>
-      <a:accent1>${srgbClr(slots.accent1)}</a:accent1>
-      <a:accent2>${srgbClr(slots.accent2)}</a:accent2>
-      <a:accent3>${srgbClr(slots.accent3)}</a:accent3>
-      <a:accent4>${srgbClr(slots.accent4)}</a:accent4>
-      <a:accent5>${srgbClr(slots.accent5)}</a:accent5>
-      <a:accent6>${srgbClr(slots.accent6)}</a:accent6>
-      <a:hlink>${srgbClr(slots.hlink)}</a:hlink>
-      <a:folHlink>${srgbClr(slots.folHlink)}</a:folHlink>
-    </a:clrScheme>
-${buildFontSchemeXml(name, fontFamily)}
-    <a:fmtScheme name="${name}">
-      <a:fillStyleLst>
-        <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-        <a:gradFill rotWithShape="1">
-          <a:gsLst>
-            <a:gs pos="0"><a:schemeClr val="phClr"><a:lumMod val="110000"/><a:satMod val="105000"/><a:tint val="67000"/></a:schemeClr></a:gs>
-            <a:gs pos="50000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="103000"/><a:tint val="73000"/></a:schemeClr></a:gs>
-            <a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="109000"/><a:tint val="81000"/></a:schemeClr></a:gs>
-          </a:gsLst>
-          <a:lin ang="5400000" scaled="0"/>
-        </a:gradFill>
-        <a:gradFill rotWithShape="1">
-          <a:gsLst>
-            <a:gs pos="0"><a:schemeClr val="phClr"><a:satMod val="103000"/><a:lumMod val="102000"/><a:tint val="94000"/></a:schemeClr></a:gs>
-            <a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="99000"/><a:satMod val="120000"/><a:shade val="78000"/></a:schemeClr></a:gs>
-          </a:gsLst>
-          <a:lin ang="5400000" scaled="0"/>
-        </a:gradFill>
-      </a:fillStyleLst>
-      <a:lnStyleLst>
-        <a:ln w="6350" cap="flat" cmpd="sng" algn="ctr">
-          <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-          <a:prstDash val="solid"/>
-          <a:miter lim="800000"/>
-        </a:ln>
-        <a:ln w="12700" cap="flat" cmpd="sng" algn="ctr">
-          <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-          <a:prstDash val="solid"/>
-          <a:miter lim="800000"/>
-        </a:ln>
-        <a:ln w="19050" cap="flat" cmpd="sng" algn="ctr">
-          <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-          <a:prstDash val="solid"/>
-          <a:miter lim="800000"/>
-        </a:ln>
-      </a:lnStyleLst>
-      <a:effectStyleLst>
-        <a:effectStyle><a:effectLst/></a:effectStyle>
-        <a:effectStyle><a:effectLst/></a:effectStyle>
-        <a:effectStyle>
-          <a:effectLst>
-            <a:outerShdw blurRad="57150" dist="19050" dir="5400000" algn="ctr" rotWithShape="0">
-              <a:srgbClr val="000000"><a:alpha val="63000"/></a:srgbClr>
-            </a:outerShdw>
-          </a:effectLst>
-        </a:effectStyle>
-      </a:effectStyleLst>
-      <a:bgFillStyleLst>
-        <a:solidFill><a:schemeClr val="phClr"/></a:solidFill>
-        <a:solidFill><a:schemeClr val="phClr"><a:tint val="95000"/><a:satMod val="170000"/></a:schemeClr></a:solidFill>
-        <a:gradFill rotWithShape="1">
-          <a:gsLst>
-            <a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="93000"/><a:satMod val="150000"/><a:shade val="98000"/><a:lumMod val="102000"/></a:schemeClr></a:gs>
-            <a:gs pos="50000"><a:schemeClr val="phClr"><a:tint val="98000"/><a:satMod val="130000"/><a:shade val="90000"/><a:lumMod val="103000"/></a:schemeClr></a:gs>
-            <a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="63000"/><a:satMod val="120000"/></a:schemeClr></a:gs>
-          </a:gsLst>
-          <a:lin ang="5400000" scaled="0"/>
-        </a:gradFill>
-      </a:bgFillStyleLst>
-    </a:fmtScheme>
-  </a:themeElements>
-</a:theme>`;
-}
-
-async function buildThmxZip(tokens: ThemeTokens): Promise<Buffer> {
-  const zip = new JSZip();
-  const name = tokens.name || 'Custom Theme';
-
-  // --- [Content_Types].xml ---
-  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/theme/theme/themeManager.xml" ContentType="application/vnd.openxmlformats-officedocument.themeManager+xml"/>
-  <Override PartName="/theme/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
-</Types>`);
-
-  // --- _rels/.rels ---
-  const rels = zip.folder('_rels');
-  rels?.file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="theme/theme/themeManager.xml"/>
-</Relationships>`);
-
-  // --- theme/theme/ ---
-  const themeDir = zip.folder('theme');
-  const themeThemeDir = themeDir?.folder('theme');
-  const themeThemeRels = themeThemeDir?.folder('_rels');
-
-  themeThemeDir?.file('themeManager.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:themeManager xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>`);
-
-  themeThemeRels?.file('themeManager.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme1.xml"/>
-</Relationships>`);
-
-  themeThemeDir?.file('theme1.xml', buildTheme1Xml(name, tokens.slots, tokens.fontFamily));
-
-  return zip.generateAsync({
-    type: 'nodebuffer',
-    mimeType: 'application/vnd.ms-officetheme',
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -484,22 +321,5 @@ export function registerThemeHandlers(): void {
 
   ipcMain.handle('theme:autoAssign', async (_event, colors: PaletteColor[], seeds: string[] = []) => {
     return autoAssignThemeColors(colors, seeds);
-  });
-
-  ipcMain.handle('theme:exportThmx', async (_event, tokens: ThemeTokens) => {
-    try {
-      const buffer = await buildThmxZip(tokens);
-      const safeName = (tokens.name || 'theme').replace(/[^\w\s\-]/g, '_');
-      const { filePath, canceled } = await dialog.showSaveDialog({
-        title: 'Export PowerPoint Theme',
-        defaultPath: `${safeName}.thmx`,
-        filters: [{ name: 'PowerPoint Theme', extensions: ['thmx'] }],
-      });
-      if (canceled || !filePath) return { success: false, error: 'Cancelled' };
-      await fs.writeFile(filePath, buffer);
-      return { success: true, path: filePath };
-    } catch (err) {
-      return { success: false, error: err instanceof Error ? err.message : 'Export failed' };
-    }
   });
 }

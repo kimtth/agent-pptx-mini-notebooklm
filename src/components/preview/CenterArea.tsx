@@ -3,9 +3,8 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Download, Palette, ChevronLeft, ChevronRight, FolderOpen, MonitorPlay, ExternalLink, ZoomIn, ZoomOut } from 'lucide-react'
+import { Download, ChevronLeft, ChevronRight, FolderOpen, MonitorPlay, ExternalLink, ZoomIn, ZoomOut } from 'lucide-react'
 import { useSlidesStore } from '../../stores/slides-store'
-import { usePaletteStore } from '../../stores/palette-store'
 import { useChatStore } from '../../stores/chat-store'
 import { useProjectStore } from '../../stores/project-store'
 import { PptxPreviewCard } from './PptxPreviewCard.tsx'
@@ -18,7 +17,6 @@ const PREVIEW_SCALE_STEP = 0.05
 
 export function CenterArea() {
   const { work } = useSlidesStore()
-  const { tokens } = usePaletteStore()
   const { addMessage } = useChatStore()
   const { workspaceDir } = useProjectStore()
   const [selected, setSelected] = useState(0)
@@ -146,11 +144,6 @@ export function CenterArea() {
     }
   }
 
-  const exportThmx = async () => {
-    if (!tokens) return
-    await window.electronAPI.theme.exportThmx(tokens)
-  }
-
   const openPreviewPptx = async () => {
     setOpeningPptx(true)
     setExportError(null)
@@ -247,16 +240,6 @@ export function CenterArea() {
                 {openingPptx ? 'Opening…' : 'Open in PowerPoint'}
               </button>
             </>
-          )}
-          {tokens && (
-            <button
-              onClick={exportThmx}
-              className="flex h-8 items-center gap-1.5 border px-3 text-xs font-medium transition-colors"
-              style={{ background: 'var(--surface-hover)', color: 'var(--text-primary)', borderColor: 'var(--panel-border)' }}
-            >
-              <Palette size={12} />
-              .thmx
-            </button>
           )}
           {previewImages.length > 0 && (
             <button

@@ -3,6 +3,7 @@ name: Gitleaks Secret Scan
 on:
   push:
     branches: ["**"]
+  workflow_dispatch:
 
 jobs:
   gitleaks:
@@ -11,6 +12,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml

@@ -58,13 +58,23 @@ from layout_specs import (
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _content_width(
+def _body_content_width(tokens: DesignTokens) -> float:
+    """Usable body width in inches.
+
+    Body content spans the full safe width of the slide. Decorative corner
+    icons only constrain the header band; the main body is pushed below the
+    icon instead of permanently reserving a right-side gutter.
+    """
+    return round(SLIDE_WIDTH_IN - 2 * tokens.margin_x, 2)
+
+
+def _header_content_width(
     tokens: DesignTokens,
     has_icon: bool,
     icon_size: float,
 ) -> float:
-    """Usable content width in inches."""
-    w = SLIDE_WIDTH_IN - 2 * tokens.margin_x
+    """Usable header width in inches."""
+    w = _body_content_width(tokens)
     if has_icon and icon_size > 0:
         w -= icon_size + tokens.icon_corner_margin_x
     return round(w, 2)
@@ -303,7 +313,7 @@ def solve_layout(
     tokens = blueprint.tokens
     zones = blueprint.zones
     icon_size = blueprint.icon_size if has_icon else 0.0
-    cw = _content_width(tokens, has_icon, icon_size)
+    cw = _body_content_width(tokens)
 
     # If per-item measurement provided, derive CONTENT zone height from it.
     if card_measured_h is not None and card_measured_h > 0:
@@ -406,14 +416,16 @@ def _build_layout_spec(
             h=h,
         )
 
+    header_cw = _header_content_width(tokens, has_icon, icon_size)
+
     # Title & key_message get header-width treatment
     title_rect = None
     if (tv := solved.get(ZoneRole.TITLE.value)):
-        title_rect = _header_rect(mx, tv[0], cw, tv[1], tokens.header_w_ratio)
+        title_rect = _header_rect(mx, tv[0], header_cw, tv[1], tokens.header_w_ratio)
 
     key_rect = None
     if (kv := solved.get(ZoneRole.KEY_MESSAGE.value)):
-        key_rect = _header_rect(mx, kv[0], cw, kv[1], tokens.header_w_ratio)
+        key_rect = _header_rect(mx, kv[0], header_cw, kv[1], tokens.header_w_ratio)
 
     accent_rect = _rect(ZoneRole.ACCENT, w=1.5)
     content_rect = _rect(ZoneRole.CONTENT)
@@ -455,6 +467,26 @@ def _build_layout_spec(
             chips_rect = RectSpec(mx, chips_rect.y, narration_w, chips_rect.h)
         if footer_rect:
             footer_rect = RectSpec(mx, footer_rect.y, narration_w, footer_rect.h)
+    elif icon_rect is not None:
+        body_top = round(icon_rect.y + icon_rect.h + max(tokens.gap_y, 0.12), 4)
+        if summary_box is not None and summary_box.y < body_top:
+            shift = round(body_top - summary_box.y, 4)
+            summary_box = RectSpec(summary_box.x, body_top, summary_box.w, summary_box.h)
+            if content_rect is not None:
+                content_rect = RectSpec(
+                    content_rect.x,
+                    round(content_rect.y + shift, 4),
+                    content_rect.w,
+                    max(round(content_rect.h - shift, 4), 0.6),
+                )
+        elif content_rect is not None and content_rect.y < body_top:
+            shift = round(body_top - content_rect.y, 4)
+            content_rect = RectSpec(
+                content_rect.x,
+                body_top,
+                content_rect.w,
+                max(round(content_rect.h - shift, 4), 0.8),
+            )
 
     # Caption layouts (content_caption, picture_caption) — left narration + right content
     # Title and key_message are narrowed to ~35%, content/hero occupies the right ~65%.

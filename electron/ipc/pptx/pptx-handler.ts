@@ -525,7 +525,7 @@ async function renderPresentationInternal(
   theme: ThemeTokens | null,
   title: string,
   outputPath: string,
-  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; designStyle?: string },
+  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; designStyle?: string; customBackgroundColor?: string | null },
 ): Promise<PptxCompletionReport> {
   const workDir = path.dirname(outputPath)
   const runnerScriptPath = resolveBundledPath('scripts', 'pptx-python-runner.py')
@@ -556,7 +556,7 @@ async function renderPresentationInternal(
   if (!layoutSpecsJson) {
     const { inputPath } = buildLayoutArtifactPaths(workspaceDir)
     const layoutInputJson = await fs.readFile(inputPath, 'utf-8')
-    const computed = await computeLayoutSpecsInternal(layoutInputJson, fontFamily, textBoxCornerStyle)
+    const computed = await computeLayoutSpecsInternal(layoutInputJson, fontFamily)
     if (!computed.success || !computed.specs?.trim()) {
       throw new Error(computed.error ?? 'Failed to compute hybrid layout specs.')
     }
@@ -574,6 +574,7 @@ async function renderPresentationInternal(
     if (existsSync(candidate)) templatePath = candidate
   }
   const templateMetaJson = opts?.templateMeta ? JSON.stringify(opts.templateMeta) : ''
+  const customBackgroundColor = typeof opts?.customBackgroundColor === 'string' ? opts.customBackgroundColor.trim() : ''
 
   const infographicManifestPath = path.join(workspaceDir, 'previews', 'notebooklm-infographics.json')
   let notebookLMInfographicsJson = ''
@@ -612,6 +613,7 @@ async function renderPresentationInternal(
         PPTX_TEXT_BOX_CORNER_STYLE: textBoxCornerStyle,
         PPTX_SHOW_SLIDE_ICONS: showSlideIcons,
         PPTX_DESIGN_STYLE: designStyle,
+        ...(customBackgroundColor ? { PPTX_CUSTOM_BACKGROUND_COLOR: customBackgroundColor } : {}),
         PPTX_ICON_COLLECTION: opts?.iconCollection ?? 'all',
         ...(opts?.renderDir ? { PPTX_SKIP_TEXT_OVERFLOW_FIX: '1' } : {}),
         ...(slideAssetsJson.trim() ? { PPTX_SLIDE_ASSETS_JSON: slideAssetsJson } : {}),
@@ -633,7 +635,7 @@ export async function renderPresentationToFile(
   theme: ThemeTokens | null,
   title: string,
   outputPath: string,
-  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; designStyle?: string },
+  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; designStyle?: string; customBackgroundColor?: string | null },
 ): Promise<PptxCompletionReport> {
   return queuePowerPointAutomation(() => renderPresentationInternal(theme, title, outputPath, opts))
 }
@@ -820,7 +822,7 @@ export function registerPptxHandlers(): void {
     }
   })
 
-  ipcMain.handle('pptx:renderPreview', async (_event, designStyle: string | null, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], templateMeta?: TemplateMeta | null) => {
+  ipcMain.handle('pptx:renderPreview', async (_event, designStyle: string | null, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], templateMeta?: TemplateMeta | null, customBackgroundColor?: string | null) => {
     try {
       return await queuePowerPointAutomation(async () => {
         const workspaceDir = await readWorkspaceDir()
@@ -846,6 +848,7 @@ export function registerPptxHandlers(): void {
             renderDir,
             iconCollection,
             templateMeta,
+            customBackgroundColor,
             layoutSpecsJson: artifactRefresh.layoutSpecsJson,
             designStyle: designStyle ?? undefined,
           })

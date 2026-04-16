@@ -5,8 +5,8 @@
 The layout system runs as part of a larger PPTX generation pipeline. In end-to-end order, the flow is:
 
 1. **Storyboard + asset selection** produce slide content and approved image/icon metadata.
-2. **Pre-generation layout computation** computes `LayoutSpec` coordinates before the LLM-generated `python-pptx` code runs.
-3. **Runtime namespace injection** gives the generated Python code access to `PRECOMPUTED_LAYOUT_SPECS` and related helpers.
+2. **Pre-generation layout computation** computes `LayoutSpec` coordinates before the PPTX renderer runs.
+3. **Runtime loading** gives the Python rendering pipeline access to `PRECOMPUTED_LAYOUT_SPECS` and related helpers.
 4. **PPTX generation** writes the deck using the precomputed rectangles.
 5. **Post-generation processing** repairs, validates, and optionally renders preview images.
 
@@ -30,23 +30,26 @@ previews/layout-specs.json
         ▼
 pptx-python-runner.py
         │
-        ├──▶ inject PRECOMPUTED_LAYOUT_SPECS + helpers
-        ├──▶ execute generated python-pptx code
+        ├──▶ load PRECOMPUTED_LAYOUT_SPECS + helpers
+        ├──▶ run the deterministic slide renderer
         ├──▶ overflow repair using Pillow measurement
         ├──▶ contrast repair
         ├──▶ validate_presentation(prs)
         └──▶ optional preview image rendering
 ```
 
-The layout engine itself is the pre-generation part of that pipeline. Its job is to convert declarative slide intent into deterministic rectangles that generated code can consume safely.
+The layout engine itself is the pre-generation part of that pipeline. Its job is to convert declarative slide intent into deterministic rectangles that the renderer can consume safely.
 
-When the hybrid engine is unavailable or precomputation fails, the runtime raises a `RuntimeError`. Generated code must always use `PRECOMPUTED_LAYOUT_SPECS`.
+When the hybrid engine is unavailable or precomputation fails, the runtime raises a `RuntimeError`. The renderer must always use `PRECOMPUTED_LAYOUT_SPECS`.
 
 ---
 
 ## JSON Contract Between Processes
 
 The layout engine runs as a subprocess (`hybrid_layout.py`) and communicates through JSON artifacts stored in `previews/`.
+It solves geometry from slide content only; render-time styling choices such as
+rounded panel corners are applied later by `slide_renderer.py` and are not part
+of the solver contract.
 
 ### Input Artifacts
 
@@ -267,12 +270,17 @@ The Cassowary solver then assigns exact y-positions that satisfy all constraints
 Horizontal positions are computed directly from design tokens; no solver is needed:
 
 ```
-content_width = SLIDE_WIDTH - 2 × margin_x - (icon_size + icon_margin if has_icon)
+body_width   = SLIDE_WIDTH - 2 × margin_x
+header_width = body_width - (icon_size + icon_margin if has_icon)
 
-For cards:  card_w = (content_width - (columns - 1) × gap_x) / columns
-For stats:  box_w  = (content_width - (count - 1) × gap_x) / count
-For timeline: text_w = content_width - (text_x - margin_x)
+For cards:    card_w = (body_width - (columns - 1) × gap_x) / columns
+For stats:    box_w  = (body_width - (count - 1) × gap_x) / count
+For timeline: text_w = body_width - (text_x - margin_x)
 ```
+
+When a slide includes a corner icon, the icon only narrows the **header band**
+(`title_rect` / `key_message_rect`). The main body is pushed below the icon
+bottom so the slide does not keep an unused full-height gutter on the right.
 
 Card positions within a grid are:
 
@@ -326,9 +334,9 @@ This metadata is serialized into `layout-specs.json` and is available to the Pyt
 
 ---
 
-## Runtime Namespace Integration
+## Runtime Integration
 
-The final generated Python code does not talk to the layout engine directly. Instead, `pptx-python-runner.py` builds a controlled execution namespace and injects the geometry + helpers the agent code needs.
+The final Python rendering stage does not talk to the layout engine directly. Instead, `pptx-python-runner.py` loads the geometry + helper contract once, then passes it into the deterministic renderer and validation helpers.
 
 ### Geometry Objects Injected at Runtime
 
@@ -336,7 +344,7 @@ The final generated Python code does not talk to the layout engine directly. Ins
 |--------|---------|
 | `PRECOMPUTED_LAYOUT_SPECS` | Required list of measured `LayoutSpec` objects from the hybrid engine |
 | `flow_layout_spec()` | Cascade helper used internally by the layout engine |
-| `LayoutSpec`, `RectSpec`, `CardsSpec`, `StatsSpec`, `TimelineSpec`, `ComparisonSpec` | Dataclasses used by generated code |
+| `LayoutSpec`, `RectSpec`, `CardsSpec`, `StatsSpec`, `TimelineSpec`, `ComparisonSpec` | Dataclasses used by the renderer and validator |
 | `SLIDE_ASSETS`, `slide_assets()`, `slide_image_paths()` | Approved per-slide asset metadata and helpers for selected images |
 | `PPTX_ICON_COLLECTION` | Active icon collection identifier enforced by the runtime |
 
@@ -361,7 +369,7 @@ The final generated Python code does not talk to the layout engine directly. Ins
 | `safe_image_path()` | `(path) → str` | Validates and normalizes image paths |
 | `fetch_icon()` | `(icon_id, color_hex) → path_or_None` | Fetches an icon from Iconify at runtime; rejects names outside the selected icon collection |
 | `resolve_font()` | `(text, fallback_name) → font_name_str` | Returns the selected base font unchanged. PowerPoint handles glyph substitution for missing characters at render time. |
-| `estimate_text_height_in()` | `(text, width_in, font_size_pt) → float` | Shared text height heuristic (CJK-aware) used by generated code and validator |
+| `estimate_text_height_in()` | `(text, width_in, font_size_pt) → float` | Shared text height heuristic (CJK-aware) used by the renderer and validator |
 | `contrast_ratio()` / `ensure_contrast()` | `ensure_contrast(fg_hex, bg_hex) → hex_str` | Contrast helpers for choosing readable text colors on filled panels |
 | `apply_widescreen()` | `(prs) → prs` | Forces 16:9 slide dimensions on the presentation object. Used both for blank decks (`apply_widescreen(Presentation())`) and custom templates (`apply_widescreen(Presentation(TEMPLATE_PATH))`). |
 | `set_fill_transparency()` | `(shape, value_0_to_1) → None` | Sets fill transparency without touching internal XML proxies directly |
@@ -369,7 +377,7 @@ The final generated Python code does not talk to the layout engine directly. Ins
 
 ### Chart Namespace Injected at Runtime
 
-The following names are pre-imported in the generated code namespace for chart slides:
+The following names are available to the rendering runtime for chart slides:
 
 | Symbol | Source | Purpose |
 |--------|--------|---------|
@@ -796,7 +804,7 @@ pptx-python-runner.py                  layout_validator.py
 
 - [scripts/pptx-python-runner.py](scripts/pptx-python-runner.py) — owns the registry and creation wrappers; passes both registry and specs to the validator
 - [scripts/layout/layout_validator.py](scripts/layout/layout_validator.py) — consumes registry + specs + classification rules; owns classification logic and validation checks
-- [electron/ipc/llm/chat-handler.ts](electron/ipc/llm/chat-handler.ts) — prompt guidance telling generated code to use the creation wrappers
+- [electron/ipc/llm/chat-handler.ts](electron/ipc/llm/chat-handler.ts) — workflow control plane that can trigger reruns or infrastructure patching when validation fails
 
 ---
 
@@ -838,7 +846,7 @@ The validator knows whether two boxes overlap. It does not know whether the slid
 
 ### 4. Decorative Heuristics Are a Last-Resort Classifier
 
-Shapes are classified primarily through the semantic registry and blueprint geometry matching. Name-prefix and geometric heuristics (`Oval*`, `bg_blob*`, background fill, decorative frame) are only used for shapes that were not created through the registry-aware helpers. If generated code bypasses all wrappers and creates shapes with unexpected names, heuristics may still misclassify them.
+Shapes are classified primarily through the semantic registry and blueprint geometry matching. Name-prefix and geometric heuristics (`Oval*`, `bg_blob*`, background fill, decorative frame) are only used for shapes that were not created through the registry-aware helpers. If rendering code bypasses all wrappers and creates shapes with unexpected names, heuristics may still misclassify them.
 
 ### 5. Auto-Size Is a Safety Net, Not the Primary Layout Strategy
 
@@ -850,9 +858,9 @@ External callers must use bare imports (`from layout_blueprint import ...`) afte
 
 ---
 
-## Practical Guidance for Generated Code
+## Practical Guidance for Renderer Integrations
 
-The engine works best when generated code follows a small set of strict rules:
+The engine works best when the rendering layer follows a small set of strict rules:
 
 1. Use `PRECOMPUTED_LAYOUT_SPECS[i]` whenever available.
 2. Never invent raw `x`, `y`, `w`, `h` coordinates for major elements.

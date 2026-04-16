@@ -3,7 +3,26 @@
  * Assembles ThemeTokens from slots + colors (renderer-side).
  */
 
-import type { PaletteColor, ThemeColorTreatment, ThemeSlots, ThemeTextBoxStyle, ThemeTokens } from '../domain/entities/palette';
+import type { PaletteColor, ThemeColorTreatment, ThemeSlots, ThemeTextBoxCornerStyle, ThemeTextBoxStyle, ThemeTokens } from '../domain/entities/palette';
+import { getStyleDefaults } from '../domain/theme/style-theme-defaults';
+import { DEFAULT_THEME_SLOTS } from '../domain/theme/default-theme';
+
+/**
+ * Guarantee a non-null ThemeTokens.
+ * When `tokens` is null, derives fallback colors from the selected design style
+ * so that font / icon-set / text-box-style settings look correct immediately.
+ */
+function ensureThemeTokens(tokens: ThemeTokens | null, designStyle?: string | null): ThemeTokens {
+  if (tokens) return tokens;
+  const { slots, tone } = getStyleDefaults(designStyle);
+  return buildThemeTokens(designStyle ?? 'Default Theme', slots, [], tone);
+}
+
+function normalizeBackgroundHex(hex?: string | null): string | null {
+  if (!hex) return null;
+  const normalized = hex.trim().replace('#', '').toUpperCase();
+  return /^[0-9A-F]{6}$/.test(normalized) ? normalized : null;
+}
 
 export function buildThemeTokens(
   name: string,
@@ -12,6 +31,7 @@ export function buildThemeTokens(
   styleTone?: 'dark' | 'light' | null,
 ): ThemeTokens {
   const isDark = styleTone === 'dark';
+  const backgroundBase = isDark ? slots.dk1 : DEFAULT_THEME_SLOTS.lt1;
   const C: ThemeTokens['C'] = {
     DARK: slots.dk1,
     DARK2: slots.dk2,
@@ -27,40 +47,72 @@ export function buildThemeTokens(
     USED_LINK: slots.folHlink,
     PRIMARY: slots.accent1,
     SECONDARY: slots.accent2,
-    BG: isDark ? slots.dk1 : slots.lt1,
+    BG: backgroundBase,
     TEXT: isDark ? slots.lt1 : slots.dk1,
     WHITE: slots.lt1,
     BORDER: isDark ? slots.dk2 : slots.lt2,
   };
-  return { name, slots, colors, C };
+  return { name, slots, colors, C, showSlideIcons: true };
 }
 
 export function applyThemeFontFamily(
   tokens: ThemeTokens | null,
   fontFamily?: string | null,
-): ThemeTokens | null {
-  if (!tokens) return null;
+  designStyle?: string | null,
+): ThemeTokens {
+  const baseTokens = ensureThemeTokens(tokens, designStyle);
   const nextFontFamily = fontFamily?.trim() || undefined;
-  if (tokens.fontFamily === nextFontFamily) {
-    return tokens;
+  if (baseTokens.fontFamily === nextFontFamily) {
+    return baseTokens;
   }
   return {
-    ...tokens,
+    ...baseTokens,
     fontFamily: nextFontFamily,
+  };
+}
+
+export function applyThemeBackground(
+  tokens: ThemeTokens | null,
+  designStyle?: string | null,
+  styleTone?: 'dark' | 'light' | null,
+  customBackgroundHex?: string | null,
+): ThemeTokens {
+  const normalizedBackground = normalizeBackgroundHex(customBackgroundHex);
+  if (designStyle !== 'Blank Custom Color' || !normalizedBackground) {
+    return ensureThemeTokens(tokens, designStyle);
+  }
+
+  const baseTokens = tokens ?? buildThemeTokens(
+    designStyle,
+    getStyleDefaults(designStyle).slots,
+    [],
+    styleTone ?? null,
+  );
+
+  if (baseTokens.C.BG === normalizedBackground) {
+    return baseTokens;
+  }
+
+  return {
+    ...baseTokens,
+    C: {
+      ...baseTokens.C,
+      BG: normalizedBackground,
+    },
   };
 }
 
 export function applyThemeColorTreatment(
   tokens: ThemeTokens | null,
   colorTreatment?: ThemeColorTreatment | null,
-): ThemeTokens | null {
-  if (!tokens) return null;
+): ThemeTokens {
+  const baseTokens = ensureThemeTokens(tokens);
   const nextColorTreatment = colorTreatment ?? 'mixed';
-  if (tokens.colorTreatment === nextColorTreatment) {
-    return tokens;
+  if (baseTokens.colorTreatment === nextColorTreatment) {
+    return baseTokens;
   }
   return {
-    ...tokens,
+    ...baseTokens,
     colorTreatment: nextColorTreatment,
   };
 }
@@ -68,15 +120,45 @@ export function applyThemeColorTreatment(
 export function applyThemeTextBoxStyle(
   tokens: ThemeTokens | null,
   textBoxStyle?: ThemeTextBoxStyle | null,
-): ThemeTokens | null {
-  if (!tokens) return null;
+): ThemeTokens {
+  const baseTokens = ensureThemeTokens(tokens);
   const nextTextBoxStyle = textBoxStyle ?? 'mixed';
-  if (tokens.textBoxStyle === nextTextBoxStyle) {
-    return tokens;
+  if (baseTokens.textBoxStyle === nextTextBoxStyle) {
+    return baseTokens;
   }
   return {
-    ...tokens,
+    ...baseTokens,
     textBoxStyle: nextTextBoxStyle,
+  };
+}
+
+export function applyThemeTextBoxCornerStyle(
+  tokens: ThemeTokens | null,
+  textBoxCornerStyle?: ThemeTextBoxCornerStyle | null,
+): ThemeTokens {
+  const baseTokens = ensureThemeTokens(tokens);
+  const nextTextBoxCornerStyle = textBoxCornerStyle ?? 'square';
+  if (baseTokens.textBoxCornerStyle === nextTextBoxCornerStyle) {
+    return baseTokens;
+  }
+  return {
+    ...baseTokens,
+    textBoxCornerStyle: nextTextBoxCornerStyle,
+  };
+}
+
+export function applyThemeSlideIcons(
+  tokens: ThemeTokens | null,
+  showSlideIcons?: boolean | null,
+): ThemeTokens {
+  const baseTokens = ensureThemeTokens(tokens);
+  const nextShowSlideIcons = showSlideIcons ?? true;
+  if (baseTokens.showSlideIcons === nextShowSlideIcons) {
+    return baseTokens;
+  }
+  return {
+    ...baseTokens,
+    showSlideIcons: nextShowSlideIcons,
   };
 }
 
