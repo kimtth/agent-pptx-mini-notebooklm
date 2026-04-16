@@ -248,8 +248,8 @@ def _rounded_corner_margin_insets(
     """
     if corner_style != "rounded":
         return 0.0, 0.0
-    extra_x = min(max(shape_h_in * 0.14, 0.04), 0.12)
-    extra_y = min(max(shape_h_in * 0.08, 0.03), 0.08)
+    extra_x = min(max(shape_h_in * 0.10, 0.03), 0.08)
+    extra_y = min(max(shape_h_in * 0.05, 0.02), 0.05)
     return extra_x, extra_y
 
 

@@ -20,10 +20,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from font_text_measure import TextMeasureRequest, measure_text_heights
 from pptx.util import Inches
 from layout_specs import estimate_text_height_in
+
+if TYPE_CHECKING:
+    from style_config import StyleGuardrails
 
 SLIDE_WIDTH_EMU = Inches(13.333)
 SLIDE_HEIGHT_EMU = Inches(7.5)
@@ -171,6 +175,24 @@ def _get_shape_box(shape) -> ShapeBox | None:
     shape_id = getattr(shape, 'shape_id', 0) or 0
     return ShapeBox(left=left, top=top, width=width, height=height,
                     shape_name=name, shape_id=shape_id)
+
+
+def _is_rounded_rectangle_shape(shape) -> bool:
+    try:
+        auto_shape_type = shape.auto_shape_type
+    except Exception:
+        return False
+    shape_value = getattr(auto_shape_type, 'value', None)
+    if shape_value is not None:
+        return shape_value == 5
+    return str(auto_shape_type).startswith('ROUNDED_RECTANGLE')
+
+
+def _rounded_shape_text_inset_emu(height_emu: int) -> tuple[int, int]:
+    height_in = max(height_emu, 0) / 914400
+    extra_x = min(max(height_in * 0.10, 0.03), 0.08)
+    extra_y = min(max(height_in * 0.05, 0.02), 0.05)
+    return Inches(extra_x), Inches(extra_y)
 
 
 def _boxes_overlap(a: ShapeBox, b: ShapeBox) -> bool:
@@ -435,6 +457,10 @@ def _estimate_required_text_height_in(shape, box: ShapeBox) -> float | None:
         except Exception:
             margin_x_emu = 0
             margin_y_emu = 0
+    if _is_rounded_rectangle_shape(shape):
+        extra_x_emu, extra_y_emu = _rounded_shape_text_inset_emu(box.height)
+        margin_x_emu += extra_x_emu * 2
+        margin_y_emu += extra_y_emu * 2
 
     usable_width_emu = max(box.width - margin_x_emu, int(0.15 * 914400))
     width_in = usable_width_emu / 914400
@@ -491,6 +517,13 @@ def _text_content_box(shape, outer_box: ShapeBox) -> ShapeBox | None:
         margin_top = 0
         margin_bottom = 0
 
+    if _is_rounded_rectangle_shape(shape):
+        extra_x_emu, extra_y_emu = _rounded_shape_text_inset_emu(outer_box.height)
+        margin_left += extra_x_emu
+        margin_right += extra_x_emu
+        margin_top += extra_y_emu
+        margin_bottom += extra_y_emu
+
     content_left = outer_box.left + margin_left
     content_top = outer_box.top + margin_top
     content_width = outer_box.width - margin_left - margin_right
@@ -520,6 +553,7 @@ def validate_slide(
     *,
     shape_role_registry: dict[int, str] | None = None,
     layout_specs: list | None = None,
+    guardrails: StyleGuardrails | None = None,
 ) -> list[LayoutIssue]:
     """Validate a single slide for layout issues.
 
@@ -538,6 +572,8 @@ def validate_slide(
       4. Heuristic detection
             5. Picture shape
       6. Default → LAYOUT_MANAGED
+
+    When *guardrails* is provided, additional style-specific checks are run.
     """
     issues: list[LayoutIssue] = []
 
@@ -581,10 +617,11 @@ def validate_slide(
                     overflow_sev = IssueSeverity.WARNING
             except Exception:
                 pass
-            # Flow-managed top textboxes are pre-sized upstream and can read as
-            # under-height to static estimators even when the rendered result is
-            # acceptable. Keep them actionable without blocking export.
-            if shape_name_lower in {'title', 'key_message'}:
+            # Flow-managed top textboxes can read slightly under-height to the
+            # static estimator even when the rendered result is acceptable.
+            # Only downgrade mild overflow; runaway headline growth must remain
+            # blocking so post-staging QA can stop the deck.
+            if shape_name_lower in {'title', 'key_message'} and ratio <= 1.35:
                 overflow_sev = IssueSeverity.WARNING
             issues.append(LayoutIssue(
                 slide_index=slide_index,
@@ -769,6 +806,47 @@ def validate_slide(
                     shape_b=b.shape_name,
                 ))
 
+    # 4. Style-specific guardrail checks
+    if guardrails is not None:
+        # 4a. Excessive decorative elements
+        design_count = sum(
+            1 for box, _, role in all_boxes
+            if role == ShapeRole.TEMPLATE_DESIGN
+            and (box.shape_name or '').startswith('design_')
+        )
+        if design_count > guardrails.max_decorative_elements:
+            issues.append(LayoutIssue(
+                slide_index=slide_index,
+                issue_type=IssueType.CRAMPED,
+                severity=IssueSeverity.WARNING,
+                message=(
+                    f'Slide has {design_count} decorative elements '
+                    f'(style guideline: max {guardrails.max_decorative_elements})'
+                ),
+                shape_a='(decorative elements)',
+            ))
+
+        # 4b. Heavy borders
+        if guardrails.forbid_heavy_borders:
+            for box, shape, _role in all_boxes:
+                try:
+                    if (hasattr(shape, 'line') and shape.line
+                            and hasattr(shape.line, 'width') and shape.line.width
+                            and shape.line.width > Inches(0) and shape.line.width > 914400 * 2 / 72):
+                        issues.append(LayoutIssue(
+                            slide_index=slide_index,
+                            issue_type=IssueType.CRAMPED,
+                            severity=IssueSeverity.INFO,
+                            message=(
+                                f'Shape "{box.shape_name}" has a heavy border '
+                                f'({shape.line.width / 914400 * 72:.1f} pt); '
+                                f'style prefers thin borders'
+                            ),
+                            shape_a=box.shape_name,
+                        ))
+                except Exception:
+                    pass
+
     return issues
 
 
@@ -777,6 +855,7 @@ def validate_presentation(
     *,
     shape_role_registry: dict[int, str] | None = None,
     layout_specs: list | None = None,
+    guardrails: StyleGuardrails | None = None,
 ) -> list[LayoutIssue]:
     """Validate all slides in a presentation."""
     issues: list[LayoutIssue] = []
@@ -786,6 +865,7 @@ def validate_presentation(
             idx,
             shape_role_registry=shape_role_registry,
             layout_specs=layout_specs,
+            guardrails=guardrails,
         ))
     return issues
 

@@ -12,6 +12,9 @@ import matplotlib.pyplot as plt  # noqa: E402
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+if __package__ in {None, ''}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 # Layout engine lives in scripts/layout/ sub-package
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'layout'))
 
@@ -66,6 +69,8 @@ def clear_shape_role_registry() -> None:
 
 # Module-level reference to the loaded layout specs (set in build_namespace).
 _LOADED_LAYOUT_SPECS: list[LayoutSpec] | None = None
+# Module-level reference to the active style guardrails (set in renderer-mode).
+_ACTIVE_GUARDRAILS: object | None = None
 
 
 def _get_precomputed_specs_for_validation() -> list[LayoutSpec] | None:
@@ -313,19 +318,40 @@ def _svg_to_png(svg_data: bytes, size: int = 256) -> bytes | None:
         return None
 
 
-def fetch_icon(name: str, color_hex: str = '000000', size: int = 256) -> str | None:
+def fetch_icon(
+    name: str,
+    color_hex: str = '000000',
+    size: int = 256,
+    required_collection: str | None = None,
+) -> str | None:
     """Fetch an icon from the Iconify public API, convert to PNG, recolor."""
     global _ICON_FETCH_ATTEMPTS
     _ICON_FETCH_ATTEMPTS += 1
 
-    if ':' not in name:
-        default_prefix = PPTX_ICON_COLLECTION if PPTX_ICON_COLLECTION and PPTX_ICON_COLLECTION != 'all' else 'mdi'
-        name = f'{default_prefix}:{name}'
-    prefix, icon_name = name.split(':', 1)
+    requested_name = name.strip()
+    has_explicit_prefix = ':' in requested_name
+    normalized_required_collection = (required_collection or '').strip()
+    if not has_explicit_prefix:
+        default_prefix = (
+            normalized_required_collection
+            if normalized_required_collection and normalized_required_collection != 'all'
+            else PPTX_ICON_COLLECTION
+            if PPTX_ICON_COLLECTION and PPTX_ICON_COLLECTION != 'all'
+            else 'mdi'
+        )
+        requested_name = f'{default_prefix}:{requested_name}'
+    prefix, icon_name = requested_name.split(':', 1)
 
-    if PPTX_ICON_COLLECTION != 'all' and prefix != PPTX_ICON_COLLECTION:
+    effective_collection = (
+        normalized_required_collection
+        if normalized_required_collection and normalized_required_collection != 'all'
+        else PPTX_ICON_COLLECTION
+        if not has_explicit_prefix and PPTX_ICON_COLLECTION != 'all'
+        else 'all'
+    )
+    if effective_collection != 'all' and prefix != effective_collection:
         _MISSING_ICONS.append({'icon': f'{prefix}:{icon_name}', 'reason': 'outside_selected_collection'})
-        print(f'[icon] REJECTED: {prefix}:{icon_name} outside collection {PPTX_ICON_COLLECTION}', file=sys.stderr)
+        print(f'[icon] REJECTED: {prefix}:{icon_name} outside collection {effective_collection}', file=sys.stderr)
         return None
 
     # Check temp dir for already-fetched icon this run
@@ -356,15 +382,31 @@ def get_missing_icons() -> list[dict[str, str]]:
     return list(_MISSING_ICONS)
 
 
+def split_icon_audit_entries(entries: list[dict[str, str]]) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Split icon audit entries into collection-policy rejections vs real fetch failures."""
+    rejected: list[dict[str, str]] = []
+    unresolved: list[dict[str, str]] = []
+    for entry in entries:
+        if entry.get('reason') == 'outside_selected_collection':
+            rejected.append(entry)
+        else:
+            unresolved.append(entry)
+    return rejected, unresolved
+
+
 def get_icon_audit_stats() -> dict[str, float | int]:
     """Return aggregate icon audit stats for post-staging QA classification."""
-    missing = len(_MISSING_ICONS)
+    rejected, unresolved = split_icon_audit_entries(_MISSING_ICONS)
+    missing = len(unresolved)
     requested = _ICON_FETCH_ATTEMPTS
     missing_ratio = (missing / requested) if requested > 0 else 0.0
+    rejected_ratio = (len(rejected) / requested) if requested > 0 else 0.0
     return {
         'requested': requested,
         'missing': missing,
         'missingRatio': missing_ratio,
+        'rejectedByCollection': len(rejected),
+        'rejectedRatio': rejected_ratio,
     }
 
 
@@ -645,8 +687,6 @@ def add_managed_shape(shapes, auto_shape_type, left, top, width, height, name: s
         shape.name = name
     _register_shape_role(shape, 'layout_managed')
     return shape
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument('output_path')
@@ -657,7 +697,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--post-process-only', action='store_true',
                         help='Run only post-processing on an existing PPTX (validation, preview, notebooklm)')
     parser.add_argument('--renderer-mode', action='store_true',
-                        help='Use deterministic slide renderer instead of exec() code generation')
+                        help='Use the deterministic slide renderer')
     return parser.parse_args()
 
 
@@ -682,6 +722,19 @@ def _luminance_hex(hex_color: str) -> float:
     gs = _srgb_to_linear(g / 255)
     bs = _srgb_to_linear(b / 255)
     return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs
+
+
+def _blend_hex(fg_hex: str, bg_hex: str, fg_opacity: float) -> str:
+    """Alpha-blend ``fg_hex`` over ``bg_hex`` at ``fg_opacity`` (0..1)."""
+    fg_hex = fg_hex.lstrip('#')[:6].ljust(6, '0')
+    bg_hex = bg_hex.lstrip('#')[:6].ljust(6, '0')
+    op = max(0.0, min(fg_opacity, 1.0))
+    parts: list[str] = []
+    for idx in (0, 2, 4):
+        f = int(fg_hex[idx:idx + 2], 16)
+        b = int(bg_hex[idx:idx + 2], 16)
+        parts.append(f'{max(0, min(round(f * op + b * (1.0 - op)), 255)):02X}')
+    return ''.join(parts)
 
 
 def contrast_ratio(fg_hex: str, bg_hex: str) -> float:
@@ -823,6 +876,7 @@ def _build_completion_report(
     warnings: list[str] | None = None,
     contrast_fixes: int = 0,
     missing_icons: list[dict[str, str]] | None = None,
+    rejected_icons: list[dict[str, str]] | None = None,
     icon_stats: dict[str, float | int] | None = None,
     missing_images: list[str] | None = None,
     layout_issues: list[dict[str, str]] | None = None,
@@ -842,7 +896,8 @@ def _build_completion_report(
         'qa': {
             'contrastFixes': contrast_fixes,
             'missingIcons': missing_icons or [],
-            'iconStats': icon_stats or {'requested': 0, 'missing': 0, 'missingRatio': 0.0},
+            'rejectedIcons': rejected_icons or [],
+            'iconStats': icon_stats or {'requested': 0, 'missing': 0, 'missingRatio': 0.0, 'rejectedByCollection': 0, 'rejectedRatio': 0.0},
             'missingImages': missing_images or [],
             'layoutIssues': layout_issues or [],
         },
@@ -928,6 +983,23 @@ def _shrink_text_frame_fonts(shape, scale: float) -> bool:
     return changed
 
 
+def _is_rounded_rectangle_shape(shape) -> bool:
+    try:
+        auto_shape_type = shape.auto_shape_type
+    except Exception:
+        return False
+    shape_value = getattr(auto_shape_type, 'value', None)
+    if shape_value is not None:
+        return shape_value == 5
+    return str(auto_shape_type).startswith('ROUNDED_RECTANGLE')
+
+
+def _rounded_shape_text_inset_in(shape_height_in: float) -> tuple[float, float]:
+    extra_x = min(max(shape_height_in * 0.10, 0.03), 0.08)
+    extra_y = min(max(shape_height_in * 0.05, 0.02), 0.05)
+    return extra_x, extra_y
+
+
 def _collect_pillow_overflows(output_path: Path) -> list[dict[str, object]] | None:
     """Return Pillow-measured overflow metadata, or None if Pillow is unavailable."""
     try:
@@ -971,6 +1043,12 @@ def _collect_pillow_overflows(output_path: Path) -> list[dict[str, object]] | No
             margin_right = (tf.margin_right if tf.margin_right is not None else 91440) / 914400.0
             margin_top = (tf.margin_top if tf.margin_top is not None else 45720) / 914400.0
             margin_bottom = (tf.margin_bottom if tf.margin_bottom is not None else 45720) / 914400.0
+            if _is_rounded_rectangle_shape(shape):
+                extra_x, extra_y = _rounded_shape_text_inset_in(shape_height_in)
+                margin_left += extra_x
+                margin_right += extra_x
+                margin_top += extra_y
+                margin_bottom += extra_y
 
             text_width_in = max(shape_width_in - margin_left - margin_right, 0.2)
             usable_height_in = max(shape_height_in - margin_top - margin_bottom, 0.1)
@@ -1079,11 +1157,32 @@ def _fix_text_overflow(output_path: Path) -> int:
 
 
 def _get_slide_bg_hex(slide) -> str | None:
-    """Return the best-known slide background colour hex (no '#'), or None."""
+    """Return the best-known slide background colour hex (no '#'), or None.
+
+    Handles solid fills directly and gradient fills by averaging the first
+    gradient stop colour (representative of the dominant visual tone).
+    """
     try:
         bg_fill = slide.background.fill
         if bg_fill.type is not None and int(bg_fill.type) == 1:  # MSO_FILL.SOLID
             return str(bg_fill.fore_color.rgb)
+    except Exception:
+        pass
+    # Gradient background: extract the first stop colour as representative bg.
+    try:
+        ns_a = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+        ns_p = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+        bg_pr = slide.background._element.find(f'{{{ns_p}}}bg/{{{ns_p}}}bgPr')
+        if bg_pr is not None:
+            grad = bg_pr.find(f'{{{ns_a}}}gradFill')
+            if grad is not None:
+                gs_lst = grad.find(f'{{{ns_a}}}gsLst')
+                if gs_lst is not None:
+                    stops = gs_lst.findall(f'{{{ns_a}}}gs')
+                    if stops:
+                        srgb = stops[0].find(f'{{{ns_a}}}srgbClr')
+                        if srgb is not None:
+                            return srgb.get('val', '').upper()
     except Exception:
         pass
     if isinstance(TEMPLATE_META, dict):
@@ -1293,12 +1392,20 @@ def _fix_low_contrast_text(output_path: Path) -> int:
 
             shape_fill_hex = _get_solid_fill_hex(shape)
             inferred_bg_hex = _infer_background_from_shapes(slide_shapes, shape_index, shape, slide_bg_hex)
-            effective_bg = shape_fill_hex or inferred_bg_hex
+            transparency = _get_fill_transparency(shape) if shape_fill_hex else 0.0
+
+            # When a shape has a semi-transparent fill, the visual background
+            # is a blend of the shape fill and whatever is behind it.
+            if shape_fill_hex and transparency > 0.05 and inferred_bg_hex:
+                # Approximate: blend shape fill over the background behind it
+                opacity = 1.0 - transparency
+                effective_bg = _blend_hex(shape_fill_hex, inferred_bg_hex, opacity)
+            else:
+                effective_bg = shape_fill_hex or inferred_bg_hex
             if effective_bg is None:
                 continue
 
             fill_lum = _luminance_hex(effective_bg)
-            transparency = _get_fill_transparency(shape) if shape_fill_hex else 0.0
 
             # Collect runs that fail contrast
             bad_runs: list[tuple] = []
@@ -1337,8 +1444,8 @@ def _check_missing_images(output_path: Path) -> list[str]:
     """Detect slides where approved images are missing from the generated PPTX.
 
     Returns a list of human-readable messages describing each missing image.
-    Does NOT inject images — positioning is the responsibility of the
-    LLM-generated code which has full layout context.
+    Does NOT inject images — positioning remains the responsibility of the
+    slide renderer that owns the layout context.
     """
     if not SLIDE_ASSETS:
         return []
@@ -1389,7 +1496,8 @@ def _check_missing_images(output_path: Path) -> list[str]:
     return details
 
 
-def validate_and_fix_output(output_path: Path, *, run_text_overflow_fix: bool = True) -> dict:
+def validate_and_fix_output(output_path: Path, *, run_text_overflow_fix: bool = True,
+                            guardrails: object | None = None) -> dict:
     """Run image enforcement, optional text overflow fix, contrast fix, then validation on the generated PPTX.
 
     Returns a dict with structured QA findings:
@@ -1441,6 +1549,7 @@ def validate_and_fix_output(output_path: Path, *, run_text_overflow_fix: bool = 
         prs,
         shape_role_registry=get_shape_role_registry(),
         layout_specs=_get_precomputed_specs_for_validation(),
+        guardrails=guardrails,
     )
     if not issues:
         print('[layout-validator] All slides passed layout validation.', file=sys.stderr)
@@ -1599,13 +1708,14 @@ def main() -> int:
         base_font_family = os.environ.get('PPTX_FONT_FAMILY', 'Calibri')
         color_treatment = (os.environ.get('PPTX_COLOR_TREATMENT', 'solid') or 'solid').strip().lower()
         text_box_style = (os.environ.get('PPTX_TEXT_BOX_STYLE', 'plain') or 'plain').strip().lower()
+        text_box_corner_style = (os.environ.get('PPTX_TEXT_BOX_CORNER_STYLE', 'square') or 'square').strip().lower()
         design_style = os.environ.get('PPTX_DESIGN_STYLE', 'Blank White')
 
         # Layout specs
         specs_json = os.environ.get('PPTX_LAYOUT_SPECS_JSON', '')
         if not specs_json.strip():
             raise RuntimeError('PPTX_LAYOUT_SPECS_JSON is required for renderer mode.')
-        from hybrid_layout import deserialize_specs  # type: ignore
+        from scripts.layout.hybrid_layout import deserialize_specs  # type: ignore
         precomputed_specs = deserialize_specs(specs_json)
         print(f'[layout] Loaded {len(precomputed_specs)} pre-computed layout spec(s).', file=sys.stderr)
 
@@ -1628,9 +1738,14 @@ def main() -> int:
 
         # Style config
         from style_config import resolve_style_config  # type: ignore
-        style = resolve_style_config(design_style, color_treatment, text_box_style)
+        style = resolve_style_config(design_style, color_treatment, text_box_corner_style)
+        global _ACTIVE_GUARDRAILS  # noqa: PLW0603
+        _ACTIVE_GUARDRAILS = style.guardrails
+        theme_explicit = os.environ.get('PPTX_THEME_EXPLICIT', '0') == '1'
+        show_slide_icons = os.environ.get('PPTX_SHOW_SLIDE_ICONS', '1') != '0'
         print(f'[renderer] Design style: {design_style!r}, panel_fill={style.panel_fill}, '
-              f'color_treatment={style.color_treatment}', file=sys.stderr)
+              f'color_treatment={style.color_treatment}, theme_explicit={theme_explicit}, '
+              f'show_slide_icons={show_slide_icons}', file=sys.stderr)
 
         # Template
         template_path_str = TEMPLATE_PATH if TEMPLATE_PATH else None
@@ -1649,6 +1764,9 @@ def main() -> int:
             font_family=base_font_family,
             title=title,
             workspace_dir=workspace_dir,
+            theme_explicit=theme_explicit,
+            text_box_style=text_box_style,
+            show_slide_icons=show_slide_icons,
             # Inject utility functions
             rgb_color=rgb_color,
             ensure_contrast=ensure_contrast,
@@ -1666,6 +1784,7 @@ def main() -> int:
             apply_widescreen=apply_widescreen,
             slide_image_paths=slide_image_paths,
             slide_icon_name=slide_icon_name,
+            slide_icon_collection=slide_icon_collection,
             ensure_parent_dir=ensure_parent_dir,
             safe_image_path=safe_image_path,
         )
@@ -1697,14 +1816,19 @@ def main() -> int:
     qa_findings: dict = {'contrast_fixes': 0, 'missing_images': [], 'layout_issues': []}
     try:
         skip_text_overflow_fix = os.environ.get('PPTX_SKIP_TEXT_OVERFLOW_FIX') == '1'
-        qa_findings = validate_and_fix_output(output_path, run_text_overflow_fix=not skip_text_overflow_fix) or qa_findings
+        qa_findings = validate_and_fix_output(
+            output_path,
+            run_text_overflow_fix=not skip_text_overflow_fix,
+            guardrails=_ACTIVE_GUARDRAILS,
+        ) or qa_findings
     except Exception as exc:  # noqa: BLE001
         msg = f'Layout validation failed: {exc}'
         post_warnings.append(msg)
         print(f'[layout-validator] {msg}', file=sys.stderr)
 
     # Collect missing icons accumulated during code execution
-    missing_icons = get_missing_icons()
+    icon_audit_entries = get_missing_icons()
+    rejected_icons, missing_icons = split_icon_audit_entries(icon_audit_entries)
     icon_stats = get_icon_audit_stats()
 
     report = _build_completion_report(
@@ -1712,6 +1836,7 @@ def main() -> int:
         warnings=post_warnings,
         contrast_fixes=qa_findings.get('contrast_fixes', 0),
         missing_icons=missing_icons,
+        rejected_icons=rejected_icons,
         icon_stats=icon_stats,
         missing_images=qa_findings.get('missing_images', []),
         layout_issues=qa_findings.get('layout_issues', []),
