@@ -791,7 +791,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
       let slideAssetsPromise: Promise<void> | null = null;
       const workflow = resolveWorkflow(message, workspace);
       if (mode === 'pptx' && workspace.slides.length > 0) {
-        layoutSpecsPromise = computeLayoutSpecs(workspace.slides, workspace.theme?.fontFamily, workspace.theme?.textBoxCornerStyle)
+        layoutSpecsPromise = computeLayoutSpecs(workspace.slides, workspace.theme?.fontFamily)
           .then((result) => {
             if (result.success && result.specs) layoutSpecsJson = result.specs;
           })
@@ -905,7 +905,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         },
         handler: async (args: ScenarioPayload) => {
           win.webContents.send('chat:scenario', args);
-          computeLayoutSpecs(args.slides, workspace.theme?.fontFamily, workspace.theme?.textBoxCornerStyle).catch((err) => {
+          computeLayoutSpecs(args.slides, workspace.theme?.fontFamily).catch((err) => {
             console.log('[chat] Failed to compute layout specs for storyboard (non-blocking):', err);
           });
           return { success: true, message: `Scenario "${args.title}" set with ${args.slides.length} slides.` };

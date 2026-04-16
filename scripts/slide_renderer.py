@@ -884,19 +884,6 @@ def _density_font_adjustment(density: str) -> float:
     return 0.0
 
 
-def _rounded_panel_text_inset(shape_h_in: float, *, corner_style: str) -> tuple[float, float]:
-    """Approximate PowerPoint's extra text inset for rounded rectangles.
-
-    Rounded rectangles expose less usable text area than plain rectangles even
-    when the explicit text-frame margins are identical. Reserve that shoulder
-    space up front so panel text fitting does not assume the full bounding box.
-    """
-    if corner_style != "rounded":
-        return 0.0, 0.0
-    extra_x = min(max(shape_h_in * 0.10, 0.03), 0.08)
-    extra_y = min(max(shape_h_in * 0.05, 0.02), 0.05)
-    return extra_x, extra_y
-
 
 # ── Panel text writers ───────────────────────────────────────────────
 
@@ -912,16 +899,12 @@ def _write_panel_text(ctx: RenderContext, shape, title_text: str, body_text: str
     density_name = ctx.style.content_density
     pad = _density_padding_adjustment(density_name)
     spacing_mult = _density_line_spacing_multiplier(density_name)
-    corner_x, corner_y = _rounded_panel_text_inset(
-        shape.height / EMU_PER_INCH,
-        corner_style=ctx.style.text_box_corner_style,
-    )
     title_pt = max(12, title_pt + _density_font_adjustment(density_name))
     body_pt = max(11, body_pt + _density_font_adjustment(density_name))
-    left_margin = max(0.10, 0.16 + left_reserve + pad + corner_x)
-    right_margin = max(0.08, 0.14 + pad + corner_x)
-    top_margin = max(0.08, 0.12 + top_reserve + pad + corner_y)
-    bottom_margin = max(0.06, 0.10 + pad + corner_y)
+    left_margin = max(0.10, 0.16 + left_reserve + pad)
+    right_margin = max(0.08, 0.14 + pad)
+    top_margin = max(0.08, 0.12 + top_reserve + pad)
+    bottom_margin = max(0.06, 0.10 + pad)
     tf.margin_left = Inches(left_margin)
     tf.margin_right = Inches(right_margin)
     tf.margin_top = Inches(top_margin)
@@ -972,16 +955,12 @@ def _write_bullets_panel(ctx: RenderContext, shape, heading: str, items: list[st
     density_name = ctx.style.content_density
     pad = _density_padding_adjustment(density_name)
     spacing_mult = _density_line_spacing_multiplier(density_name)
-    corner_x, corner_y = _rounded_panel_text_inset(
-        shape.height / EMU_PER_INCH,
-        corner_style=ctx.style.text_box_corner_style,
-    )
     heading_pt = max(12, heading_pt + _density_font_adjustment(density_name))
     bullet_pt = max(11, bullet_pt + _density_font_adjustment(density_name))
-    left_margin = max(0.10, 0.16 + pad + corner_x)
-    right_margin = max(0.08, 0.14 + pad + corner_x)
-    top_margin = max(0.08, 0.12 + top_reserve + pad + corner_y)
-    bottom_margin = max(0.06, 0.10 + pad + corner_y)
+    left_margin = max(0.10, 0.16 + pad)
+    right_margin = max(0.08, 0.14 + pad)
+    top_margin = max(0.08, 0.12 + top_reserve + pad)
+    bottom_margin = max(0.06, 0.10 + pad)
     tf.margin_left = Inches(left_margin)
     tf.margin_right = Inches(right_margin)
     tf.margin_top = Inches(top_margin)
@@ -1481,14 +1460,10 @@ def _render_title_slide(ctx: RenderContext, slide, spec: LayoutSpec,
             tf.word_wrap = True
             tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
             tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-            corner_x, corner_y = _rounded_panel_text_inset(
-                chip_rect.h,
-                corner_style=ctx.style.text_box_corner_style,
-            )
-            left_margin = 0.08 + corner_x
-            right_margin = 0.08 + corner_x
-            top_margin = 0.04 + corner_y
-            bottom_margin = 0.04 + corner_y
+            left_margin = 0.08
+            right_margin = 0.08
+            top_margin = 0.04
+            bottom_margin = 0.04
             tf.margin_left = Inches(left_margin)
             tf.margin_right = Inches(right_margin)
             tf.margin_top = Inches(top_margin)

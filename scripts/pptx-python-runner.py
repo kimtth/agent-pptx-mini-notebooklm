@@ -983,23 +983,6 @@ def _shrink_text_frame_fonts(shape, scale: float) -> bool:
     return changed
 
 
-def _is_rounded_rectangle_shape(shape) -> bool:
-    try:
-        auto_shape_type = shape.auto_shape_type
-    except Exception:
-        return False
-    shape_value = getattr(auto_shape_type, 'value', None)
-    if shape_value is not None:
-        return shape_value == 5
-    return str(auto_shape_type).startswith('ROUNDED_RECTANGLE')
-
-
-def _rounded_shape_text_inset_in(shape_height_in: float) -> tuple[float, float]:
-    extra_x = min(max(shape_height_in * 0.10, 0.03), 0.08)
-    extra_y = min(max(shape_height_in * 0.05, 0.02), 0.05)
-    return extra_x, extra_y
-
-
 def _collect_pillow_overflows(output_path: Path) -> list[dict[str, object]] | None:
     """Return Pillow-measured overflow metadata, or None if Pillow is unavailable."""
     try:
@@ -1043,13 +1026,6 @@ def _collect_pillow_overflows(output_path: Path) -> list[dict[str, object]] | No
             margin_right = (tf.margin_right if tf.margin_right is not None else 91440) / 914400.0
             margin_top = (tf.margin_top if tf.margin_top is not None else 45720) / 914400.0
             margin_bottom = (tf.margin_bottom if tf.margin_bottom is not None else 45720) / 914400.0
-            if _is_rounded_rectangle_shape(shape):
-                extra_x, extra_y = _rounded_shape_text_inset_in(shape_height_in)
-                margin_left += extra_x
-                margin_right += extra_x
-                margin_top += extra_y
-                margin_bottom += extra_y
-
             text_width_in = max(shape_width_in - margin_left - margin_right, 0.2)
             usable_height_in = max(shape_height_in - margin_top - margin_bottom, 0.1)
 

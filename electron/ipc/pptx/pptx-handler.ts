@@ -477,7 +477,6 @@ async function refreshPreviewArtifacts(
 async function computeLayoutSpecsInternal(
   slides: LayoutInputSourceSlide[] | string,
   fontFamily?: string,
-  cornerStyle?: string,
 ): Promise<{ success: boolean; specs?: string; error?: string }> {
   try {
     const persisted = await persistLayoutInputToWorkspace(slides, fontFamily)
@@ -499,7 +498,6 @@ async function computeLayoutSpecsInternal(
         env: {
           ...process.env,
           PYTHONIOENCODING: 'utf-8',
-          PPTX_TEXT_BOX_CORNER_STYLE: cornerStyle || 'square',
         },
         cwd: path.dirname(hybridScript),
       },
@@ -519,9 +517,8 @@ async function computeLayoutSpecsInternal(
 export async function computeLayoutSpecs(
   slides: LayoutInputSourceSlide[] | string,
   fontFamily?: string,
-  cornerStyle?: string,
 ): Promise<{ success: boolean; specs?: string; error?: string }> {
-  return queuePowerPointAutomation(() => computeLayoutSpecsInternal(slides, fontFamily, cornerStyle))
+  return queuePowerPointAutomation(() => computeLayoutSpecsInternal(slides, fontFamily))
 }
 
 async function renderPresentationInternal(

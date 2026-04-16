@@ -177,24 +177,6 @@ def _get_shape_box(shape) -> ShapeBox | None:
                     shape_name=name, shape_id=shape_id)
 
 
-def _is_rounded_rectangle_shape(shape) -> bool:
-    try:
-        auto_shape_type = shape.auto_shape_type
-    except Exception:
-        return False
-    shape_value = getattr(auto_shape_type, 'value', None)
-    if shape_value is not None:
-        return shape_value == 5
-    return str(auto_shape_type).startswith('ROUNDED_RECTANGLE')
-
-
-def _rounded_shape_text_inset_emu(height_emu: int) -> tuple[int, int]:
-    height_in = max(height_emu, 0) / 914400
-    extra_x = min(max(height_in * 0.10, 0.03), 0.08)
-    extra_y = min(max(height_in * 0.05, 0.02), 0.05)
-    return Inches(extra_x), Inches(extra_y)
-
-
 def _boxes_overlap(a: ShapeBox, b: ShapeBox) -> bool:
     """AABB intersection test with a small tolerance to ignore trivial edge touches."""
     if a.right - OVERLAP_TOLERANCE_EMU <= b.left:
@@ -457,11 +439,6 @@ def _estimate_required_text_height_in(shape, box: ShapeBox) -> float | None:
         except Exception:
             margin_x_emu = 0
             margin_y_emu = 0
-    if _is_rounded_rectangle_shape(shape):
-        extra_x_emu, extra_y_emu = _rounded_shape_text_inset_emu(box.height)
-        margin_x_emu += extra_x_emu * 2
-        margin_y_emu += extra_y_emu * 2
-
     usable_width_emu = max(box.width - margin_x_emu, int(0.15 * 914400))
     width_in = usable_width_emu / 914400
     if width_in <= 0.15:
@@ -516,13 +493,6 @@ def _text_content_box(shape, outer_box: ShapeBox) -> ShapeBox | None:
         margin_right = 0
         margin_top = 0
         margin_bottom = 0
-
-    if _is_rounded_rectangle_shape(shape):
-        extra_x_emu, extra_y_emu = _rounded_shape_text_inset_emu(outer_box.height)
-        margin_left += extra_x_emu
-        margin_right += extra_x_emu
-        margin_top += extra_y_emu
-        margin_bottom += extra_y_emu
 
     content_left = outer_box.left + margin_left
     content_top = outer_box.top + margin_top

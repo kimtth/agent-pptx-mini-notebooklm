@@ -53,7 +53,6 @@ if __package__ in {None, ''}:
         StatsSpec,
         TimelineSpec,
         estimate_text_height_in,
-        _rounded_corner_margin_insets,
     )
 else:
     from .layout_blueprint import LayoutBlueprint, ZoneRole, get_blueprint
@@ -67,7 +66,6 @@ else:
         StatsSpec,
         TimelineSpec,
         estimate_text_height_in,
-        _rounded_corner_margin_insets,
     )
 
 if TYPE_CHECKING:
@@ -278,14 +276,10 @@ def _get_measure_backend() -> tuple[type, callable]:
 
 def compute_adaptive_specs(
     slides: list[SlideContent],
-    *,
-    corner_style: str = "square",
 ) -> list[LayoutSpec]:
     """Compute content-adaptive layout specs for all slides.
 
     Uses Pillow font metrics with heuristic fallback when Pillow is unavailable.
-    When *corner_style* is ``"rounded"``, measurement widths are narrowed and
-    chip heights expanded to account for rounded-corner margin insets.
     Returns a list of ``LayoutSpec`` in the same order as *slides*.
     """
     TextMeasureRequest, measure_text_heights = _get_measure_backend()
@@ -325,9 +319,7 @@ def compute_adaptive_specs(
                 total_w = _zone_width(bp, zd, zd.role, slide.has_icon)
                 chip_gap = min(total_w * 0.025, 0.18)
                 chip_w = (total_w - chip_gap * (len(visible_chips) - 1)) / len(visible_chips)
-                # Estimate chip height for rounded-corner inset calculation
-                cx, _ = _rounded_corner_margin_insets(zd.preferred_h, corner_style)
-                chip_h_margin = 0.16 + 2 * cx  # base 0.08 per side + corner inset
+                chip_h_margin = 0.16  # base 0.08 per side
                 for chip_text in visible_chips:
                     chip_measure_queue.append((
                         i,
@@ -413,9 +405,7 @@ def compute_adaptive_specs(
 
     chip_max_h: dict[int, float] = {}
     chip_idx = 0
-    # Estimate rounded-corner vertical inset for chips
-    _, chip_cy = _rounded_corner_margin_insets(0.65, corner_style)  # typical chip height
-    chip_vert_pad = 0.10 + 2 * chip_cy  # base top/bottom + corner insets
+    chip_vert_pad = 0.10  # base top/bottom margins
     for si, _ in chip_measure_queue:
         h = chip_heights[chip_idx]
         chip_idx += 1
@@ -631,9 +621,6 @@ def main() -> int:
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
 
-    import os
-    corner_style = (os.environ.get('PPTX_TEXT_BOX_CORNER_STYLE', 'square') or 'square').strip().lower()
-
     args = _parse_args()
     input_path = Path(args.input).resolve()
     output_path = Path(args.output).resolve()
@@ -647,7 +634,7 @@ def main() -> int:
 
     # print(f'[hybrid-layout] Computing specs for {len(slides)} slide(s)…', file=sys.stderr)
 
-    specs = compute_adaptive_specs(slides, corner_style=corner_style)
+    specs = compute_adaptive_specs(slides)
     output_json = serialize_specs(specs)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
