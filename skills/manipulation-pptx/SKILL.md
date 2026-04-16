@@ -1,203 +1,188 @@
 ---
 name: manipulation-pptx
 description: >
-  Generate and manipulate PowerPoint presentations using python-pptx.
-  Covers full PPTX creation from an approved slide story and theme,
-  as well as programmatic editing, charts, tables, and shape manipulation.
+  Review and repair PPTX presentations rendered by the deterministic slide renderer.
+  Covers layout validation, fixing overlap/overflow issues, and patching infrastructure files.
 ---
 
-# PPTX Generation & Manipulation Skill
+# PPTX Layout Review & Repair Skill
 
-Create, edit, and manipulate PowerPoint (.pptx) presentations using **python-pptx**.
+Review, validate, and repair PowerPoint presentations rendered by the deterministic slide renderer (`slide_renderer.py`).
 
-This skill handles two use cases:
+This skill handles:
 
-1. **Generation** — Convert an approved slide story and theme into a complete PPTX file.
-2. **Manipulation** — Add, update, or extract content from existing presentations (tables, charts, shapes, images).
+1. **Review** — Inspect rendered output for layout issues (overlap, text overflow, out-of-bounds shapes).
+2. **Repair** — Patch infrastructure files (`layout-input.json`, `layout-specs.json`, `slide-assets.json`) and re-render.
 
-This skill is **not** responsible for framework recommendation, scenario creation, or slide-story planning.
-Assume the current workspace slides and theme are already the approved source of truth.
+This skill is **not** responsible for generating Python code. All PPTX rendering is handled automatically by the deterministic renderer.
+
+## CRITICAL: Do NOT Generate Python Code
+
+The LLM must NEVER output Python code blocks for PPTX rendering. The deterministic renderer handles all rendering automatically. Instead, use the available tools:
+
+- `patch_layout_infrastructure` — Modify layout specs, slide assets, or layout input when fixes are needed.
+- `rerun_pptx` — Re-render the presentation after making changes.
+
+If you feel the urge to write `python-pptx` code, STOP. Use the tools instead.
+
+## How Rendering Works
+
+The deterministic renderer (`slide_renderer.py`) reads three JSON files from the workspace:
+
+1. `previews/layout-input.json` — Slide content (titles, bullets, key messages, layout types)
+2. `previews/layout-specs.json` — Precomputed geometry (title_rect, content_rect, cards, stats, etc.)
+3. `previews/slide-assets.json` — Icon names, image paths, and metadata per slide
+
+The renderer produces PPTX directly from these files using fixed layout functions. No LLM-generated code is involved. The renderer handles:
+
+- Background fills and design language (panels, shadows, stripes, accent bars)
+- Text placement with adaptive font sizing and overflow prevention
+- Icon fetching from Iconify and placement
+- Image tiling and positioning
+- Theme color application with contrast safety
+- Style-specific rendering (glassmorphism, brutalism, etc.)
+
+## Layout Specs Reference
+
+Each slide in `layout-specs.json` contains a `LayoutSpec` with these fields:
+
+- `title_rect`, `key_message_rect`, `accent_rect`, `icon_rect`, `content_rect`, `notes_rect`
+- `summary_box`, `hero_rect`, `chips_rect`, `footer_rect`, `sidebar_rect`
+- `max_items`, `row_step`
+- `cards` (CardsSpec), `stats` (StatsSpec), `timeline` (TimelineSpec), `comparison` (ComparisonSpec)
+
+All coordinates are in inches. The slide is 13.333" × 7.5" (widescreen 16:9).
+
+## Common Layout Issues and Fixes
+
+### Overlap Errors
+- **Cause**: Two shapes share overlapping (x, x+w) AND (y, y+h) ranges.
+- **Fix**: Adjust coordinates in `layout-specs.json` — reduce width, shift x/y, or increase spacing.
+
+### Text Overflow Errors
+- **Cause**: Text content exceeds the allocated box height.
+- **Fix**: Increase box height in `layout-specs.json`, reduce bullet count in `layout-input.json`, or shorten text.
+
+### Out-of-Bounds Errors
+- **Cause**: Shape extends past slide boundaries (x+w > 13.333 or y+h > 7.5).
+- **Fix**: Reduce x+w or y+h values in `layout-specs.json`.
+
+### Missing Images/Icons
+- **Cause**: Invalid paths in `slide-assets.json`.
+- **Fix**: Update paths or remove invalid entries via `patch_layout_infrastructure`.
+
+### Content Density Issues
+- **Cause**: Too many bullets crammed into a small content_rect.
+- **Fix**: Reduce bullet count in `layout-input.json`, or switch layout type to one with more space (e.g., `cards` or `two_content`).
+
+## Repair Workflow
+
+1. Review the validation error output.
+2. Use `patch_layout_infrastructure` to fix the relevant JSON file.
+3. Use `rerun_pptx` to re-render and verify the fix.
+4. Report the result briefly — no verbose explanations, no code blocks.
+
+## Quality Checklist
+
+- [ ] No ERROR-level validation issues after rendering
+- [ ] All approved images and icons are present
+- [ ] Text is readable (adequate contrast, no overflow)
+- [ ] Composition is visually consistent across slides
+- [ ] No shapes extend past slide boundaries
+---
+name: manipulation-pptx
+description: >
+  Review and repair PPTX presentations rendered by the deterministic slide renderer.
+  Covers layout validation, fixing overlap/overflow issues, and patching infrastructure files.
+---
+
+# PPTX Layout Review & Repair Skill
+
+Review, validate, and repair PowerPoint presentations rendered by the deterministic slide renderer (`slide_renderer.py`).
+
+This skill handles:
+
+1. **Review** — Inspect rendered output for layout issues (overlap, text overflow, out-of-bounds shapes).
+2. **Repair** — Patch infrastructure files (`layout-input.json`, `layout-specs.json`, `slide-assets.json`) and re-render.
+
+This skill is **not** responsible for generating Python code. All PPTX rendering is handled automatically by the deterministic renderer.
 
 ## Output Format
 
-Always return a single ` ```python ` code block.
+Do NOT return Python code blocks. Use the available tools instead:
 
-The code must use `python-pptx` and save a `.pptx` file.
+- `patch_layout_infrastructure` — Modify layout specs, slide assets, or layout input when fixes are needed.
+- `rerun_pptx` — Re-render the presentation after making changes.
 
-Prefer defining:
+## How Rendering Works
 
-```python
-def build_presentation(output_path, theme, title):
-  ...
-```
+The deterministic renderer (`slide_renderer.py`) reads three JSON files from the workspace:
 
-The runtime will call `build_presentation(output_path, theme, title)` if present.
+1. `previews/layout-input.json` — Slide content (titles, bullets, key messages, layout types)
+2. `previews/layout-specs.json` — Precomputed geometry (title_rect, content_rect, cards, stats, etc.)
+3. `previews/slide-assets.json` — Icon names, image paths, and metadata per slide
 
-## Primary Objective
-
-Produce output that is robust, deterministic, and directly executable with `python-pptx`.
+The renderer produces PPTX directly from these files using fixed Python functions — no LLM-generated code is involved.
 
 ## Theme Contract
 
-`PPTX_THEME` is a Python dictionary with these keys using 6-digit hex strings without `#`.
+`PPTX_THEME` is a dictionary with 6-digit hex color strings. The theme is injected at render time via environment variables. The renderer uses these values automatically.
 
-The values are runtime-dependent and come from the palette panel/theme assignment in the app.
-They are not fixed to the sample values below.
+Key slots: `BG`, `TEXT`, `DARK`, `DARK2`, `LIGHT`, `LIGHT2`, `ACCENT1`–`ACCENT6`, `PRIMARY`, `SECONDARY`, `BORDER`.
 
-Example shape only:
+## Layout Specs Reference
 
-```json
-{
-  "DARK": "1B1B1B",
-  "DARK2": "2D2D2D",
-  "LIGHT": "FFFFFF",
-  "LIGHT2": "F5F5F5",
-  "ACCENT1": "0078D4",
-  "ACCENT2": "005A9E",
-  "ACCENT3": "107C10",
-  "ACCENT4": "5C2D91",
-  "ACCENT5": "008272",
-  "ACCENT6": "D83B01",
-  "LINK": "0078D4",
-  "USED_LINK": "5C2D91",
-  "PRIMARY": "0078D4",
-  "SECONDARY": "005A9E",
-  "BG": "FFFFFF",
-  "TEXT": "1B1B1B",
-  "WHITE": "FFFFFF",
-  "BORDER": "E1E1E1"
-}
-```
+Each slide in `layout-specs.json` contains a `LayoutSpec` with these fields:
 
-Also available at runtime:
+- `title_rect`, `key_message_rect`, `accent_rect`, `icon_rect`, `content_rect`, `notes_rect`
+- `summary_box`, `hero_rect`, `chips_rect`, `footer_rect`, `sidebar_rect`
+- `max_items`, `row_step`
+- `cards` (CardsSpec), `stats` (StatsSpec), `timeline` (TimelineSpec), `comparison` (ComparisonSpec)
 
-- `OUTPUT_PATH`: destination `.pptx` path
-- `PPTX_TITLE`: presentation title
-- `WORKSPACE_DIR`: workspace root directory
-- `IMAGES_DIR`: workspace images directory (`{WORKSPACE_DIR}/images`)
-- `SLIDE_WIDTH_IN`, `SLIDE_HEIGHT_IN`
-- `Presentation`, `Inches`, `Pt`, `RGBColor`, `PP_ALIGN`, `MSO_ANCHOR`, `MSO_AUTO_SHAPE_TYPE`
-- `rgb_color()`, `apply_widescreen()`, `safe_image_path()`, `safe_add_picture()`, `ensure_contrast()`, `set_fill_transparency()`
-- `resolve_font(text, base_font)` — returns the selected base font unchanged (default base_font = `PPTX_FONT_FAMILY`)
-- `PPTX_FONT_FAMILY` — the user-selected base font (e.g., `'Calibri'`, `'Arial'`); use instead of hardcoding
-- `PPTX_COLOR_TREATMENT` — `'solid'`, `'gradient'`, or `'mixed'`; this is a hard requirement for how filled panels/cards should be rendered
-- `PPTX_TEXT_BOX_STYLE` — `'plain'`, `'with-icons'`, or `'mixed'`; this is a hard requirement for whether major text panels should visibly pair with icons
+All coordinates are in inches. The slide is 13.333" × 7.5" (widescreen 16:9).
 
-When referencing slide images, prefer `os.path.join(IMAGES_DIR, filename)` over hardcoded absolute paths.
+## Common Layout Issues and Fixes
 
-Always prefer these theme values over hardcoded colors.
+### Overlap Errors
+- **Cause**: Two shapes share overlapping (x, x+w) AND (y, y+h) ranges.
+- **Fix**: Adjust coordinates in `layout-specs.json` — reduce width, shift x/y, or increase spacing.
 
-### Theme vs. Design Style Color Conflict
+### Text Overflow Errors
+- **Cause**: Text content exceeds the allocated box height.
+- **Fix**: Increase box height in `layout-specs.json`, or reduce content in `layout-input.json`.
 
-If a design style skill (e.g., Neo-Brutalism, Cyberpunk Outline) specifies its own color palette, **the active theme always takes priority**. Map the style's color roles to the nearest theme slot:
+### Out-of-Bounds Errors
+- **Cause**: Shape extends past slide boundaries (x+w > 13.333 or y+h > 7.5).
+- **Fix**: Reduce x+w or y+h values in `layout-specs.json`.
 
-- Style says "yellow background" but theme BG is `FFFFFF` → use theme BG (`FFFFFF`)
-- Style says "neon green accent" but theme ACCENT1 is `0078D4` → use theme ACCENT1
-- Style says "black text" but theme TEXT is `1B1B1B` → use theme TEXT
+### Missing Images/Icons
+- **Cause**: Invalid paths in `slide-assets.json`.
+- **Fix**: Update paths or remove invalid entries via `patch_layout_infrastructure`.
 
-The design style defines mood, layout technique, and visual structure. The theme defines the actual colors used in the output.
+## Repair Workflow
 
-## Efficiency Contract
-
-**Do NOT explore application internals during generation.** The conversation context and this skill file provide the complete API contract. Everything below — theme contract, runtime namespace, code rules, layout system, icon usage — is the authoritative reference. Do not read runner scripts, handler modules, or unrelated sample projects to "understand" the codebase. Read only the 3 workspace JSON files (`layout-input.json`, `layout-specs.json`, `slide-assets.json`) and then generate code directly.
-
-## Code Rules
-
-1. Wrap the output in ` ```python `.
-2. Output a complete executable script, not pseudocode and not a fragment.
-3. Use `python-pptx`, not OpenXML, not PresentationSpec JSON, and not PptxGenJS.
-4. Save the final deck to `output_path` or `OUTPUT_PATH`.
-5. Do not emit explanations before or after the code block.
-6. Prefer a single `Presentation()` instance with widescreen size via `apply_widescreen(prs)`.
-7. Use grounded local image paths for attached slide images when available.
-8. Use `fetch_icon()` (pre-injected) to add icons to slides — every slide SHOULD include at least one icon.
+1. Review the validation error output.
+2. Use `patch_layout_infrastructure` to fix the relevant JSON file.
+3. Use `rerun_pptx` to re-render and verify the fix.
+4. Report the result briefly — no verbose explanations.
 
 ## Design Guidelines
 
-- Treat the approved workspace slides and design brief as the primary input.
-- Each slide's `layout` / `icon` is a **creative hint, not a fixed command**
-- Actively reinterpret layouts to improve rhythm, whitespace, visual hierarchy, and information flow
-- Add deliberate variety when 3+ consecutive slides would have identical compositions
-- Maintain the user-approved story assertions while being bold with visual design
-- If `designBrief.layoutApproach` is `design-led`: choose the most expressive composition that preserves story
-- If `designBrief.layoutApproach` is `structured`: respect scenario layout more closely
-- Distribute color usage across the full theme whenever possible. Do not let the entire deck collapse to only `ACCENT1` and `ACCENT2` if `ACCENT3`-`ACCENT6` are available.
-- Reuse one or two anchor accents for coherence, but actively bring in the remaining accent colors across cards, stats, dividers, timelines, comparison bands, callouts, and icon frames.
+These guidelines inform how the renderer already works. They are for review context, not code generation:
 
-### Contrast & Readability Safety
+- Each slide's layout type determines the rendering function (title, bullets, cards, stats, comparison, timeline, etc.)
+- The renderer uses `StyleConfig` to apply design language (panel fills, shadows, stripes, accent bars, etc.)
+- Contrast safety is enforced automatically via `ensure_contrast()`
+- Icons are fetched live from Iconify and placed per `icon_rect` or fallback positions
+- Font sizing is adaptive — titles and body text scale down when text is dense
 
-- Never place white or near-white text on a light background, or dark text on a dark background.
-- Avoid mid-tone text on mid-tone surfaces — maintain strong contrast.
-- If an image sits behind text, add a solid or semi-transparent overlay panel; never place raw text over a busy photo.
-- Body text must be readable at projection distance — avoid anything below 14pt for main content.
-- If a slide looks stylish but forces effort to decode, revise it — choose readability over aesthetics.
+## Quality Checklist
 
-### Fill Transparency Safety
-
-- When applying transparency to a shape fill, use `set_fill_transparency(shape, value)`.
-- Do not access `shape.fill._fill` or other private python-pptx fill proxy internals. They are proxy objects, not XML nodes.
-- If direct OOXML access is required, work from `shape._element.spPr` / `shape._element.findall(...)`, not `shape.fill._fill`.
-
-### Text Box Style Contract
-
-- `PPTX_TEXT_BOX_STYLE == 'plain'`: major text panels, cards, and callouts should be text-led and free of decorative icon chips/badges inside the panel.
-- `PPTX_TEXT_BOX_STYLE == 'with-icons'`: major text panels, cards, and callouts should visibly pair text with an icon companion when space allows, such as a side icon, icon chip, or icon badge. Choose the icon from that panel's own heading/body meaning; do not reuse one slide-level icon across every panel. Keep the icon readable at presentation distance; avoid tiny decorative icons.
-- `PPTX_TEXT_BOX_STYLE == 'mixed'`: adaptive — add icon companions to cards, callouts, and feature panels where the icon adds semantic anchoring and visual variety; keep dense prose panels, narrow sidebars, and minimalist reading surfaces plain. Decide per-panel based on whether an icon genuinely aids comprehension.
-- Do not treat this as a weak preference. The user expects a visible difference between the modes.
-
-### Fill Style Contract
-
-- `PPTX_COLOR_TREATMENT == 'solid'`: use solid fills for major reading surfaces such as cards, sidebars, ribbons, and text panels.
-- `PPTX_COLOR_TREATMENT == 'gradient'`: use `apply_gradient_fill(...)` on at least one major panel, ribbon, hero surface, or background treatment per slide when that slide contains filled surfaces.
-- `PPTX_COLOR_TREATMENT == 'mixed'`: adaptive — prefer gradient fills on hero, title, and large accent surfaces for dramatic effect; prefer solid fills on dense reading surfaces and small cards for clarity. Decide per-slide based on the panel's role.
-- Do not leave `gradient` mode looking effectively identical to `solid` mode.
-
-### Horizontal Row Bounds Safety
-
-- Horizontally aligned card/stat/process/comparison rows MUST stay within slide bounds (13.333" wide).
-- Always use the pre-computed spec geometry (`spec.cards.card_rect`, `spec.stats.box_rect`, `spec.comparison.left/right`) without adding decorative offsets that push the last item past the right edge.
-- If content exceeds the available width, reduce copy or item count instead of widening boxes.
-- **Preserve alignment intentionally.** Do not introduce per-box compensating offsets that break the equal-width grid.
-
-### Icon Usage
-
-Icons are fetched live from the **Iconify** public API. Use any valid ID from the selected collection (e.g., `mdi:brain`, `lucide:rocket`).
-
-**Every slide SHOULD include at least one icon when a relevant icon exists.** If `fetch_icon()` returns `None`, continue without the icon. Icons add visual anchoring, improve scannability, and reinforce the message.
-
-Use full Iconify IDs from supported collections such as `mdi`, `lucide`, `tabler`, `ph`, `fa6-solid`, and `fluent`.
-
-To use an icon in python-pptx, use the pre-injected `fetch_icon()` function, which fetches from the Iconify API:
-
-```python
-# fetch_icon is already available in the execution namespace — do NOT redefine it.
-# Usage:
-icon_path = fetch_icon('mdi:chart-line', color_hex='4472C4')
-if icon_path:
-    safe_add_picture(slide.shapes, icon_path, spec.icon_rect.x_emu, spec.icon_rect.y_emu,
-                     width=spec.icon_rect.w_emu, height=spec.icon_rect.h_emu)
-```
-
-**Important:** `fetch_icon(name, color_hex, size)` is pre-injected into the execution namespace. Do NOT redefine it. It fetches the icon from the Iconify API and returns `None` if the icon is unavailable.
-
-**Icon enforcement rules:**
-- **Every slide MUST call `fetch_icon()` at least once** to attempt adding a visual icon — if it returns `None`, continue without it
-- Title slide: place a prominent icon in the hero zone or as a visual anchor (1.5–2.5 in)
-- Section/diagram slides: icon should be 1.2–1.8 in, placed in sidebar or icon_rect
-- Cards/bullets slides: choose icons per card/text box content. Different cards or callouts should usually use different icons when their meanings differ; do not stamp the same icon into every box by default.
-- Stats slides: place an icon representing the metric theme
-- Summary slides: place a concluding icon in the summary box or as an accent
-- Choose icons that reinforce the slide's topic (e.g., `mdi:chart-line` for analytics, `mdi:shield-check` for security)
-- If a slide has multiple text boxes with icons, each icon should reflect that specific box's content, not just the overall slide title.
-- Color icons using theme accent colors (pass `color_hex=colors['accent4']` etc.)
-- If `spec.icon_rect` is available, use it; otherwise place the icon in an appropriate zone
-
-Example for every slide:
-```python
-# MANDATORY: add an icon to every slide
-icon_path = fetch_icon('mdi:database', color_hex=colors['accent4'])
-if icon_path:
-    if spec.icon_rect:
+- [ ] No ERROR-level validation issues after rendering
+- [ ] All approved images and icons are present
+- [ ] Text is readable (adequate contrast, no overflow)
+- [ ] Composition is visually consistent across slides
+- [ ] No shapes extend past slide boundaries
         safe_add_picture(slide.shapes, icon_path,
             Inches(spec.icon_rect.x), Inches(spec.icon_rect.y),
             width=Inches(spec.icon_rect.w), height=Inches(spec.icon_rect.h))

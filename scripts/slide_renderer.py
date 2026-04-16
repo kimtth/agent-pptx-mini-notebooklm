@@ -894,6 +894,14 @@ def _split_bullet_text(text: str) -> tuple[str, str, bool]:
     return cleaned, "", is_action
 
 
+def _stats_panel_fonts(title_text: str, body_text: str) -> tuple[float, float]:
+    if body_text:
+        return 28, 13
+    if len(title_text.strip()) > 36:
+        return 18, 13
+    return 24, 13
+
+
 def _parse_table_rows(lines: list[str]) -> list[list[str]]:
     """Parse a slide's bullet lines into table rows.
 
@@ -1555,8 +1563,9 @@ def _render_stats_slide(ctx: RenderContext, slide, spec: LayoutSpec,
             panel = _add_panel(ctx, slide, box, fill_hex, fill_hex,
                                name=f"stat_{idx}")
             title_text, body_text, _ = _split_bullet_text(bullet)
+            title_pt, body_pt = _stats_panel_fonts(title_text, body_text)
             _write_panel_text(ctx, panel, title_text, body_text, fill_hex, colors,
-                              title_pt=28, body_pt=13, align=PP_ALIGN.CENTER)
+                              title_pt=title_pt, body_pt=body_pt, align=PP_ALIGN.CENTER)
     else:
         _render_bullets_body(ctx, slide, spec, data, slide_index, accent_a, accent_b, colors)
 

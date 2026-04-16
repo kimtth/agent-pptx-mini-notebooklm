@@ -84,7 +84,6 @@ export interface IpcChatAPI {
       framework: import('../entities/slide-work').FrameworkType | null;
       customFrameworkPrompt: string | null;
       templateMeta: import('../entities/slide-work').TemplateMeta | null;
-      pptxBuildError: string | null;
       theme: ThemeTokens | null;
       workflow: WorkflowConfig | null;
       dataSources: DataFile[];
@@ -92,7 +91,6 @@ export interface IpcChatAPI {
       iconProvider: 'iconify';
       iconCollection: IconifyCollectionId;
       availableIcons: string[];
-      chunkSize?: number;
     },
   ): void;
 
@@ -102,8 +100,6 @@ export interface IpcChatAPI {
   onScenario(cb: (payload: ScenarioPayload) => void): () => void;
   onSlideUpdate(cb: (slide: SlideUpdatePayload) => void): () => void;
   onFrameworkSuggested(cb: (payload: { primary: string; reasoning: string }) => void): () => void;
-  onChunkProgress(cb: (progress: { chunkIndex: number; totalChunks: number; status: 'generating' | 'executing' | 'merging' | 'done' | 'error'; slideRange: string }) => void): () => void;
-  onChunkedPptxReady(cb: (payload: { code: string }) => void): () => void;
   onError(cb: (msg: string) => void): () => void;
   onDone(cb: () => void): () => void;
 }
@@ -117,12 +113,7 @@ export interface IpcThemeAPI {
 
 export interface IpcPptxAPI {
   generate(
-    code: string,
-    themeTokens: ThemeTokens | null,
     title: string,
-    iconCollection?: string,
-    slides?: SlideItem[],
-    templateMeta?: TemplateMeta | null,
   ): Promise<{ success: boolean; path?: string; error?: string }>;
   renderPreview(
     designStyle: string | null,
@@ -131,7 +122,7 @@ export interface IpcPptxAPI {
     iconCollection?: string,
     slides?: Array<{ number: number; title: string; layout: string; icon?: string | null; imageQuery?: string | null; imageQueries?: string[]; imagePath?: string | null; selectedImages?: Array<{ id: string; imageQuery?: string | null; imageUrl?: string | null; imagePath?: string | null; thumbnailUrl?: string | null }> }>,
     templateMeta?: TemplateMeta | null,
-  ): Promise<{ success: boolean; imagePaths?: string[]; error?: string; warning?: string; qa?: { contrastFixes: number; missingIcons: Array<{ icon: string; reason: string }>; missingImages: string[]; layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }> } }>;
+  ): Promise<{ success: boolean; imagePaths?: string[]; error?: string; warning?: string; qa?: { contrastFixes: number; missingIcons: Array<{ icon: string; reason: string }>; iconStats: { requested: number; missing: number; missingRatio: number }; missingImages: string[]; layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }> } }>;
   readExistingPreviews(): Promise<{ success: boolean; imagePaths: string[] }>;
   rerenderPreview(): Promise<{ success: boolean; imagePaths: string[]; error?: string }>;
   openPreviewPptx(): Promise<{ success: boolean; path?: string; error?: string }>;

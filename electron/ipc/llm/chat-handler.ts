@@ -31,12 +31,9 @@ import type { DataFile, ScrapeResult } from '../../../src/domain/ports/ipc';
 import { getIconifyCollectionById } from '../../../src/domain/icons/iconify';
 import type { IconifyCollectionId } from '../../../src/domain/icons/iconify';
 import { formatWorkflowForPrompt, getWorkflowConfig, type WorkflowConfig } from '../../../src/domain/workflows/workflow-config';
-import { executeGeneratedPythonCodeToFile, executeChunkedPptxGeneration, renderPresentationToFile, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace } from '../pptx/pptx-handler.ts';
-import type { ChunkResult, PptxCompletionReport } from '../pptx/pptx-handler.ts';
+import { renderPresentationToFile, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace } from '../pptx/pptx-handler.ts';
 import { buildManagedSystemPrompt } from './system-prompts.ts';
 import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts';
-import { chunkSlides } from './slide-chunker.ts';
-import type { SlideGroup } from './slide-chunker.ts';
 import { retrieveContext, hasRaptorTree } from '../data/raptor-handler.ts';
 import type { RetrievedSection } from '../data/raptor-handler.ts';
 
@@ -49,14 +46,7 @@ type ActiveChatRequest = {
 
 let activeChatRequest: ActiveChatRequest | null = null;
 
-/** Extract python-pptx code from a fenced code block in LLM output. */
-function extractPptxCodeBlock(content: string): string | null {
-  const blocks = [...content.matchAll(/```([^\r\n`]*)[ \t]*\r?\n([\s\S]*?)```/g)]
-    .filter((m) => { const i = (m[1] ?? '').trim().toLowerCase(); return !i || i === 'python' || i === 'py'; });
-  const preferred = blocks.find((m) => { const l = (m[1] ?? '').trim().toLowerCase(); return l === 'python' || l === 'py'; })
-    ?? blocks.find((m) => /from\s+pptx\s+import|import\s+pptx|Presentation\(/i.test(m[2] ?? ''));
-  return preferred?.[2]?.trim() || null;
-}
+
 
 // ---------------------------------------------------------------------------
 // Prompt builder
@@ -70,7 +60,6 @@ interface WorkspaceContext {
   framework: FrameworkType | null;
   customFrameworkPrompt: string | null;
   templateMeta: TemplateMeta | null;
-  pptxBuildError: string | null;
   theme: ThemeTokens | null;
   workflow: WorkflowConfig | null;
   dataSources: DataFile[];
@@ -78,7 +67,6 @@ interface WorkspaceContext {
   iconProvider: 'iconify';
   iconCollection: IconifyCollectionId;
   availableIcons: string[];
-  chunkSize?: number;
 }
 
 type SessionMode = 'story' | 'pptx';
@@ -519,30 +507,6 @@ async function buildPrompt(
     parts.push('');
   }
 
-  if (workspace.pptxBuildError) {
-    parts.push('## Last PPTX Build Failure\n');
-    parts.push('The previous generated python-pptx code failed to run. Apply a MINIMAL, targeted fix — only change the lines that caused the error. Output the full file but keep all working code unchanged. Do NOT redesign or regenerate slides that were not part of the failure.');
-    if (/shape\.fill\._fill|_SolidFill|AttributeError:.*find\(/i.test(workspace.pptxBuildError)) {
-      parts.push('For fill transparency or alpha fixes, do not use shape.fill._fill. Use set_fill_transparency(shape, value), or if you must edit OOXML directly, traverse shape._element.spPr instead.');
-    }
-    parts.push(workspace.pptxBuildError);
-
-    // Include the failing generated-source.py so the LLM can make a surgical fix
-    try {
-      const wsDir = await readWorkspaceDir();
-      const srcPath = path.join(wsDir, 'previews', 'generated-source.py');
-      const lastCode = await fs.readFile(srcPath, 'utf-8');
-      if (lastCode.trim()) {
-        parts.push('\n### Previously Generated Code (fix only the broken parts)\n');
-        parts.push('```python');
-        parts.push(lastCode);
-        parts.push('```');
-      }
-    } catch { /* generated-source.py not found — rely on conversation history */ }
-
-    parts.push('');
-  }
-
   // Data sources — extract slide queries for RAPTOR retrieval
   const slideQueries = workspace.slides.length > 0
     ? workspace.slides.map(s => `${s.title} ${s.keyMessage}`.trim()).filter(q => q.length > 0)
@@ -586,9 +550,9 @@ async function buildPrompt(
     if (workspace.theme.colors.length > 0) {
       parts.push(`Palette colors: ${workspace.theme.colors.slice(0, 20).map((color) => `${color.name} ${color.hex}`).join(' | ')}`);
     }
-    parts.push('CRITICAL: The palette colors above are the ONLY color source for this deck. Use OOXML slot and palette hex values exclusively in python-pptx code. Do NOT use any hardcoded hex colors from the design style spec — those are overridden by this palette. Readability is mandatory: when text sits on any colored or image background, call ensure_contrast(fg_hex, bg_hex). If style conflicts with readability, readability wins.');
-    parts.push('CRITICAL: At runtime, PPTX_THEME contains direct role colors derived from the selected theme and PPTX_THEME_SLOTS contains the exact OOXML slot values. Slide backgrounds, primary text, borders, and other foundational reading surfaces must use those exact slot-derived values directly. Do NOT invent blended or averaged hex colors for slide backgrounds or primary reading surfaces. Only use gradients or tints when the selected style explicitly calls for them on accent or decorative surfaces.');
-    parts.push('CRITICAL: These style controls are not advisory only. Respect them in generated code. If PPTX_COLOR_TREATMENT == "gradient", use apply_gradient_fill() on at least one major panel, ribbon, or hero surface per slide when that slide uses filled surfaces. If PPTX_COLOR_TREATMENT == "solid", use solid fills for those reading surfaces. If PPTX_COLOR_TREATMENT == "mixed", decide per-slide: prefer gradients on hero, title, and large accent surfaces; prefer solid fills on dense reading surfaces and small cards. If PPTX_TEXT_BOX_STYLE == "with-icons", major text panels should include a visible, readable icon companion when space allows, and the icon should match that panel\'s own content rather than repeating one slide-level icon across all boxes. Do not use tiny decorative icons. If PPTX_TEXT_BOX_STYLE == "plain", keep major text panels free of decorative icon chips/badges. If PPTX_TEXT_BOX_STYLE == "mixed", add icon companions to cards, callouts, and feature panels where the icon adds semantic anchoring, but keep dense prose panels and narrow sidebars plain.');
+    parts.push('CRITICAL: The palette colors above are the ONLY color source for this deck. Use OOXML slot and palette hex values exclusively. Do NOT use any hardcoded hex colors from the design style spec — those are overridden by this palette. Readability is mandatory: when text sits on any colored or image background, ensure adequate contrast. If style conflicts with readability, readability wins.');
+    parts.push('CRITICAL: The renderer uses PPTX_THEME for role colors and PPTX_THEME_SLOTS for OOXML slot values. Slide backgrounds, primary text, borders, and foundational surfaces use slot-derived values. Do NOT invent blended or averaged hex colors. Only use gradients or tints when the selected style explicitly calls for them on accent or decorative surfaces.');
+    parts.push('CRITICAL: These style controls are not advisory only. They affect the deterministic renderer output. PPTX_COLOR_TREATMENT controls fill style (solid, gradient, or mixed). PPTX_TEXT_BOX_STYLE controls icon companions on text panels (plain, with-icons, or mixed). These are applied automatically by the renderer.');
     parts.push('CRITICAL: Horizontally aligned card/stat/process/comparison rows MUST stay within slide bounds. Use the pre-computed spec geometry (spec.cards.card_rect, spec.stats.box_rect, spec.comparison.left/right) without adding offsets that push the last item past the right edge. If content exceeds the available width, reduce copy instead of widening boxes.');
     parts.push('');
   }
@@ -768,138 +732,6 @@ function sendToWindow(win: BrowserWindow, channel: string, ...args: unknown[]): 
 }
 
 // ---------------------------------------------------------------------------
-// Chunked LLM generation helpers
-// ---------------------------------------------------------------------------
-
-const MAX_CHUNK_RETRIES = 2; // 3 total attempts per chunk
-
-/**
- * Build a prompt scoped to a single chunk's slides.
- * Re-uses buildPrompt with a modified workspace containing only the chunk's slides,
- * then appends chunk-specific instructions.
- */
-async function buildChunkPrompt(
-  message: string,
-  history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  workspace: WorkspaceContext,
-  group: SlideGroup,
-): Promise<string> {
-  const chunkWorkspace: WorkspaceContext = {
-    ...workspace,
-    slides: group.slides.map((slide, i) => ({ ...slide, number: i + 1 })),
-  };
-  const prompt = await buildPrompt(message, history, chunkWorkspace, 'pptx');
-  const originalRange = group.slideIndices.map((i) => i + 1).join(', ');
-
-  const runtimeApiReminder = [
-    '## Runtime API — Use ONLY These Names',
-    'The following helpers are pre-injected by the runtime. Do NOT define, rename, or shadow them:',
-    '- fetch_icon(icon_id, color_hex) → path_or_None',
-    '- safe_add_picture(shapes, path, left_emu, top_emu, width_emu, height_emu)  [first arg = slide.shapes]',
-    '- tag_as_design(shape, name="") → shape  [marks shape as design-only, excluded from collision checks]',
-    '- safe_add_design_picture(shapes, path, left_emu, top_emu, w_emu, h_emu)  [like safe_add_picture but design-only]',
-    '- add_design_shape(shapes, auto_shape_type, left, top, w, h, name="")  [decorative shape — excluded from collision]',
-    '- add_managed_textbox(shapes, left, top, w, h, name="")  [content textbox — collision-checked]',
-    '- add_managed_shape(shapes, auto_shape_type, left, top, w, h, name="")  [content shape — collision-checked]',
-    '- ensure_contrast(fg_hex, bg_hex) → hex_str',
-    '- resolve_font(text, fallback) → PPTX_FONT_FAMILY   (returns the selected base font unchanged)',
-    '- apply_widescreen(prs) → prs',
-    '- set_fill_transparency(shape, value)',
-    '- apply_gradient_fill(shape, color_stops, angle_degrees=0)',
-    '- PRECOMPUTED_LAYOUT_SPECS, OUTPUT_PATH, PPTX_TITLE, PPTX_THEME, PPTX_THEME_SLOTS, PPTX_THEME_FULL, PPTX_DESIGN_STYLE, PPTX_FONT_FAMILY, PPTX_COLOR_TREATMENT, PPTX_TEXT_BOX_STYLE, WORKSPACE_DIR, IMAGES_DIR',
-    '- PPTX_STYLE_CONFIG: StyleConfig instance — read fields like .panel_fill, .panel_border, .title_accent_bar, .decorative_circle, .color_treatment, .gradient_angle, .bullet_marker, .content_density, .rainbow_stripe_bars, .sparkle_stars, .scan_lines, etc. Use `SC = PPTX_STYLE_CONFIG` at the top of your code, then `SC.field` everywhere. This is MANDATORY — do not hardcode style values.',
-    '- resolve_style_config(design_style, color_treatment, text_box_style) → StyleConfig  [already called for you — use PPTX_STYLE_CONFIG directly]',
-    'Do NOT invent helpers such as _txb, _rect, _oval, _shape, or any other shorthand.',
-  ].join('\n');
-
-  return prompt
-    + `\n\n${runtimeApiReminder}`
-    + `\n\n## Chunk Generation Instruction\n`
-    + `Generate python-pptx code for slides ${originalRange} ONLY (in the original deck order).\n`
-    + `PRECOMPUTED_LAYOUT_SPECS is indexed from 0 for your first slide (contains ${group.slides.length} entries).\n`
-    + `layout-input.json and slide-assets.json contain only your slides.\n`
-    + `The code must be a complete, self-contained python-pptx script starting from Presentation().`;
-}
-
-/**
- * Run parallel LLM sessions for each chunk, collecting generated code.
- * Each chunk retries up to MAX_CHUNK_RETRIES times on failure.
- */
-async function generatePptxChunked(
-  groups: SlideGroup[],
-  message: string,
-  history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  workspace: WorkspaceContext,
-  sessionConfig: LLMSessionConfig,
-  win: BrowserWindow,
-): Promise<ChunkResult[]> {
-  const totalChunks = groups.length;
-  const provider = getActiveProvider();
-
-  const chunkPromises = groups.map(async (group): Promise<ChunkResult> => {
-    const { chunkIndex, slideIndices } = group;
-    const slideRange = `${slideIndices[0] + 1}-${slideIndices[slideIndices.length - 1] + 1}`;
-
-    sendToWindow(win, 'chat:chunk-progress', { chunkIndex, totalChunks, status: 'generating', slideRange });
-    sendToWindow(win, 'chat:stream', { content: `\n[Chunk ${chunkIndex + 1}/${totalChunks}] Generating slides ${slideRange}...\n` });
-
-    const promptStart = Date.now();
-    const prompt = await buildChunkPrompt(message, history, workspace, group);
-    const promptMs = Date.now() - promptStart;
-    console.log(`[perf] Chunk ${chunkIndex + 1} prompt built in ${promptMs}ms (${(prompt.length / 1024).toFixed(1)} KB)`);
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt <= MAX_CHUNK_RETRIES; attempt++) {
-      let accumulated = '';
-      const chunkDelta = (delta: LLMStreamDelta) => {
-        if (delta.type === 'content') accumulated += delta.text;
-      };
-
-      let chunkSession: LLMSession | null = null;
-      try {
-        chunkSession = await provider.createSession(sessionConfig, chunkDelta);
-        await chunkSession.sendAndWait(prompt, CHAT_REQUEST_TIMEOUT_MS);
-
-        const code = extractPptxCodeBlock(accumulated);
-        if (!code) throw new Error(`Chunk ${chunkIndex}: LLM response did not contain valid python-pptx code.`);
-
-        return { chunkIndex, code, slideIndices };
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err));
-        if (attempt < MAX_CHUNK_RETRIES) {
-          sendToWindow(win, 'chat:stream', { content: `\n[Chunk ${chunkIndex + 1}] Retry ${attempt + 1}/${MAX_CHUNK_RETRIES}...\n` });
-        }
-      } finally {
-        if (chunkSession) await chunkSession.disconnect().catch(() => {});
-      }
-    }
-
-    throw lastError!;
-  });
-
-  const chunkGenStart = Date.now();
-  const settled = await Promise.allSettled(chunkPromises);
-  const chunkGenMs = Date.now() - chunkGenStart;
-  console.log(`[perf] All ${totalChunks} chunks completed in ${(chunkGenMs / 1000).toFixed(1)}s`);
-  const results: ChunkResult[] = [];
-  const errors: string[] = [];
-
-  for (let i = 0; i < settled.length; i++) {
-    const r = settled[i];
-    if (r.status === 'fulfilled') {
-      results.push(r.value);
-    } else {
-      const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
-      const g = groups[i];
-      errors.push(`Chunk ${g.chunkIndex} (slides ${g.slideIndices[0] + 1}-${g.slideIndices[g.slideIndices.length - 1] + 1}): ${msg}`);
-    }
-  }
-
-  if (errors.length > 0) throw new Error(`Chunked LLM generation failed:\n${errors.join('\n')}`);
-  return results.sort((a, b) => a.chunkIndex - b.chunkIndex);
-}
-
-// ---------------------------------------------------------------------------
 // IPC handler registration
 // ---------------------------------------------------------------------------
 
@@ -940,7 +772,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
       }
 
       const mode = resolveSessionMode(message, workspace);
-      let prompt = await buildPrompt(message, history, workspace, mode);
+      const prompt = await buildPrompt(message, history, workspace, mode);
 
       // Pre-compute content-adaptive layout specs for PPTX generation workflows.
       // Uses Pillow text measurement + kiwisolver constraint solver to produce
@@ -1207,8 +1039,6 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
               designStyle: workspace.designStyle ?? undefined,
             });
 
-            sendToWindow(win, 'chat:chunked-pptx-ready', { code: '# Rendered via deterministic renderer' });
-
             return {
               success: true,
               message: `PPTX re-generated successfully (${report.slideCount} slides).`,
@@ -1293,89 +1123,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         const wsDir = await readWorkspaceDir();
         const sessionConfig = buildSessionConfig(skillDirectories, sessionMode, workflow, frameworkAlreadySet, wsDir);
 
-        // ---- Chunked PPTX generation path ----
-        const chunkSize = parseInt(process.env.PPTX_CHUNK_SIZE || '0', 10);
-        if (sessionMode === 'pptx' && chunkSize > 0 && workspace.slides.length > chunkSize && !workspace.pptxBuildError) {
-          if (layoutSpecsPromise) await layoutSpecsPromise;
-          if (slideAssetsPromise) await slideAssetsPromise;
-
-          const groups = chunkSlides(workspace.slides, chunkSize);
-          sendToWindow(win, 'chat:stream', {
-            content: `\n🔀 Splitting ${workspace.slides.length} slides into ${groups.length} chunks for parallel generation...\n`,
-          });
-
-          const chunkResults = await generatePptxChunked(
-            groups, message, history, workspace, sessionConfig, win,
-          );
-
-          sendToWindow(win, 'chat:stream', { content: '\n⚙️ Executing chunks and merging...\n' });
-
-          const previewRoot = path.join(wsDir, 'previews');
-          const outputPath = path.join(previewRoot, 'presentation-preview.pptx');
-          await fs.mkdir(previewRoot, { recursive: true });
-          await fs.unlink(outputPath).catch(() => {});
-
-          try {
-            const chunkReport = await executeChunkedPptxGeneration(chunkResults, workspace.theme, workspace.title, outputPath, {
-              iconCollection: workspace.iconCollection,
-              layoutSpecsJson,
-              slideAssetsJson,
-              templateMeta: workspace.templateMeta,
-              designStyle: workspace.designStyle ?? undefined,
-              onProgress: (progress) => sendToWindow(win, 'chat:chunk-progress', progress),
-            });
-
-            sendToWindow(win, 'chat:stream', {
-              content: `\n✅ Verified: ${chunkReport.slideCount} slides, ${((chunkReport.fileSizeBytes ?? 0) / 1024).toFixed(0)} KB`
-                + (chunkReport.warnings.length > 0 ? `\n⚠️ ${chunkReport.warnings.join('; ')}` : '') + '\n',
-            });
-
-            // Notify the renderer that the chunked PPTX is already generated and
-            // merged.  The onDone handler must NOT re-execute via pptx:renderPreview
-            // because the stitched code contains multiple build_presentation() calls
-            // that would each overwrite the output, leaving only the last chunk.
-            const stitchedCode = chunkResults
-              .map((c) => c.code)
-              .join('\n\n');
-            sendToWindow(win, 'chat:chunked-pptx-ready', { code: stitchedCode });
-
-            // Stream the stitched code for display in the chat history
-            sendToWindow(win, 'chat:stream', { content: '\n\n```python\n' + stitchedCode + '\n```\n' });
-            completeRequest();
-            return;
-          } catch (chunkExecErr) {
-            // Chunk execution failed — fall through to LLM auto-fix session.
-            // generated-source.py was already written by executeChunkedPptxGeneration
-            // so rerun_pptx and the retry prompt can reference the failing code.
-            const errMsg = chunkExecErr instanceof Error ? chunkExecErr.message : String(chunkExecErr);
-            sendToWindow(win, 'chat:stream', {
-              content: `\n⚠️ Chunked PPTX execution failed: ${errMsg}\n\n🔧 Attempting auto-fix via LLM...\n`,
-            });
-
-            // Read the failing generated-source.py so the LLM can make a surgical fix
-            let failingCode = '';
-            try {
-              failingCode = await fs.readFile(path.join(previewRoot, 'generated-source.py'), 'utf-8');
-            } catch { /* may not exist if generation itself failed */ }
-
-            // Augment the prompt with error context so the single-shot LLM can fix it
-            const autoFixParts = [
-              '\n\n## Last PPTX Build Failure\n',
-              'The previous generated python-pptx code failed to run. Apply a MINIMAL, targeted fix — only change the lines that caused the error. Output the full file but keep all working code unchanged. Do NOT redesign or regenerate slides that were not part of the failure.',
-              errMsg,
-            ];
-            if (failingCode.trim()) {
-              autoFixParts.push('\n### Previously Generated Code (fix only the broken parts)\n');
-              autoFixParts.push('```python');
-              autoFixParts.push(failingCode);
-              autoFixParts.push('```');
-            }
-            prompt = prompt + autoFixParts.join('\n');
-            // Fall through to single-shot LLM path below for auto-fix
-          }
-        }
-
-        // ---- Single-shot path (unchanged) ----
+        // ---- Single-shot path ----
         const onDelta = (delta: LLMStreamDelta) => {
           resetInactivityTimeout();
           if (delta.type === 'content') {

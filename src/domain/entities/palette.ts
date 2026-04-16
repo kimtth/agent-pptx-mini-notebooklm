@@ -35,7 +35,7 @@ export interface ThemeTokens {
   slots: ThemeSlots;
   /** Flat map name→hex for dropdown rendering */
   colors: PaletteColor[];
-  /** Theme constants exposed to generated PPTX code (dk1→DARK, lt1→WHITE, accent1→ACCENT1, etc.) */
+  /** Theme constants passed to the deterministic renderer (dk1→DARK, lt1→WHITE, accent1→ACCENT1, etc.) */
   C: {
     DARK: string;
     DARK2: string;

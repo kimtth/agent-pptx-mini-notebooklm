@@ -96,7 +96,7 @@ export function ThemeSlotEditor() {
           const current = normalizeHex(slots[key])
           const selectedColor = colorOptions.find((color) => color.normalizedHex === current)
           return (
-            <div key={key} className="flex items-center gap-2 min-h-10">
+            <div key={key} className="flex flex-col gap-2">
               <div className="min-w-0 flex-[1.2] leading-tight">
                 <div className="text-[11px] font-medium" style={{ color: 'var(--text-primary)' }}>
                   {label}
@@ -107,22 +107,23 @@ export function ThemeSlotEditor() {
               </div>
 
               {/* Color swatch (click to open picker) */}
-              <div
-                className="relative flex-none w-7 h-7 border overflow-hidden"
-                style={{ borderColor: 'var(--panel-border)' }}
-              >
-                <input
-                  type="color"
-                  value={current}
-                  onChange={(e) => handleChange(key, e.target.value)}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  aria-label={`${label} color picker`}
-                />
-                <div className="w-full h-full" style={{ background: current }} />
-              </div>
+              <div className="flex items-center gap-2 w-full">
+                <div
+                  className="relative flex-none w-7 h-7 border overflow-hidden"
+                  style={{ borderColor: 'var(--panel-border)' }}
+                >
+                  <input
+                    type="color"
+                    value={current}
+                    onChange={(e) => handleChange(key, e.target.value)}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    aria-label={`${label} color picker`}
+                  />
+                  <div className="w-full h-full" style={{ background: current }} />
+                </div>
 
-              {/* Dropdown */}
-              <div className="relative flex-1">
+                {/* Dropdown */}
+                <div className="relative flex-1">
                 <button
                   type="button"
                   onClick={() => setOpenKey((currentOpen) => (currentOpen === key ? null : key))}
@@ -179,6 +180,7 @@ export function ThemeSlotEditor() {
                     })}
                   </div>
                 )}
+                </div>
               </div>
             </div>
           )

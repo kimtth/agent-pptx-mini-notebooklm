@@ -298,13 +298,9 @@ export async function saveProjectAsZip(
     try {
       const entries = await fs.readdir(previewsDir);
       for (const entry of entries) {
-        // Include preview assets and the final PPTX + combined source, but
-        // exclude intermediate chunk artifacts (generated-source-chunk-*.py
-        // and partial-*.pptx) which are kept for debugging only.
+        // Include preview assets and the final PPTX
         if (
-          /\.(png|jpg|jpeg|webp|py|pptx)$/i.test(entry) &&
-          !/^generated-source-chunk-\d+\.py$/i.test(entry) &&
-          !/^partial-\d+\.pptx$/i.test(entry)
+          /\.(png|jpg|jpeg|webp|pptx)$/i.test(entry)
         ) {
           const absPreview = path.join(previewsDir, entry);
           archive.file(absPreview, { name: `previews/${entry}` });

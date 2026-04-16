@@ -105,8 +105,6 @@ interface SlidesStore {
   setPptxBusy(v: boolean): void;
   setThinking(delta: string): void;
   appendChatContent(delta: string): void;
-  setPptxCode(code: string): void;
-  setPptxBuildError(error: string | null): void;
   reset(): void;
   moveSlide(from: number, to: number): void;
   deleteSlide(number: number): void;
@@ -124,8 +122,6 @@ const initial: SlideWork = {
   templatePath: null,
   templateMeta: null,
   slides: [],
-  pptxCode: null,
-  pptxBuildError: null,
   thinking: null,
   isStreaming: false,
   isPptxBusy: false,
@@ -160,8 +156,6 @@ export const useSlidesStore = create<SlidesStore>()(persist(
         phase: 'story',
         title: payload.title,
         slides,
-        pptxCode: null,
-        pptxBuildError: null,
         designBrief: (payload.designBrief as DesignBrief | undefined) ?? state.work.designBrief,
         framework: (payload.framework as FrameworkType | undefined) ?? state.work.framework,
       },
@@ -177,8 +171,6 @@ export const useSlidesStore = create<SlidesStore>()(persist(
         story: null,
         designBrief: null,
         slides: [],
-        pptxCode: null,
-        pptxBuildError: null,
         thinking: null,
         isStreaming: false,
         isPptxBusy: false,
@@ -190,8 +182,6 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
-        pptxCode: null,
-        pptxBuildError: null,
         slides: state.work.slides.map((s) =>
           s.number === update.number
             ? {
@@ -215,8 +205,6 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
-        pptxCode: null,
-        pptxBuildError: null,
         slides: state.work.slides.map((s) =>
           s.number === number ? { ...s, ...patch } : s,
         ),
@@ -228,8 +216,6 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
-        pptxCode: null,
-        pptxBuildError: null,
         slides: state.work.slides.map((slide) => {
           const resolved = images.filter((item) => item.number === slide.number)
           if (resolved.length === 0) return slide
@@ -250,8 +236,6 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
-        pptxCode: null,
-        pptxBuildError: null,
         slides: state.work.slides.map((slide) =>
           slide.number === number
             ? {
@@ -269,8 +253,6 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
-        pptxCode: null,
-        pptxBuildError: null,
         slides: state.work.slides.map((slide) => {
           if (slide.number !== number) return slide
           return syncPrimaryImage(slide, slide.selectedImages.filter((image) => image.id !== imageId))
@@ -333,14 +315,6 @@ export const useSlidesStore = create<SlidesStore>()(persist(
 
   appendChatContent(_delta) {
     // Chat content is handled by the chat store; this is a no-op
-  },
-
-  setPptxCode(code) {
-    set((state) => ({ work: { ...state.work, pptxCode: code, pptxBuildError: null, phase: 'ready' } }));
-  },
-
-  setPptxBuildError(error) {
-    set((state) => ({ work: { ...state.work, pptxBuildError: error } }));
   },
 
   reset() {

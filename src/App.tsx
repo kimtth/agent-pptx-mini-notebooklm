@@ -23,14 +23,33 @@ const MAX_AUTO_RETRIES = 3
 interface QaReport {
   contrastFixes: number
   missingIcons: Array<{ icon: string; reason: string }>
+  iconStats: { requested: number; missing: number; missingRatio: number }
   missingImages: string[]
   layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }>
+}
+
+function summarizeMissingIcons(missingIcons: QaReport['missingIcons']): string {
+  const counts = new Map<string, number>()
+  for (const entry of missingIcons) {
+    counts.set(entry.icon, (counts.get(entry.icon) ?? 0) + 1)
+  }
+
+  return [...counts.entries()]
+    .map(([icon, count]) => (count > 1 ? `${icon} x${count}` : icon))
+    .join(', ')
 }
 
 function formatQaSummary(qa: QaReport): string {
   const parts: string[] = []
   if (qa.contrastFixes > 0) parts.push(`Contrast: ${qa.contrastFixes} fix(es) applied automatically.`)
-  if (qa.missingIcons.length > 0) parts.push(`Missing icons: ${qa.missingIcons.map((i) => i.icon).join(', ')}.`)
+  if (qa.missingIcons.length > 0) {
+    const requested = qa.iconStats?.requested ?? qa.missingIcons.length
+    const missing = qa.iconStats?.missing ?? qa.missingIcons.length
+    const missingRatio = qa.iconStats?.missingRatio ?? (requested > 0 ? missing / requested : 0)
+    const severity = missingRatio >= 0.7 ? 'blocking' : 'warning'
+    const percent = Math.round(missingRatio * 100)
+    parts.push(`Missing icons (${severity}, ${missing}/${requested}, ${percent}% missing): ${summarizeMissingIcons(qa.missingIcons)}.`)
+  }
   if (qa.missingImages.length > 0) parts.push(`Missing images: ${qa.missingImages.join('; ')}.`)
   const errors = qa.layoutIssues.filter((i) => i.severity === 'error')
   const warnings = qa.layoutIssues.filter((i) => i.severity === 'warning')
@@ -45,63 +64,7 @@ export default function App() {
   const workspaceDir = useProjectStore((s) => s.workspaceDir)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const autoRetryCount = useRef(0)
-  const chunkedPptxReady = useRef(false)
   const postStagingActive = useRef(false)
-
-  const retryWithBuildError = (errMsg: string) => {
-    if (autoRetryCount.current >= MAX_AUTO_RETRIES) {
-      useChatStore.getState().addMessage(
-        createAssistantMessage(`🛑 Gave up after ${MAX_AUTO_RETRIES} automatic retries. Please review the error and try again manually.`),
-      )
-      useSlidesStore.getState().setStreaming(false)
-      useSlidesStore.getState().setPptxBusy(false)
-      return
-    }
-    autoRetryCount.current += 1
-    const attempt = autoRetryCount.current
-
-    useChatStore.getState().addMessage(
-      createAssistantMessage(`🔄 Auto-retry ${attempt}/${MAX_AUTO_RETRIES} — sending the error back to the agent…`),
-    )
-
-    const retryPrompt = `The PPTX generation failed with the following error. Please fix the code and try again:\n\n${errMsg}`
-    const userMsg = createUserMessage(retryPrompt)
-    useChatStore.getState().addMessage(userMsg)
-    useSlidesStore.getState().setStreaming(true)
-    useSlidesStore.getState().setPptxBusy(true)
-
-    const { work } = useSlidesStore.getState()
-    const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore.getState()
-    const { files: dataSources, urls: urlSources } = useDataSourcesStore.getState()
-    const availableIcons = getAvailableIconChoices(selectedIconCollection)
-    const workflow = getWorkflowConfig('create-pptx')
-
-    const workspaceContext: WorkspaceContext = {
-      title: work.title,
-      slides: work.slides,
-      designBrief: work.designBrief,
-      designStyle: work.designStyle,
-      framework: work.framework,
-      customFrameworkPrompt: work.customFrameworkPrompt,
-      templateMeta: work.templateMeta,
-      pptxBuildError: errMsg,
-      theme: applyThemeTextBoxStyle(
-        applyThemeColorTreatment(
-          applyThemeFontFamily(tokens, selectedFont),
-          selectedColorTreatment,
-        ),
-        selectedTextBoxStyle,
-      ),
-      workflow,
-      dataSources,
-      urlSources,
-      iconProvider: 'iconify',
-      iconCollection: selectedIconCollection,
-      availableIcons,
-    }
-
-    window.electronAPI.chat.send(retryPrompt, historyToIpc([...useChatStore.getState().messages]), workspaceContext)
-  }
 
   const triggerPostStaging = (qa: QaReport) => {
     const summary = formatQaSummary(qa)
@@ -131,7 +94,6 @@ export default function App() {
       framework: work.framework,
       customFrameworkPrompt: work.customFrameworkPrompt,
       templateMeta: work.templateMeta,
-      pptxBuildError: null,
       theme: applyThemeTextBoxStyle(
         applyThemeColorTreatment(
           applyThemeFontFamily(tokens, selectedFont),
@@ -167,37 +129,11 @@ export default function App() {
       api.chat.onFrameworkSuggested((payload) => {
         useSlidesStore.getState().setFramework(payload.primary as FrameworkType)
       }),
-      api.chat.onChunkProgress(() => {
-        // Progress updates are shown via chat:stream; no extra action needed.
-      }),
-      api.chat.onChunkedPptxReady(({ code }) => {
-        // Chunked execution produced the merged PPTX and attempted preview rendering.
-        // Set the flag so onDone skips re-execution via pptx:renderPreview.
-        chunkedPptxReady.current = true
-        useSlidesStore.getState().setPptxCode(code)
-        useSlidesStore.getState().setPptxBuildError(null)
-        autoRetryCount.current = 0
-        // Notify CenterArea to reload preview images from disk
-        window.dispatchEvent(new CustomEvent('pptx-preview-ready', {}))
-        useChatStore.getState().addMessage(
-          createAssistantMessage('✅ Deck generated! Preview is ready in PowerPoint.'),
-        )
-        useSlidesStore.getState().setStreaming(false)
-        useSlidesStore.getState().setPptxBusy(false)
-      }),
       api.chat.onDone(() => {
         // Flush buffered deltas
         useChatStore.getState().flushAssistantMessage()
 
         requestAnimationFrame(() => {
-          // Chunked generation already produced the merged PPTX and previews.
-          // The onChunkedPptxReady handler took care of everything — skip
-          // re-execution which would overwrite the merged result.
-          if (chunkedPptxReady.current) {
-            chunkedPptxReady.current = false
-            return
-          }
-
           // Post-staging QA just finished — do NOT re-trigger renderPreview
           // or we enter an infinite generate→QA→generate loop.
           if (postStagingActive.current) {
@@ -211,8 +147,6 @@ export default function App() {
           const isPptxMode = currentWork.isPptxBusy
 
           if (isPptxMode && currentWork.slides.length > 0) {
-            useSlidesStore.getState().setPptxBuildError(null)
-
             // Deterministic renderer: use designStyle + layout data, no code extraction needed
             const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedIconCollection } = usePaletteStore.getState()
             const paletteTokens = applyThemeTextBoxStyle(
@@ -247,20 +181,20 @@ export default function App() {
                   }
                 } else {
                   const errMsg = result.error ?? result.warning ?? 'Unknown error'
-                  useSlidesStore.getState().setPptxBuildError(errMsg)
                   useChatStore.getState().addMessage(
                     createAssistantMessage(`⚠️ Deck generation failed: ${errMsg}`),
                   )
-                  retryWithBuildError(errMsg)
+                  useSlidesStore.getState().setStreaming(false)
+                  useSlidesStore.getState().setPptxBusy(false)
                 }
               })
               .catch((err: unknown) => {
                 const msg = err instanceof Error ? err.message : String(err)
-                useSlidesStore.getState().setPptxBuildError(msg)
                 useChatStore.getState().addMessage(
                   createAssistantMessage(`⚠️ Deck generation failed: ${msg}`),
                 )
-                retryWithBuildError(msg)
+                useSlidesStore.getState().setStreaming(false)
+                useSlidesStore.getState().setPptxBusy(false)
               })
           } else {
             useSlidesStore.getState().setStreaming(false)

@@ -6,18 +6,27 @@ import { useChatStore } from '../../stores/chat-store'
 import { useSlidesStore } from '../../stores/slides-store'
 import { usePaletteStore } from '../../stores/palette-store'
 import { useDataSourcesStore } from '../../stores/data-sources-store'
-import { createUserMessage, historyToIpc, stripPythonCodeForDisplay } from '../../application/chat-use-case'
+import { createUserMessage, historyToIpc } from '../../application/chat-use-case'
 import { applyThemeColorTreatment, applyThemeFontFamily, applyThemeTextBoxStyle } from '../../application/palette-use-case'
 import type { WorkspaceContext } from '../../application/chat-use-case'
 import { getAvailableIconChoices } from '../../domain/icons/iconify'
 import { getWorkflowConfig, type WorkflowId } from '../../domain/workflows/workflow-config'
 
+/**
+ * Safety net: the deterministic renderer handles all PPTX generation now,
+ * so the LLM should never produce Python code blocks. If it does anyway
+ * (e.g. prompt leakage or model drift), hide the raw code from the user
+ * and show a short placeholder instead. This avoids confusing users who
+ * might think they need to run or edit the Python themselves.
+ */
+function stripPythonCodeForDisplay(content: string): string {
+  return content.replace(/```python[\s\S]*?```/g, '`[python code generated]`')
+}
+
 /** Completed assistant messages: full markdown, auto-collapse if >10 lines */
 function AssistantMarkdownMessage({ content }: { content: string }) {
   const stripped = stripPythonCodeForDisplay(content)
-  const codeHidden = !stripped && content.trim().length > 0
-  const displayContent = codeHidden ? '' : stripped
-  const lineCount = displayContent.split(/\r?\n/).length
+  const lineCount = stripped.split(/\r?\n/).length
   const isLong = lineCount > 10
   const [expanded, setExpanded] = useState(!isLong)
 
@@ -45,14 +54,7 @@ function AssistantMarkdownMessage({ content }: { content: string }) {
       )}
       {expanded && (
         <div className="px-4 py-3">
-          {codeHidden ? (
-            <p className="flex items-center gap-2 text-xs italic" style={{ color: 'var(--text-muted)' }}>
-              <FileCode2 size={14} />
-              <span>Python code generated — building PPTX…</span>
-            </p>
-          ) : (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
-          )}
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{stripped}</ReactMarkdown>
         </div>
       )}
     </div>
@@ -120,21 +122,9 @@ function StreamingBubble({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElem
           {pendingThinking.slice(-600)}
         </div>
       )}
-      {pendingContent && (() => {
-        const stripped = stripPythonCodeForDisplay(pendingContent, true)
-        if (!stripped && pendingContent.trim().length > 0) {
-          return (
-            <div
-              className="flex items-center gap-2 px-4 py-3 text-xs italic border"
-              style={{ color: 'var(--text-muted)', background: 'var(--surface)', borderColor: 'var(--panel-border)' }}
-            >
-              <FileCode2 size={14} />
-              <span>Generating Python code…</span>
-            </div>
-          )
-        }
-        return stripped ? <StreamingTextMessage content={stripped} /> : null
-      })()}
+      {pendingContent && (
+        <StreamingTextMessage content={stripPythonCodeForDisplay(pendingContent)} />
+      )}
     </div>
   )
 }
@@ -210,7 +200,6 @@ export function ChatPanel() {
       framework: work.framework,
       customFrameworkPrompt: work.customFrameworkPrompt,
       templateMeta: work.templateMeta,
-      pptxBuildError: work.pptxBuildError,
       theme: effectiveTheme,
       workflow,
       dataSources,
@@ -237,8 +226,8 @@ export function ChatPanel() {
       const customFrameworkPrompt = useSlidesStore.getState().work.customFrameworkPrompt?.trim()
       prompt = fw
         ? fw === 'custom-prompt' && customFrameworkPrompt
-          ? `Start the prestaging workflow now. The user has already chosen a custom business framework. Apply this custom framework prompt directly: "${customFrameworkPrompt}". Do NOT ask the user to choose a framework again. Understand the content and generate the preliminary slide scenario in the slide panel. Do not generate PPTX code in this step.`
-          : `Start the prestaging workflow now. The user has already chosen the "${fw}" business framework — apply it directly and do NOT ask the user to choose again. Understand the content and generate the preliminary slide scenario in the slide panel. Do not generate PPTX code in this step.`
+          ? `Start the prestaging workflow now. The user has already chosen a custom business framework. Apply this custom framework prompt directly: "${customFrameworkPrompt}". Do NOT ask the user to choose a framework again. Understand the content and generate the preliminary slide scenario in the slide panel. Do not trigger PPTX rendering in this step.`
+          : `Start the prestaging workflow now. The user has already chosen the "${fw}" business framework — apply it directly and do NOT ask the user to choose again. Understand the content and generate the preliminary slide scenario in the slide panel. Do not trigger PPTX rendering in this step.`
         : workflow.triggerPrompt
     }
     await sendMessage(prompt, { workflowId: workflow.id })

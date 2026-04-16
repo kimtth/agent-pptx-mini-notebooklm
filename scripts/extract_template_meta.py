@@ -20,6 +20,11 @@ from lxml import etree
 from pptx import Presentation
 from pptx.util import Emu
 
+try:
+    from PIL import Image
+except Exception:  # pragma: no cover - optional dependency fallback
+    Image = None
+
 
 NS = {
     'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
@@ -156,6 +161,40 @@ def extract_background_images(prs: Presentation, assets_dir: str) -> list[str]:
     return extracted
 
 
+def extract_background_surface_hex(prs: Presentation, background_images: list[str]) -> str | None:
+    """Infer a representative background surface color from the template.
+
+    Preference order:
+      1. Solid background color on slide masters
+      2. Average color sampled from extracted master background images
+      3. Theme light background slot (lt1)
+    """
+    try:
+        for master in prs.slide_masters:
+            bg_fill = getattr(master.background, 'fill', None)
+            if bg_fill is None:
+                continue
+            if bg_fill.type is not None and int(bg_fill.type) == 1:
+                rgb = getattr(bg_fill.fore_color, 'rgb', None)
+                if rgb is not None:
+                    return str(rgb).upper()
+    except Exception as exc:
+        print(f'[extract] Warning: could not inspect master solid background: {exc}', file=sys.stderr)
+
+    if Image is not None:
+        for image_path in background_images:
+            try:
+                with Image.open(image_path) as img:
+                    sample = img.convert('RGB').resize((1, 1))
+                    r, g, b = sample.getpixel((0, 0))
+                    return f'{r:02X}{g:02X}{b:02X}'
+            except Exception as exc:
+                print(f'[extract] Warning: could not sample bg image {image_path}: {exc}', file=sys.stderr)
+
+    theme_colors = extract_theme_colors(prs)
+    return theme_colors.get('lt1') or None
+
+
 def main() -> None:
     if len(sys.argv) < 3:
         print('Usage: extract_template_meta.py <pptx_path> <assets_dir>', file=sys.stderr)
@@ -174,9 +213,13 @@ def main() -> None:
     width_in = round(prs.slide_width / Emu(914400), 3)
     height_in = round(prs.slide_height / Emu(914400), 3)
 
+    theme_colors = extract_theme_colors(prs)
+    background_images = extract_background_images(prs, assets_dir)
+
     meta = {
-        'themeColors': extract_theme_colors(prs),
-        'backgroundImages': extract_background_images(prs, assets_dir),
+        'themeColors': theme_colors,
+        'backgroundImages': background_images,
+        'backgroundSurfaceHex': extract_background_surface_hex(prs, background_images),
         'blankLayoutIndex': find_blank_layout_index(prs),
         'fonts': extract_fonts(prs),
         'originalDimensions': {

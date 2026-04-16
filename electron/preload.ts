@@ -43,16 +43,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('chat:done', handler);
       return () => ipcRenderer.removeListener('chat:done', handler);
     },
-    onChunkProgress(cb: (progress: { chunkIndex: number; totalChunks: number; status: string; slideRange: string }) => void) {
-      const handler = (_: unknown, progress: { chunkIndex: number; totalChunks: number; status: string; slideRange: string }) => cb(progress);
-      ipcRenderer.on('chat:chunk-progress', handler);
-      return () => ipcRenderer.removeListener('chat:chunk-progress', handler);
-    },
-    onChunkedPptxReady(cb: (payload: { code: string }) => void) {
-      const handler = (_: unknown, payload: { code: string }) => cb(payload);
-      ipcRenderer.on('chat:chunked-pptx-ready', handler);
-      return () => ipcRenderer.removeListener('chat:chunked-pptx-ready', handler);
-    },
   },
 
   theme: {
@@ -63,8 +53,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   pptx: {
-    generate: (code: string, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[], templateMeta?: unknown) =>
-      ipcRenderer.invoke('pptx:generate', code, themeTokens, title, iconCollection, slides, templateMeta),
+    generate: (title: string) =>
+      ipcRenderer.invoke('pptx:generate', '', null, title),
     renderPreview: (designStyle: string | null, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[], templateMeta?: unknown) =>
       ipcRenderer.invoke('pptx:renderPreview', designStyle, themeTokens, title, iconCollection, slides, templateMeta),
     readExistingPreviews: () =>

@@ -9,11 +9,8 @@ import type { TemplateMeta } from '../../../src/domain/entities/slide-work'
 import { DEFAULT_THEME_C } from '../../../src/domain/theme/default-theme'
 import { ensurePythonModule, pythonSetupHint, resolvePythonExecutable } from './python-runtime.ts'
 import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts'
-import type { SlideGroup } from '../llm/slide-chunker.ts'
-import { sliceLayoutSpecs, sliceSlideAssets } from '../llm/slide-chunker.ts'
 
 const execFileAsync = promisify(execFile)
-const GENERATED_CODE_EXECUTION_ATTEMPTS = 2
 let powerPointAutomationChain: Promise<void> = Promise.resolve()
 
 function queuePowerPointAutomation<T>(task: () => Promise<T>): Promise<T> {
@@ -61,35 +58,13 @@ function normalizeLayoutSlides(
 }
 
 // ---------------------------------------------------------------------------
-// Syntax preflight — fast Python AST check before full execution
-// ---------------------------------------------------------------------------
-
-/**
- * Run a quick Python syntax check on a generated source file.
- * Raises if the file has a SyntaxError so we fail before attempting
- * chunk execution and producing a partial/corrupt PPTX.
- */
-async function checkPythonSyntax(python: string, sourcePath: string): Promise<void> {
-  const checkScript = `import ast, sys; ast.parse(open(sys.argv[1], encoding='utf-8').read(), sys.argv[1]); print('ok')`
-  try {
-    await execFileAsync(python, ['-c', checkScript, sourcePath], {
-      windowsHide: true,
-      timeout: 10_000,
-      maxBuffer: 1024 * 1024,
-    })
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    throw new Error(`Syntax error in generated chunk ${sourcePath}:\n${msg}`)
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Completion report — structured JSON emitted by Python scripts to stdout
 // ---------------------------------------------------------------------------
 
 export interface PptxQaReport {
   contrastFixes: number
   missingIcons: Array<{ icon: string; reason: string }>
+  iconStats: { requested: number; missing: number; missingRatio: number }
   missingImages: string[]
   layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }>
 }
@@ -106,30 +81,6 @@ export interface PptxCompletionReport {
   qa?: PptxQaReport
 }
 
-/**
- * Detect calls to private helpers (names starting with `_`) that are called
- * but never defined in the same code block. These are cross-chunk references
- * that will produce NameErrors at runtime — e.g. calling `_txb(` or `_rect(`
- * that were defined in a different chunk.
- *
- * Returns the list of undeclared private helper names found.
- */
-function detectUndeclaredHelperCalls(code: string): string[] {
-  // Collect every function name defined in this file via `def name(` at any indent
-  const defined = new Set(
-    [...code.matchAll(/^\s*def\s+(_[a-z]\w*)\s*\(/gm)].map((m) => m[1]),
-  )
-  // Collect every private-helper call: `_name(` anywhere in the code
-  const called = new Set(
-    [...code.matchAll(/\b(_[a-z]\w*)\s*\(/g)].map((m) => m[1]),
-  )
-  // python-pptx internal underscore attrs that are safe to call
-  const pptxInternals = new Set([
-    '_element', '_p', '_tc', '_fill', '_txBody', '_r', '_tbl',
-    '_fld', '_tr', '_spPr', '_nvSpPr', '_sp',
-  ])
-  return [...called].filter((name) => !defined.has(name) && !pptxInternals.has(name))
-}
 
 
 function parsePptxCompletionReport(stdout: string | undefined): PptxCompletionReport | null {
@@ -267,10 +218,6 @@ export function formatExecutionFailure(error: unknown): string {
   return details.join('\n\n')
 }
 
-function isLikelyPythonPptxCode(code: string): boolean {
-  return /from\s+pptx\s+import|import\s+pptx|Presentation\(|python-pptx|def\s+build_presentation\s*\(/i.test(code)
-}
-
 function sanitizeWindowsFilenameStem(value: string, fallback: string): string {
   const cleaned = (value || fallback)
     .replace(/[\u0000-\u001f<>:"/\\|?*]/g, '-')
@@ -298,11 +245,6 @@ async function savePresentationFile(filePath: string, title: string, win: Browse
 
   await fs.copyFile(filePath, outputPath)
   return { success: true, path: outputPath }
-}
-
-async function removeDirectoryQuietly(dirPath: string | null): Promise<void> {
-  if (!dirPath) return
-  await fs.rm(dirPath, { recursive: true, force: true }).catch(() => {})
 }
 
 async function removePreviewImages(dirPath: string): Promise<void> {
@@ -334,11 +276,6 @@ async function removeStaleTimestampedPptx(dirPath: string, canonicalName: string
   } catch { /* ignore */ }
 }
 
-async function ensureCleanDirectory(dirPath: string): Promise<void> {
-  await fs.rm(dirPath, { recursive: true, force: true }).catch(() => {})
-  await fs.mkdir(dirPath, { recursive: true })
-}
-
 function buildLayoutArtifactPaths(workspaceDir: string) {
   const layoutDir = path.join(workspaceDir, 'previews')
   return {
@@ -359,8 +296,6 @@ async function clearWorkspaceArtifactsInternal(): Promise<void> {
     fs.unlink(slideAssetsPath).catch(() => {}),
     fs.unlink(path.join(layoutDir, 'layout-meta.json')).catch(() => {}),
     fs.unlink(path.join(layoutDir, 'notebooklm-infographics.json')).catch(() => {}),
-    fs.unlink(path.join(layoutDir, 'generated-source.py')).catch(() => {}),
-    fs.rm(path.join(layoutDir, 'partials'), { recursive: true, force: true }).catch(() => {}),
     fs.rm(path.join(layoutDir, 'charts'), { recursive: true, force: true }).catch(() => {}),
   ])
 
@@ -370,11 +305,6 @@ async function clearWorkspaceArtifactsInternal(): Promise<void> {
       if (!entry.isFile()) return
 
       const fullPath = path.join(layoutDir, entry.name)
-
-      if (/^generated-source-chunk-\d+\.py$/i.test(entry.name)) {
-        await fs.unlink(fullPath).catch(() => {})
-        return
-      }
 
       if (/^presentation-preview(?:-\d+)?\.pptx$/i.test(entry.name)) {
         await fs.unlink(fullPath).catch(() => {})
@@ -636,14 +566,13 @@ async function renderPresentationInternal(
     }
   } catch { /* no manifest or empty — skip */ }
 
-  // Renderer mode: no generated-source.py needed, pass --renderer-mode flag
+  const designStyle = opts?.designStyle || 'Blank White'
+
   const args = [runnerScriptPath, outputPath, '--renderer-mode']
   if (opts?.renderDir) {
     args.push('--render-dir', opts.renderDir)
   }
   args.push('--workspace-dir', workspaceDir)
-
-  const designStyle = opts?.designStyle || 'Blank White'
 
   const { stdout } = await execFileAsync(
     python,
@@ -678,130 +607,6 @@ async function renderPresentationInternal(
   return report!
 }
 
-async function executeGeneratedPythonCodeToFileInternal(
-  code: string,
-  theme: ThemeTokens | null,
-  title: string,
-  outputPath: string,
-  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; designStyle?: string },
-): Promise<PptxCompletionReport> {
-  const workDir = path.dirname(outputPath)
-  const sourcePath = path.join(workDir, 'generated-source.py')
-  const runnerScriptPath = resolveBundledPath('scripts', 'pptx-python-runner.py')
-
-  if (!existsSync(runnerScriptPath)) {
-    throw new Error(`Python PPTX runner not found at ${runnerScriptPath}`)
-  }
-
-  await fs.mkdir(workDir, { recursive: true })
-  await fs.writeFile(sourcePath, code, 'utf-8')
-
-  const python = await resolvePythonExecutable()
-  await ensurePythonModule(
-    python,
-    'pptx',
-    `Install python-pptx in the managed environment. ${pythonSetupHint()}`,
-  )
-
-  const themePayload = JSON.stringify(theme?.C ?? DEFAULT_THEME_C)
-  const fontFamily = resolveThemeFontFamily(theme)
-  const colorTreatment = resolveThemeColorTreatment(theme)
-  const textBoxStyle = resolveThemeTextBoxStyle(theme)
-  const workspaceDir = await readWorkspaceDir()
-  await assertValidLayoutInputArtifact(workspaceDir)
-  let layoutSpecsJson = opts?.layoutSpecsJson?.trim() ?? ''
-  if (!layoutSpecsJson) {
-    const { inputPath } = buildLayoutArtifactPaths(workspaceDir)
-    const layoutInputJson = await fs.readFile(inputPath, 'utf-8')
-    const computed = await computeLayoutSpecsInternal(layoutInputJson, fontFamily)
-    if (!computed.success || !computed.specs?.trim()) {
-      throw new Error(computed.error ?? 'Failed to compute hybrid layout specs.')
-    }
-    layoutSpecsJson = computed.specs.trim()
-  }
-  const { slideAssetsPath } = buildLayoutArtifactPaths(workspaceDir)
-  const slideAssetsJson = existsSync(slideAssetsPath)
-    ? await fs.readFile(slideAssetsPath, 'utf-8').catch(() => '')
-    : ''
-
-  // Only use the on-disk template when the user explicitly selected "Custom Template"
-  let templatePath = opts?.templatePath
-  if (!templatePath && opts?.designStyle === 'Custom Template') {
-    const candidate = path.join(workspaceDir, 'template', 'template.pptx')
-    if (existsSync(candidate)) templatePath = candidate
-  }
-  const templateMetaJson = opts?.templateMeta ? JSON.stringify(opts.templateMeta) : ''
-
-  // Read NotebookLM infographic manifest (if present, these will be appended as slides)
-  const infographicManifestPath = path.join(workspaceDir, 'previews', 'notebooklm-infographics.json')
-  let notebookLMInfographicsJson = ''
-  try {
-    const raw = await fs.readFile(infographicManifestPath, 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      notebookLMInfographicsJson = JSON.stringify(parsed)
-    }
-  } catch { /* no manifest or empty — skip */ }
-
-  const args = [runnerScriptPath, sourcePath, outputPath]
-  if (opts?.renderDir) {
-    args.push('--render-dir', opts.renderDir)
-  }
-  args.push('--workspace-dir', workspaceDir)
-
-  let lastError: unknown
-  for (let attempt = 1; attempt <= GENERATED_CODE_EXECUTION_ATTEMPTS; attempt++) {
-    try {
-      const { stdout } = await execFileAsync(
-        python,
-        args,
-        {
-          windowsHide: true,
-          timeout: 180_000,
-          maxBuffer: 8 * 1024 * 1024,
-          env: {
-            ...process.env,
-            PYTHONIOENCODING: 'utf-8',
-            PPTX_THEME_JSON: themePayload,
-            PPTX_TITLE: title || 'Presentation',
-            PPTX_FONT_FAMILY: fontFamily,
-            PPTX_COLOR_TREATMENT: colorTreatment,
-            PPTX_TEXT_BOX_STYLE: textBoxStyle,
-            PPTX_DESIGN_STYLE: opts?.designStyle || 'Blank White',
-            PPTX_ICON_COLLECTION: opts?.iconCollection ?? 'all',
-            ...(opts?.renderDir ? { PPTX_SKIP_TEXT_OVERFLOW_FIX: '1' } : {}),
-            ...(slideAssetsJson.trim() ? { PPTX_SLIDE_ASSETS_JSON: slideAssetsJson } : {}),
-            ...(templatePath ? { PPTX_TEMPLATE_PATH: templatePath } : {}),
-            ...(templateMetaJson ? { PPTX_TEMPLATE_META_JSON: templateMetaJson } : {}),
-            ...(notebookLMInfographicsJson ? { PPTX_NOTEBOOKLM_INFOGRAPHICS: notebookLMInfographicsJson } : {}),
-            WORKSPACE_DIR: workspaceDir,
-            PPTX_LAYOUT_SPECS_JSON: layoutSpecsJson,
-          },
-        },
-      )
-
-      const report = parsePptxCompletionReport(stdout)
-      assertCompletionSuccess(report, 'PPTX generation')
-      return report!
-    } catch (error) {
-      lastError = error
-      if (attempt < GENERATED_CODE_EXECUTION_ATTEMPTS) continue
-    }
-  }
-
-  throw lastError
-}
-
-export async function executeGeneratedPythonCodeToFile(
-  code: string,
-  theme: ThemeTokens | null,
-  title: string,
-  outputPath: string,
-  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; designStyle?: string },
-): Promise<PptxCompletionReport> {
-  return queuePowerPointAutomation(() => executeGeneratedPythonCodeToFileInternal(code, theme, title, outputPath, opts))
-}
-
 export async function renderPresentationToFile(
   theme: ThemeTokens | null,
   title: string,
@@ -809,211 +614,6 @@ export async function renderPresentationToFile(
   opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; designStyle?: string },
 ): Promise<PptxCompletionReport> {
   return queuePowerPointAutomation(() => renderPresentationInternal(theme, title, outputPath, opts))
-}
-
-// ---------------------------------------------------------------------------
-// Chunked PPTX generation: parallel chunk execution + merge + post-process
-// ---------------------------------------------------------------------------
-
-export interface ChunkResult {
-  chunkIndex: number
-  code: string
-  slideIndices: number[]
-}
-
-export async function executeChunkedPptxGeneration(
-  chunks: ChunkResult[],
-  theme: ThemeTokens | null,
-  title: string,
-  outputPath: string,
-  opts: {
-    iconCollection?: string
-    layoutSpecsJson?: string
-    slideAssetsJson?: string
-    templatePath?: string
-    templateMeta?: TemplateMeta | null
-    designStyle?: string
-    onProgress?: (progress: { chunkIndex: number; totalChunks: number; status: string; slideRange: string }) => void
-  },
-): Promise<PptxCompletionReport> {
-  const workDir = path.dirname(outputPath)
-  const partialsDir = path.join(workDir, 'partials')
-  await fs.mkdir(partialsDir, { recursive: true })
-
-  const runnerScriptPath = resolveBundledPath('scripts', 'pptx-python-runner.py')
-  const mergeScriptPath = resolveBundledPath('scripts', 'pptx_merge.py')
-  if (!existsSync(runnerScriptPath)) throw new Error(`Python PPTX runner not found at ${runnerScriptPath}`)
-  if (!existsSync(mergeScriptPath)) throw new Error(`Python merge script not found at ${mergeScriptPath}`)
-
-  const python = await resolvePythonExecutable()
-  await ensurePythonModule(python, 'pptx', `Install python-pptx. ${pythonSetupHint()}`)
-
-  const themePayload = JSON.stringify(theme?.C ?? DEFAULT_THEME_C)
-  const fontFamily = resolveThemeFontFamily(theme)
-  const colorTreatment = resolveThemeColorTreatment(theme)
-  const textBoxStyle = resolveThemeTextBoxStyle(theme)
-  const workspaceDir = await readWorkspaceDir()
-  // Only use the on-disk template when the user explicitly selected "Custom Template"
-  let templatePath = opts.templatePath
-  if (!templatePath && opts.designStyle === 'Custom Template') {
-    const candidate = path.join(workspaceDir, 'template', 'template.pptx')
-    if (existsSync(candidate)) templatePath = candidate
-  }
-  const templateMetaJson = opts.templateMeta ? JSON.stringify(opts.templateMeta) : ''
-
-  let notebookLMInfographicsJson = ''
-  try {
-    const raw = await fs.readFile(path.join(workspaceDir, 'previews', 'notebooklm-infographics.json'), 'utf-8')
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed) && parsed.length > 0) notebookLMInfographicsJson = JSON.stringify(parsed)
-  } catch { /* skip */ }
-
-  // ---- Write combined generated-source.py BEFORE execution so it exists even on failure ----
-  const combinedCode = chunks
-    .map((c) => `# === Chunk ${c.chunkIndex} (slides ${c.slideIndices.map((i) => i + 1).join(', ')}) ===\n${c.code}`)
-    .join('\n\n')
-  await fs.writeFile(path.join(workDir, 'generated-source.py'), combinedCode, 'utf-8')
-
-  const totalChunks = chunks.length
-  const partialPathMap: Record<number, string> = {}
-
-  // ---- Step 1: Execute each chunk in parallel ----
-  const execResults = await Promise.allSettled(
-    chunks.map(async (chunk) => {
-      const { chunkIndex, code, slideIndices } = chunk
-      const slideRange = `${slideIndices[0] + 1}-${slideIndices[slideIndices.length - 1] + 1}`
-      opts.onProgress?.({ chunkIndex, totalChunks, status: 'executing', slideRange })
-
-      const sourcePath = path.join(workDir, `generated-source-chunk-${chunkIndex}.py`)
-      await fs.writeFile(sourcePath, code, 'utf-8')
-
-      // ---- Static name check: catch cross-chunk private helper calls ----
-      const undeclared = detectUndeclaredHelperCalls(code)
-      if (undeclared.length > 0) {
-        throw new Error(
-          `Chunk ${chunkIndex} calls undefined private helpers: ${undeclared.join(', ')}. `
-          + `Use the runtime-injected API instead: fetch_icon(), safe_add_picture().`,
-        )
-      }
-
-      // ---- Syntax preflight: catch NameErrors / SyntaxErrors before full execution ----
-      await checkPythonSyntax(python, sourcePath)
-
-      const partialPath = path.join(partialsDir, `partial-${chunkIndex}.pptx`)
-      partialPathMap[chunkIndex] = partialPath
-
-      const group: SlideGroup = { chunkIndex, slideIndices, slides: [] as never[] }
-      const chunkLayoutSpecs = opts.layoutSpecsJson ? sliceLayoutSpecs(opts.layoutSpecsJson, group) : ''
-      const chunkSlideAssets = opts.slideAssetsJson ? sliceSlideAssets(opts.slideAssetsJson, group) : ''
-
-      const { stdout } = await execFileAsync(python, [runnerScriptPath, sourcePath, partialPath, '--chunk-mode', '--workspace-dir', workspaceDir], {
-        windowsHide: true,
-        timeout: 180_000,
-        maxBuffer: 8 * 1024 * 1024,
-        env: {
-          ...process.env,
-          PYTHONIOENCODING: 'utf-8',
-          PPTX_THEME_JSON: themePayload,
-          PPTX_TITLE: title || 'Presentation',
-          PPTX_FONT_FAMILY: fontFamily,
-          PPTX_COLOR_TREATMENT: colorTreatment,
-          PPTX_TEXT_BOX_STYLE: textBoxStyle,
-          PPTX_DESIGN_STYLE: opts.designStyle || 'Blank White',
-          PPTX_ICON_COLLECTION: opts.iconCollection ?? 'all',
-          PPTX_LAYOUT_SPECS_JSON: chunkLayoutSpecs,
-          ...(chunkSlideAssets.trim() ? { PPTX_SLIDE_ASSETS_JSON: chunkSlideAssets } : {}),
-          ...(templatePath ? { PPTX_TEMPLATE_PATH: templatePath } : {}),
-          ...(templateMetaJson ? { PPTX_TEMPLATE_META_JSON: templateMetaJson } : {}),
-          WORKSPACE_DIR: workspaceDir,
-        },
-      })
-
-      // Verify chunk completion: parse report and confirm partial file exists
-      const chunkReport = parsePptxCompletionReport(stdout)
-      if (chunkReport && chunkReport.status === 'error') {
-        throw new Error(`Chunk ${chunkIndex} verification failed: ${chunkReport.error}`)
-      }
-      if (!existsSync(partialPath)) {
-        throw new Error(`Chunk ${chunkIndex} completed (exit 0) but partial file was not created: ${partialPath}`)
-      }
-      const stat = await fs.stat(partialPath)
-      if (stat.size === 0) {
-        throw new Error(`Chunk ${chunkIndex} produced an empty partial file (0 bytes): ${partialPath}`)
-      }
-
-      return chunkReport
-    }),
-  )
-
-  const failures = execResults
-    .map((r, i) => ({ result: r, chunk: chunks[i] }))
-    .filter(({ result }) => result.status === 'rejected')
-  if (failures.length > 0) {
-    const errors = failures.map(({ result, chunk }) => {
-      const reason = (result as PromiseRejectedResult).reason
-      const range = `${chunk.slideIndices[0] + 1}-${chunk.slideIndices[chunk.slideIndices.length - 1] + 1}`
-      return `Chunk ${chunk.chunkIndex} (slides ${range}): ${formatExecutionFailure(reason)}`
-    })
-    throw new Error(`Chunked PPTX execution failed:\n${errors.join('\n')}`)
-  }
-
-  // ---- Step 2: Merge partials with expected slide count verification (generated-source.py already written above) ----
-  opts.onProgress?.({ chunkIndex: -1, totalChunks, status: 'merging', slideRange: 'all' })
-  const orderedPartials = chunks.map((c) => partialPathMap[c.chunkIndex]).filter(Boolean)
-  const expectedSlides = chunks.reduce((sum, c) => sum + c.slideIndices.length, 0)
-
-  const { stdout: mergeStdout } = await execFileAsync(
-    python,
-    [mergeScriptPath, '--partials', orderedPartials.join(','), '--output', outputPath, '--expected-slides', String(expectedSlides)],
-    {
-      windowsHide: true,
-      timeout: 60_000,
-      maxBuffer: 4 * 1024 * 1024,
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
-    },
-  )
-
-  // Verify merge result
-  const mergeReport = parsePptxCompletionReport(mergeStdout)
-  assertCompletionSuccess(mergeReport, 'PPTX merge', expectedSlides)
-
-  // ---- Step 3: Post-process the merged PPTX (validation only, no COM rendering) ----
-  const combinedSourcePath = path.join(workDir, 'generated-source.py')
-  const postArgs = [runnerScriptPath, combinedSourcePath, outputPath, '--post-process-only', '--workspace-dir', workspaceDir]
-
-  const { stdout: postStdout } = await execFileAsync(python, postArgs, {
-    windowsHide: true,
-    timeout: 180_000,
-    maxBuffer: 8 * 1024 * 1024,
-    env: {
-      ...process.env,
-      PYTHONIOENCODING: 'utf-8',
-      PPTX_SKIP_TEXT_OVERFLOW_FIX: '1',
-      ...(opts.slideAssetsJson?.trim() ? { PPTX_SLIDE_ASSETS_JSON: opts.slideAssetsJson } : {}),
-      ...(notebookLMInfographicsJson ? { PPTX_NOTEBOOKLM_INFOGRAPHICS: notebookLMInfographicsJson } : {}),
-      WORKSPACE_DIR: workspaceDir,
-    },
-  })
-
-  // Verify final output after post-processing
-  const finalReport = parsePptxCompletionReport(postStdout)
-  assertCompletionSuccess(finalReport, 'PPTX post-processing')
-
-  // ---- Step 4: Render preview images from the merged PPTX ----
-  try {
-    await queuePowerPointAutomation(() => renderPngFromPptx(outputPath, workDir))
-  } catch (err) {
-    console.log('[chunked-pptx] Preview rendering failed (PPTX was generated):', err)
-    if (finalReport) {
-      finalReport.warnings.push('Preview images could not be rendered. PowerPoint desktop may be required.')
-    }
-  }
-
-  // ---- Step 5: Clean up partials directory ----
-  await removeDirectoryQuietly(partialsDir)
-  opts.onProgress?.({ chunkIndex: -1, totalChunks, status: 'done', slideRange: 'all' })
-
-  return finalReport!
 }
 
 function naturalSortPaths(paths: string[]): string[] {
@@ -1124,7 +724,7 @@ export function registerPptxHandlers(): void {
     ipcMain.removeHandler(channel)
   }
 
-  ipcMain.handle('pptx:generate', async (_event, code: string, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], templateMeta?: TemplateMeta | null) => {
+  ipcMain.handle('pptx:generate', async (_event, _code: string, _themeTokens: ThemeTokens | null, title: string) => {
     try {
       const win = BrowserWindow.fromWebContents(_event.sender)
       const workspaceDir = await readWorkspaceDir()

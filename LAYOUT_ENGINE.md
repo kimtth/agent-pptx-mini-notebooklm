@@ -512,7 +512,7 @@ Generated python-pptx code
       └── > 2 blocking issues → Raise runtime error
 ```
 
-The `PPTX_SKIP_TEXT_OVERFLOW_FIX=1` environment variable can be set to skip the overflow-repair phase, keeping only contrast repair + validation. This is used by the chunked pipeline's post-process-only mode.
+The `PPTX_SKIP_TEXT_OVERFLOW_FIX=1` environment variable can be set to skip the overflow-repair phase, keeping only contrast repair + validation. This is used during preview rendering to speed up the feedback loop.
 
 If validation still finds blocking issues that exceed tolerance, or any blocking text-overflow issue, the runner raises a `RuntimeError`.
 

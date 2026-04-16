@@ -118,13 +118,6 @@ const FIELDS: SettingsField[] = [
     ],
     optional: true,
   },
-  {
-    key: 'PPTX_CHUNK_SIZE',
-    label: 'Slides per Chunk (Experimental)',
-    placeholder: '0',
-    hint: 'Number of slides per parallel generation chunk. Set to 0 to disable chunking. Default: 0 (disabled).',
-    optional: true,
-  },
 ]
 
 export function SettingsModal({ onClose }: Props) {

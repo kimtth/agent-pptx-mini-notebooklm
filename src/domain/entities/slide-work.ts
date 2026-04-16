@@ -93,6 +93,7 @@ export interface TemplateMeta {
     hlink: string; folHlink: string;
   };
   backgroundImages: string[];
+  backgroundSurfaceHex?: string | null;
   blankLayoutIndex: number;
   fonts: { major: string; minor: string };
   originalDimensions: { widthIn: number; heightIn: number };
@@ -111,8 +112,6 @@ export interface SlideWork {
   templatePath: string | null;
   templateMeta: TemplateMeta | null;
   slides: SlideItem[];
-  pptxCode: string | null;
-  pptxBuildError: string | null;
   thinking: string | null;
   isStreaming: boolean;
   isPptxBusy: boolean;

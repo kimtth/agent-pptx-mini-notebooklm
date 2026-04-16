@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import argparse
 import json
 import os
@@ -9,8 +8,6 @@ import sys
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt  # noqa: E402
-import seaborn as sns  # noqa: E402
-import numpy as np  # noqa: E402
 
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -20,8 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / 'layout'))
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
-from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
+from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.util import Inches, Pt
 
 if TYPE_CHECKING:
@@ -30,14 +26,7 @@ else:
     PresentationType = object  # noqa: N816
 
 from layout_specs import (  # type: ignore
-    estimate_text_height_in,
-    flow_layout_spec,
     LayoutSpec,
-    RectSpec,
-    CardsSpec,
-    StatsSpec,
-    TimelineSpec,
-    ComparisonSpec,
 )
 from layout_validator import (  # type: ignore
     validate_presentation,
@@ -235,6 +224,7 @@ def _recolor_png(png_path: str, color_hex: str) -> str:
 # Icon fetch — downloads from Iconify public API with host redundancy
 # ---------------------------------------------------------------------------
 _MISSING_ICONS: list[dict[str, str]] = []
+_ICON_FETCH_ATTEMPTS = 0
 
 ICONIFY_API_HOSTS = [
     'https://api.iconify.design',
@@ -325,6 +315,9 @@ def _svg_to_png(svg_data: bytes, size: int = 256) -> bytes | None:
 
 def fetch_icon(name: str, color_hex: str = '000000', size: int = 256) -> str | None:
     """Fetch an icon from the Iconify public API, convert to PNG, recolor."""
+    global _ICON_FETCH_ATTEMPTS
+    _ICON_FETCH_ATTEMPTS += 1
+
     if ':' not in name:
         default_prefix = PPTX_ICON_COLLECTION if PPTX_ICON_COLLECTION and PPTX_ICON_COLLECTION != 'all' else 'mdi'
         name = f'{default_prefix}:{name}'
@@ -363,29 +356,15 @@ def get_missing_icons() -> list[dict[str, str]]:
     return list(_MISSING_ICONS)
 
 
-def _derive_theme_slots(theme: dict[str, object], colors: dict[str, str]) -> dict[str, str]:
-    raw_slots = theme.get('slots')
-    if isinstance(raw_slots, dict):
-        slots = {
-            str(k): str(v).strip().lstrip('#').upper()
-            for k, v in raw_slots.items()
-            if isinstance(v, str) and v.strip()
-        }
-        if slots:
-            return slots
+def get_icon_audit_stats() -> dict[str, float | int]:
+    """Return aggregate icon audit stats for post-staging QA classification."""
+    missing = len(_MISSING_ICONS)
+    requested = _ICON_FETCH_ATTEMPTS
+    missing_ratio = (missing / requested) if requested > 0 else 0.0
     return {
-        'dk1': colors.get('DARK') or '',
-        'lt1': colors.get('LIGHT') or colors.get('WHITE') or '',
-        'dk2': colors.get('DARK2') or colors.get('DARK') or '',
-        'lt2': colors.get('LIGHT2') or colors.get('BORDER') or '',
-        'accent1': colors.get('ACCENT1') or colors.get('PRIMARY') or '',
-        'accent2': colors.get('ACCENT2') or colors.get('SECONDARY') or '',
-        'accent3': colors.get('ACCENT3') or colors.get('ACCENT1') or '',
-        'accent4': colors.get('ACCENT4') or colors.get('ACCENT2') or '',
-        'accent5': colors.get('ACCENT5') or colors.get('ACCENT3') or '',
-        'accent6': colors.get('ACCENT6') or colors.get('ACCENT4') or '',
-        'hlink': colors.get('LINK') or colors.get('ACCENT1') or '',
-        'folHlink': colors.get('USED_LINK') or colors.get('ACCENT4') or '',
+        'requested': requested,
+        'missing': missing,
+        'missingRatio': missing_ratio,
     }
 
 
@@ -670,15 +649,11 @@ def add_managed_shape(shapes, auto_shape_type, left, top, width, height, name: s
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument('generated_code', nargs='?', default=None,
-                        help='Path to generated Python source (unused in renderer mode)')
     parser.add_argument('output_path')
     parser.add_argument('--render-dir', default=None,
                         help='Preview render directory (accepted for compatibility; managed by the caller)')
     parser.add_argument('--workspace-dir', default=None,
                         help='Absolute path to the user workspace directory')
-    parser.add_argument('--chunk-mode', action='store_true',
-                        help='Run in chunk mode: skip post-processing (validation, preview, notebooklm)')
     parser.add_argument('--post-process-only', action='store_true',
                         help='Run only post-processing on an existing PPTX (validation, preview, notebooklm)')
     parser.add_argument('--renderer-mode', action='store_true',
@@ -761,17 +736,6 @@ def ensure_contrast(fg_hex: str, bg_hex: str, *, min_ratio: float = 4.5) -> str:
 # ---------------------------------------------------------------------------
 
 # Use Agg backend for headless rendering (no GUI dependency)
-from pptx.chart.data import CategoryChartData, XyChartData, ChartData  # noqa: E402
-from pptx.enum.chart import XL_CHART_TYPE  # noqa: E402
-
-
-def _theme_color_cycle(theme: dict[str, str]) -> list[str]:
-    """Build a matplotlib-compatible colour list from the PPTX theme dict."""
-    keys = ['accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6']
-    colors = [f'#{theme[k].lstrip("#")}' for k in keys if k in theme and theme[k]]
-    return colors or ['#6366F1', '#06B6D4', '#F59E0B', '#EF4444', '#10B981', '#8B5CF6']
-
-
 def render_chart_to_image(
     fig: matplotlib.figure.Figure,
     workspace_dir: str = '',
@@ -827,14 +791,17 @@ def add_native_chart(
 ):
     """Add an editable python-pptx chart to a slide and apply theme colours.
 
-    ``chart_type`` should be an ``XL_CHART_TYPE`` enum member.
-    ``chart_data`` should be a ``CategoryChartData``, ``XyChartData``, etc.
+    ``chart_type`` should be a python-pptx chart enum member.
+    ``chart_data`` should be a python-pptx chart data object.
     Returns the chart shape.
     """
     graphic_frame = slide.shapes.add_chart(chart_type, left, top, width, height, chart_data)
     chart = graphic_frame.chart
     if theme:
-        colors = _theme_color_cycle(theme)
+        keys = ['accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6']
+        colors = [f'#{theme[k].lstrip("#")}' for k in keys if k in theme and theme[k]]
+        if not colors:
+            colors = ['#6366F1', '#06B6D4', '#F59E0B', '#EF4444', '#10B981', '#8B5CF6']
         for idx, series in enumerate(chart.series):
             hex_val = colors[idx % len(colors)].lstrip('#')
             series.format.fill.solid()
@@ -850,198 +817,13 @@ def _cleanup_rogue_pptx(directory: Path, canonical_name: str) -> None:
             entry.unlink(missing_ok=True)
 
 
-def build_namespace(generated_path: Path, output_path: Path, *, workspace_dir: str = '') -> dict[str, object]:
-    theme_payload = _load_theme_payload()
-    theme = _load_theme()
-    theme_slots = _derive_theme_slots(theme_payload, theme)
-    title = os.environ.get('PPTX_TITLE', 'Presentation')
-    base_font_family = os.environ.get('PPTX_FONT_FAMILY', 'Calibri')
-    color_treatment = (os.environ.get('PPTX_COLOR_TREATMENT', 'solid') or 'solid').strip().lower()
-    text_box_style = (os.environ.get('PPTX_TEXT_BOX_STYLE', 'plain') or 'plain').strip().lower()
-    design_style = os.environ.get('PPTX_DESIGN_STYLE', 'Blank White')
-    from style_config import resolve_style_config  # type: ignore
-    style_config = resolve_style_config(design_style, color_treatment, text_box_style)
-    if not workspace_dir:
-        workspace_dir = os.environ.get('WORKSPACE_DIR', '')
-    images_dir = os.path.join(workspace_dir, 'images') if workspace_dir else ''
-
-    # Pre-computed layout specs from hybrid layout engine (constraint solver)
-    precomputed_specs: list[LayoutSpec] | None = None
-    specs_json = os.environ.get('PPTX_LAYOUT_SPECS_JSON', '')
-    if specs_json.strip():
-        try:
-            from hybrid_layout import deserialize_specs # type: ignore
-            precomputed_specs = deserialize_specs(specs_json)
-            print(f'[layout] Loaded {len(precomputed_specs)} pre-computed layout spec(s).', file=sys.stderr)
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                f'Hybrid layout specs could not be loaded: {exc}'
-            ) from exc
-    else:
-        raise RuntimeError(
-            'PPTX_LAYOUT_SPECS_JSON is required. '
-            'Hybrid layout specs must be pre-computed before PPTX generation.'
-        )
-
-    # Store for validator access and reset the shape registry for this run.
-    global _LOADED_LAYOUT_SPECS  # noqa: PLW0603
-    _LOADED_LAYOUT_SPECS = precomputed_specs
-    clear_shape_role_registry()
-
-    return {
-        '__name__': '__main__',
-        '__file__': str(generated_path),
-        'OUTPUT_PATH': str(output_path),
-        'PPTX_TITLE': title,
-        'PPTX_THEME': theme,
-        'PPTX_THEME_SLOTS': theme_slots,
-        'PPTX_THEME_FULL': theme_payload,
-        'PPTX_DESIGN_STYLE': design_style,
-        'PPTX_STYLE_CONFIG': style_config,
-        'WORKSPACE_DIR': workspace_dir,
-        'IMAGES_DIR': images_dir,
-        'SLIDE_WIDTH_IN': SLIDE_WIDTH_IN,
-        'SLIDE_HEIGHT_IN': SLIDE_HEIGHT_IN,
-        'TEMPLATE_PATH': TEMPLATE_PATH if TEMPLATE_PATH else None,
-        'TEMPLATE_META': TEMPLATE_META,
-        'TEMPLATE_BACKGROUND_IMAGES': TEMPLATE_BACKGROUND_IMAGES,
-        'TEMPLATE_BLANK_LAYOUT_INDEX': TEMPLATE_BLANK_LAYOUT_INDEX,
-        'os': os,
-        'Presentation': Presentation,
-        'Inches': Inches,
-        'Pt': Pt,
-        'RGBColor': RGBColor,
-        'PP_ALIGN': PP_ALIGN,
-        'MSO_ANCHOR': MSO_ANCHOR,
-        'MSO_AUTO_SIZE': MSO_AUTO_SIZE,
-        'MSO_AUTO_SHAPE_TYPE': MSO_AUTO_SHAPE_TYPE,
-        'rgb_color': rgb_color,
-        'ensure_parent_dir': ensure_parent_dir,
-        'apply_widescreen': apply_widescreen,
-        'get_blank_layout': get_blank_layout,
-        'safe_image_path': safe_image_path,
-        'safe_add_picture': safe_add_picture,
-        'tag_as_design': tag_as_design,
-        'safe_add_design_picture': safe_add_design_picture,
-        'add_design_shape': add_design_shape,
-        'add_managed_textbox': add_managed_textbox,
-        'add_managed_shape': add_managed_shape,
-        'estimate_text_height_in': estimate_text_height_in,
-        'flow_layout_spec': flow_layout_spec,
-        'LayoutSpec': LayoutSpec,
-        'RectSpec': RectSpec,
-        'CardsSpec': CardsSpec,
-        'StatsSpec': StatsSpec,
-        'TimelineSpec': TimelineSpec,
-        'ComparisonSpec': ComparisonSpec,
-        'PRECOMPUTED_LAYOUT_SPECS': precomputed_specs,
-        '_pptx_theme': theme,
-        '_pptx_title': title,
-        'fetch_icon': fetch_icon,
-        'PPTX_ICON_COLLECTION': PPTX_ICON_COLLECTION,
-        'SLIDE_ASSETS': SLIDE_ASSETS,
-        'slide_assets': slide_assets,
-        'slide_image_paths': slide_image_paths,
-        'slide_icon_name': slide_icon_name,
-        'slide_icon_collection': slide_icon_collection,
-        'resolve_font': lambda text, base_font=base_font_family: resolve_font(text, base_font),
-        'PPTX_FONT_FAMILY': base_font_family,
-        'PPTX_COLOR_TREATMENT': color_treatment if color_treatment in ('solid', 'gradient', 'mixed') else 'mixed',
-        'PPTX_TEXT_BOX_STYLE': text_box_style if text_box_style in ('plain', 'with-icons', 'mixed') else 'mixed',
-        'resolve_style_config': resolve_style_config,
-        'contrast_ratio': contrast_ratio,
-        'ensure_contrast': ensure_contrast,
-        'set_fill_transparency': set_fill_transparency,
-        'apply_gradient_fill': apply_gradient_fill,
-        # Chart / data-visualisation
-        'matplotlib': matplotlib,
-        'plt': plt,
-        'sns': sns,
-        'np': np,
-        'CategoryChartData': CategoryChartData,
-        'XyChartData': XyChartData,
-        'ChartData': ChartData,
-        'XL_CHART_TYPE': XL_CHART_TYPE,
-        'render_chart_to_image': render_chart_to_image,
-        'add_chart_picture': add_chart_picture,
-        'add_native_chart': add_native_chart,
-    }
-
-
-def validate_generated_code_syntax(code: str, generated_path: Path) -> None:
-    if '```' in code:
-        raise RuntimeError(
-            'Generated Python code still contains Markdown code fences. '
-            'Return raw Python only inside a single fenced block, and do not nest or duplicate code fences.'
-        )
-
-    if 'from future import annotations' in code and 'from __future__ import annotations' not in code:
-        raise RuntimeError(
-            'Generated Python code uses an invalid future import. '
-            'Use "from __future__ import annotations".'
-        )
-
-    if re.search(r'^\s*import\s+annotations\b', code, re.MULTILINE):
-        raise RuntimeError(
-            'Generated Python code uses "import annotations" which is not a valid module. '
-            'Use "from __future__ import annotations" or remove the import entirely.'
-        )
-
-    if re.search(r'\bif\s+name\s*==', code) and 'if __name__' not in code:
-        raise RuntimeError(
-            'Generated Python code uses "if name ==" instead of "if __name__ == \'__main__\':". '
-            'The variable must be __name__ (with double underscores).'
-        )
-
-    try:
-        ast.parse(code, filename=str(generated_path))
-    except SyntaxError as exc:
-        location = f'line {exc.lineno}' if exc.lineno else 'unknown line'
-        if exc.offset:
-            location = f'{location}, column {exc.offset}'
-        source_line = (exc.text or '').rstrip()
-        details = [f'Generated Python code has invalid syntax at {location}: {exc.msg}']
-        if source_line:
-            details.append(source_line)
-        raise RuntimeError('\n'.join(details)) from exc
-
-    try:
-        compile(code, str(generated_path), 'exec')
-    except SyntaxError as exc:
-        location = f'line {exc.lineno}' if exc.lineno else 'unknown line'
-        if exc.offset:
-            location = f'{location}, column {exc.offset}'
-        source_line = (exc.text or '').rstrip()
-        details = [f'Generated Python code has a semantic error at {location}: {exc.msg}']
-        if source_line:
-            details.append(source_line)
-        raise RuntimeError('\n'.join(details)) from exc
-
-
-def run_generated_code(generated_path: Path, namespace: dict[str, object]) -> None:
-    code = generated_path.read_text(encoding='utf-8')
-    validate_generated_code_syntax(code, generated_path)
-    exec(compile(code, str(generated_path), 'exec'), namespace)
-
-
-def finalize_output(output_path: Path, namespace: dict[str, object]) -> None:
-    if output_path.exists():
-        return
-
-    builder = namespace.get('build_presentation')
-    if callable(builder):
-        builder(str(output_path), namespace.get('_pptx_theme'), namespace.get('_pptx_title'))
-
-    if not output_path.exists():
-        raise RuntimeError('Generated python-pptx code completed without creating the PPTX output file.')
-
-
 def _build_completion_report(
     output_path: Path,
     *,
     warnings: list[str] | None = None,
     contrast_fixes: int = 0,
     missing_icons: list[dict[str, str]] | None = None,
+    icon_stats: dict[str, float | int] | None = None,
     missing_images: list[str] | None = None,
     layout_issues: list[dict[str, str]] | None = None,
 ) -> dict:
@@ -1060,6 +842,7 @@ def _build_completion_report(
         'qa': {
             'contrastFixes': contrast_fixes,
             'missingIcons': missing_icons or [],
+            'iconStats': icon_stats or {'requested': 0, 'missing': 0, 'missingRatio': 0.0},
             'missingImages': missing_images or [],
             'layoutIssues': layout_issues or [],
         },
@@ -1296,13 +1079,17 @@ def _fix_text_overflow(output_path: Path) -> int:
 
 
 def _get_slide_bg_hex(slide) -> str | None:
-    """Return the solid background colour hex (no '#') of a slide, or None."""
+    """Return the best-known slide background colour hex (no '#'), or None."""
     try:
         bg_fill = slide.background.fill
         if bg_fill.type is not None and int(bg_fill.type) == 1:  # MSO_FILL.SOLID
             return str(bg_fill.fore_color.rgb)
     except Exception:
         pass
+    if isinstance(TEMPLATE_META, dict):
+        surface_hex = TEMPLATE_META.get('backgroundSurfaceHex')
+        if isinstance(surface_hex, str) and re.fullmatch(r'[0-9A-Fa-f]{6}', surface_hex.strip()):
+            return surface_hex.strip().upper()
     return None
 
 
@@ -1315,6 +1102,74 @@ def _get_solid_fill_hex(shape) -> str | None:
     except Exception:
         pass
     return None
+
+
+def _get_shape_bounds(shape) -> tuple[int, int, int, int] | None:
+    try:
+        left = int(shape.left)
+        top = int(shape.top)
+        width = int(shape.width)
+        height = int(shape.height)
+    except Exception:
+        return None
+
+    if width <= 0 or height <= 0:
+        return None
+
+    return left, top, left + width, top + height
+
+
+def _intersection_area(bounds_a: tuple[int, int, int, int], bounds_b: tuple[int, int, int, int]) -> int:
+    left = max(bounds_a[0], bounds_b[0])
+    top = max(bounds_a[1], bounds_b[1])
+    right = min(bounds_a[2], bounds_b[2])
+    bottom = min(bounds_a[3], bounds_b[3])
+    if right <= left or bottom <= top:
+        return 0
+    return (right - left) * (bottom - top)
+
+
+def _shape_role(shape) -> str | None:
+    shape_id = getattr(shape, 'shape_id', None)
+    if shape_id is None:
+        return None
+    return _SHAPE_ROLE_REGISTRY.get(int(shape_id))
+
+
+def _infer_background_from_shapes(slide_shapes: list[object], text_shape_index: int, text_shape, slide_bg_hex: str | None) -> str | None:
+    text_bounds = _get_shape_bounds(text_shape)
+    if text_bounds is None:
+        return slide_bg_hex
+
+    text_area = max(1, (text_bounds[2] - text_bounds[0]) * (text_bounds[3] - text_bounds[1]))
+    best_hex: str | None = None
+    best_score = -1.0
+
+    for candidate in slide_shapes[:text_shape_index]:
+        candidate_fill = _get_solid_fill_hex(candidate)
+        if candidate_fill is None:
+            continue
+
+        candidate_bounds = _get_shape_bounds(candidate)
+        if candidate_bounds is None:
+            continue
+
+        overlap = _intersection_area(text_bounds, candidate_bounds)
+        if overlap <= 0:
+            continue
+
+        coverage = overlap / text_area
+        candidate_area = (candidate_bounds[2] - candidate_bounds[0]) * (candidate_bounds[3] - candidate_bounds[1])
+        role_bonus = 0.2 if _shape_role(candidate) == 'template_design' else 0.0
+        non_text_bonus = 0.1 if not getattr(candidate, 'has_text_frame', False) else 0.0
+        area_bonus = min(candidate_area / text_area, 8.0) * 0.02
+        score = coverage + role_bonus + non_text_bonus + area_bonus
+
+        if score > best_score and coverage >= 0.35:
+            best_score = score
+            best_hex = candidate_fill
+
+    return best_hex or slide_bg_hex
 
 
 def _get_fill_transparency(shape) -> float:
@@ -1430,13 +1285,15 @@ def _fix_low_contrast_text(output_path: Path) -> int:
 
     for slide in prs.slides:
         slide_bg_hex = _get_slide_bg_hex(slide)
+        slide_shapes = list(slide.shapes)
 
-        for shape in slide.shapes:
+        for shape_index, shape in enumerate(slide_shapes):
             if not shape.has_text_frame:
                 continue
 
             shape_fill_hex = _get_solid_fill_hex(shape)
-            effective_bg = shape_fill_hex or slide_bg_hex
+            inferred_bg_hex = _infer_background_from_shapes(slide_shapes, shape_index, shape, slide_bg_hex)
+            effective_bg = shape_fill_hex or inferred_bg_hex
             if effective_bg is None:
                 continue
 
@@ -1815,12 +1672,6 @@ def main() -> int:
 
         _cleanup_rogue_pptx(output_path.parent, output_path.name)
 
-        if args.chunk_mode:
-            print('[chunk-mode] Partial PPTX created — skipping post-processing.', file=sys.stderr)
-            report = _build_completion_report(output_path)
-            print(json.dumps(report))
-            return 0 if report['status'] in ('success', 'warning') else 1
-
     # Append NotebookLM infographic slides if the option is activated
     post_warnings: list[str] = []
     try:
@@ -1854,12 +1705,14 @@ def main() -> int:
 
     # Collect missing icons accumulated during code execution
     missing_icons = get_missing_icons()
+    icon_stats = get_icon_audit_stats()
 
     report = _build_completion_report(
         output_path,
         warnings=post_warnings,
         contrast_fixes=qa_findings.get('contrast_fixes', 0),
         missing_icons=missing_icons,
+        icon_stats=icon_stats,
         missing_images=qa_findings.get('missing_images', []),
         layout_issues=qa_findings.get('layout_issues', []),
     )

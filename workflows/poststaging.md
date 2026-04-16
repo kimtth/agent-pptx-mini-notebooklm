@@ -20,6 +20,7 @@ After the create-pptx workflow produces a deck, inspect the structured QA report
 - **QA Report** — structured findings from the PPTX pipeline covering:
   - `contrastFixes` — number of low-contrast text/fill pairs auto-corrected during generation.
   - `missingIcons` — list of icon IDs that `fetch_icon()` could not resolve, with slide context.
+  - `iconStats` — aggregate icon fetch counts with `requested`, `missing`, and `missingRatio` so QA can distinguish isolated misses from systemic icon failures.
   - `missingImages` — list of approved images omitted from the generated slides.
   - `layoutIssues` — overlap, out-of-bounds, cramped spacing, and text overflow findings from the layout validator, each with severity (`error` | `warning` | `info`).
 - Approved slide panel content (same source of truth used by create-pptx).
@@ -29,8 +30,8 @@ After the create-pptx workflow produces a deck, inspect the structured QA report
 
 1. **Receive QA Report** — the app injects the structured QA findings into the chat context automatically after deck generation succeeds.
 2. **Classify Findings** — sort each finding into one of the four categories and assign a severity:
-   - **Blocking** — any missing approved image, any missing icon, any ERROR-level overlap or text overflow.
-   - **Actionable** — WARNING-level overlap or cramped spacing, unresolved contrast issues that survived the automatic Python fix.
+  - **Blocking** — any missing approved image, missing icons only when `iconStats.missingRatio >= 0.70`, any ERROR-level overlap or text overflow.
+  - **Actionable** — missing icons when `iconStats.missingRatio < 0.70`, WARNING-level overlap or cramped spacing, unresolved contrast issues that survived the automatic Python fix.
    - **Informational** — INFO-level spacing notices, successfully applied contrast fixes.
 3. **Report Summary** — present a concise per-slide summary to the user:
    - ✅ slides that passed with zero or only informational findings.
@@ -38,15 +39,16 @@ After the create-pptx workflow produces a deck, inspect the structured QA report
    - ❌ slides with blocking issues.
 4. **Decide Corrective Action** — based on the category of the worst finding:
    - **No blocking or actionable issues** → Confirm the deck is ready. Stop.
-   - **Missing images or icons (blocking)** → Regenerate the affected slide code, ensuring ALL approved images are placed via `slide_image_paths()` / `safe_add_picture()` and ALL icons are fetched via `fetch_icon()`. Output the corrected python-pptx code block.
+  - **Missing images or blocking-rate icon failures** → Regenerate the affected slide code, ensuring ALL approved images are placed via `slide_image_paths()` / `safe_add_picture()` and ALL icons are fetched via `fetch_icon()`. Output the corrected python-pptx code block.
    - **Layout overlap or text overflow (blocking)** → Inspect the current layout specs or validator thresholds, patch them as needed with the available repair tooling, then rerun the render.
-   - **Unresolved contrast (actionable)** → Regenerate the affected slide code with explicit `ensure_contrast()` calls for the flagged text/background pairs. Output the corrected python-pptx code block.
+  - **Actionable warnings, including sub-threshold icon misses** → Summarize the impact per affected slide and either confirm the deck is acceptable as-is or output the minimal corrective code if the issue materially hurts comprehension.
 5. **Verify Fix** — after corrective action, the pipeline automatically re-runs post-staging. If the new QA report still contains blocking or actionable issues, repeat from step 2 (up to the app's auto-retry limit).
 
 ## Rules
 
 - Do NOT re-generate the entire deck when only specific slides have issues. Target the minimal fix.
-- Do NOT dismiss missing icons or images as cosmetic — they are blocking defects because the user explicitly approved those assets.
+- Do NOT dismiss missing approved images as cosmetic — they remain blocking defects.
+- Missing icons stay blocking only when the aggregate missing ratio is 40% or higher; below that threshold, treat them as actionable warnings and continue the QA pass.
 - Contrast fixes applied automatically by the Python pipeline are informational only. Only escalate contrast findings that survived the automatic fix.
 - Preserve the existing theme, palette, and design style during any corrective regeneration.
 - Do NOT output slide listings, narrative brainstorming, or status updates. Output only the corrective action (code block or tool call) or the final acceptance confirmation.

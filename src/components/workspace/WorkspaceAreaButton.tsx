@@ -152,6 +152,15 @@ export function WorkspaceAreaButton() {
         <FolderInput size={14} />
       </button>
 
+      <button
+        onClick={() => { void handleNew() }}
+        className="flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-[var(--surface-hover)]"
+        style={{ color: 'var(--text-muted)' }}
+        title="New project"
+      >
+        <FilePlus2 size={14} />
+      </button>
+
       {/* Dropdown menu */}
       {menuOpen && (
         <>

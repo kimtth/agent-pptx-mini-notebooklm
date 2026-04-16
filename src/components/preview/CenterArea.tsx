@@ -10,7 +10,6 @@ import { useChatStore } from '../../stores/chat-store'
 import { useProjectStore } from '../../stores/project-store'
 import { PptxPreviewCard } from './PptxPreviewCard.tsx'
 import { createAssistantMessage } from '../../application/chat-use-case'
-import { applyThemeColorTreatment, applyThemeFontFamily, applyThemeTextBoxStyle } from '../../application/palette-use-case'
 
 const DEFAULT_PREVIEW_SCALE = 0.55
 const MIN_PREVIEW_SCALE = 0.35
@@ -19,7 +18,7 @@ const PREVIEW_SCALE_STEP = 0.05
 
 export function CenterArea() {
   const { work } = useSlidesStore()
-  const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle } = usePaletteStore()
+  const { tokens } = usePaletteStore()
   const { addMessage } = useChatStore()
   const { workspaceDir } = useProjectStore()
   const [selected, setSelected] = useState(0)
@@ -128,20 +127,8 @@ export function CenterArea() {
     setExporting(true)
     setExportError(null)
     try {
-      const effectiveTheme = applyThemeTextBoxStyle(
-        applyThemeColorTreatment(
-          applyThemeFontFamily(tokens, selectedFont),
-          selectedColorTreatment,
-        ),
-        selectedTextBoxStyle,
-      )
       const result = await window.electronAPI.pptx.generate(
-        work.pptxCode ?? '',
-        effectiveTheme,
         work.title || 'presentation',
-        undefined,
-        undefined,
-        undefined,
       )
 
       if (result.success) {
@@ -227,7 +214,7 @@ export function CenterArea() {
               </button>
             </div>
           )}
-          {(work.pptxCode || previewImages.length > 0) && (
+          {previewImages.length > 0 && (
             <>
               <button
                 onClick={() => void loadPreview()}
@@ -271,7 +258,7 @@ export function CenterArea() {
               .thmx
             </button>
           )}
-          {(work.pptxCode || previewImages.length > 0) && (
+          {previewImages.length > 0 && (
             <button
               onClick={exportPptx}
               disabled={exporting}
@@ -316,19 +303,9 @@ export function CenterArea() {
         ) : previewImages.length === 0 ? (
           <div className="text-center" style={{ color: 'var(--text-muted)' }}>
             <div className="text-5xl mb-4 opacity-30">🖥️</div>
-            {work.pptxCode ? (
-              <>
-                <p className="text-sm">PPTX is ready.</p>
-                <p className="text-xs mt-1">Preview images load automatically after generation.</p>
-                <p className="text-xs mt-1">Use <strong>Load Preview</strong> to read cached images, or <strong>Rerender</strong> to create fresh images via PowerPoint.</p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm">Rendered slide previews will appear here.</p>
-                <p className="text-xs mt-1">Create PPTX code first.</p>
-                <p className="text-xs mt-1">Use <strong>Load Preview</strong> to read cached images, or <strong>Rerender</strong> to create fresh images via PowerPoint.</p>
-              </>
-            )}
+            <p className="text-sm">Rendered slide previews will appear here.</p>
+            <p className="text-xs mt-1">Preview images load automatically after generation.</p>
+            <p className="text-xs mt-1">Use <strong>Load Preview</strong> to read cached images, or <strong>Rerender</strong> to create fresh images via PowerPoint.</p>
           </div>
         ) : (
           <>
