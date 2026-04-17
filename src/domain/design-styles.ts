@@ -43,7 +43,6 @@ export const DESIGN_STYLE_OPTIONS = [
   { value: 'Organic Editorial Canvas', label: 'Organic Editorial Canvas', mood: 'Soft · Story', bestFor: 'Creative briefs, lifestyle', tone: 'light', category: 'Template Motif' },
   // ── Custom ──
   { value: 'Blank Custom Color', label: 'Blank (Custom color)', mood: 'Clean · Minimal', bestFor: 'Branded blank canvas', tone: null, category: 'Custom' },
-  { value: 'Custom Template', label: 'Custom Template', mood: 'Your Brand', bestFor: 'Corporate templates', tone: null, category: 'Custom' },
 ] as const
 
 export type DesignStyle = (typeof DESIGN_STYLE_OPTIONS)[number]['value']

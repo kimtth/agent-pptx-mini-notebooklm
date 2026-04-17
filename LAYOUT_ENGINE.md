@@ -359,7 +359,6 @@ The final Python rendering stage does not talk to the layout engine directly. In
 | `PPTX_TEXT_BOX_STYLE` | Panel behavior: `plain`, `with-icons`, or `mixed` |
 | `WORKSPACE_DIR` | Absolute path to the active workspace directory |
 | `IMAGES_DIR` | Absolute path to `<workspace>/images/` |
-| `TEMPLATE_PATH` | Path to the user-supplied custom PPTX template, or `None` when no template is active |
 
 ### Content / Asset Helpers Injected at Runtime
 
@@ -371,9 +370,8 @@ The final Python rendering stage does not talk to the layout engine directly. In
 | `resolve_font()` | `(text, fallback_name) → font_name_str` | Returns the selected base font unchanged. PowerPoint handles glyph substitution for missing characters at render time. |
 | `estimate_text_height_in()` | `(text, width_in, font_size_pt) → float` | Shared text height heuristic (CJK-aware) used by the renderer and validator |
 | `contrast_ratio()` / `ensure_contrast()` | `ensure_contrast(fg_hex, bg_hex) → hex_str` | Contrast helpers for choosing readable text colors on filled panels |
-| `apply_widescreen()` | `(prs) → prs` | Forces 16:9 slide dimensions on the presentation object. Used both for blank decks (`apply_widescreen(Presentation())`) and custom templates (`apply_widescreen(Presentation(TEMPLATE_PATH))`). |
+| `apply_widescreen()` | `(prs) → prs` | Forces 16:9 slide dimensions on the presentation object. Used for blank decks (`apply_widescreen(Presentation())`). |
 | `set_fill_transparency()` | `(shape, value_0_to_1) → None` | Sets fill transparency without touching internal XML proxies directly |
-| `get_blank_layout()` | `(prs) → SlideLayout` | Finds the correct blank layout in a custom template; use instead of `prs.slide_layouts[6]` when `TEMPLATE_PATH` is set |
 
 ### Chart Namespace Injected at Runtime
 

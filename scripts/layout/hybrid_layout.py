@@ -41,9 +41,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if __package__ in {None, ''}:
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-    from scripts.layout.layout_blueprint import LayoutBlueprint, ZoneRole, get_blueprint
-    from scripts.layout.layout_specs import (
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from layout_blueprint import LayoutBlueprint, ZoneRole, get_blueprint
+    from layout_specs import (
         CardsSpec,
         ComparisonSpec,
         LayoutSpec,
@@ -70,7 +70,7 @@ else:
 
 if TYPE_CHECKING:
     if __package__ in {None, ''}:
-        from scripts.layout.font_text_measure import TextMeasureRequest
+        from font_text_measure import TextMeasureRequest
     else:
         from .font_text_measure import TextMeasureRequest
 
@@ -250,7 +250,7 @@ def _get_measure_backend() -> tuple[type, callable]:
     """
     try:
         if __package__ in {None, ''}:
-            from scripts.layout.font_text_measure import TextMeasureRequest, measure_text_heights
+            from font_text_measure import TextMeasureRequest, measure_text_heights
         else:
             from .font_text_measure import TextMeasureRequest, measure_text_heights
         return TextMeasureRequest, measure_text_heights
@@ -259,7 +259,7 @@ def _get_measure_backend() -> tuple[type, callable]:
 
     # Heuristic fallback — synthesise a compatible measure function
     if __package__ in {None, ''}:
-        from scripts.layout.font_text_measure import TextMeasureRequest
+        from font_text_measure import TextMeasureRequest
     else:
         from .font_text_measure import TextMeasureRequest
 

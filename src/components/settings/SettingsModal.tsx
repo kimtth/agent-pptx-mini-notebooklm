@@ -118,6 +118,16 @@ const FIELDS: SettingsField[] = [
     ],
     optional: true,
   },
+  {
+    key: 'SHOW_TOOL_CALLING_MESSAGES',
+    label: 'Show Tool Calling Messages',
+    hint: 'When turned on, the chat transcript shows tool execution entries such as tweak_slide and rerun_pptx with status and results.',
+    options: [
+      { value: '0', label: 'Off' },
+      { value: '1', label: 'On' },
+    ],
+    optional: true,
+  },
 ]
 
 export function SettingsModal({ onClose }: Props) {
@@ -147,6 +157,7 @@ export function SettingsModal({ onClose }: Props) {
     if (values[key] != null) return values[key]
     if (key === 'LLM_PROVIDER') return 'copilot'
     if (key === 'COPILOT_MODEL_SOURCE') return 'github-hosted'
+    if (key === 'SHOW_TOOL_CALLING_MESSAGES') return '0'
     return ''
   }
 
@@ -192,6 +203,7 @@ export function SettingsModal({ onClose }: Props) {
         setValues({
           LLM_PROVIDER: 'copilot',
           COPILOT_MODEL_SOURCE: 'github-hosted',
+          SHOW_TOOL_CALLING_MESSAGES: '0',
           ...v,
         })
         setLoading(false)

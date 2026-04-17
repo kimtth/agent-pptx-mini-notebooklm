@@ -5,9 +5,6 @@ import json
 import os
 import re
 import sys
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt  # noqa: E402
 
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -20,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / 'layout'))
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
+from pptx.enum.chart import XL_CHART_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.util import Inches, Pt
 
@@ -67,7 +65,7 @@ def clear_shape_role_registry() -> None:
     _SHAPE_ROLE_REGISTRY.clear()
 
 
-# Module-level reference to the loaded layout specs (set in build_namespace).
+# Module-level reference to the loaded layout specs (set during renderer initialization).
 _LOADED_LAYOUT_SPECS: list[LayoutSpec] | None = None
 # Module-level reference to the active style guardrails (set in renderer-mode).
 _ACTIVE_GUARDRAILS: object | None = None
@@ -498,46 +496,6 @@ def apply_widescreen(prs: PresentationType) -> PresentationType:
     return prs
 
 
-# ---------------------------------------------------------------------------
-# Custom template support
-# ---------------------------------------------------------------------------
-
-TEMPLATE_PATH: str = os.environ.get('PPTX_TEMPLATE_PATH', '')
-_template_meta_raw = os.environ.get('PPTX_TEMPLATE_META_JSON', '')
-try:
-    TEMPLATE_META: dict[str, object] = json.loads(_template_meta_raw) if _template_meta_raw.strip() else {}
-except Exception:
-    TEMPLATE_META = {}
-TEMPLATE_BACKGROUND_IMAGES: list[str] = [
-    str(path) for path in TEMPLATE_META.get('backgroundImages', [])
-    if isinstance(path, str) and path.strip()
-] if isinstance(TEMPLATE_META, dict) else []
-TEMPLATE_BLANK_LAYOUT_INDEX = TEMPLATE_META.get('blankLayoutIndex') if isinstance(TEMPLATE_META, dict) else None
-
-
-def get_blank_layout(prs: PresentationType) -> object:
-    """Find the blank slide layout from the presentation.
-
-    When a custom template is loaded, the blank layout may not be at index 6.
-    This helper finds it by name first ('Blank'), then falls back to the layout
-    with the fewest placeholders.
-    """
-    layouts = prs.slide_layouts
-    # Try name match first
-    for layout in layouts:
-        name = layout.name.lower().strip()
-        if name in ('blank', '\u767d\u7d19'):  # 'blank' or Japanese '白紙'
-            return layout
-    # Fall back to fewest placeholders
-    best = layouts[min(6, len(layouts) - 1)]
-    best_count = len(best.placeholders)
-    for layout in layouts:
-        if len(layout.placeholders) < best_count:
-            best = layout
-            best_count = len(layout.placeholders)
-    return best
-
-
 def _convert_to_pptx_compatible(source: Path) -> Path:
     """Convert unsupported image formats (e.g. WebP) to PNG for python-pptx."""
     if source.suffix.lower() not in ('.webp',):
@@ -784,53 +742,6 @@ def ensure_contrast(fg_hex: str, bg_hex: str, *, min_ratio: float = 4.5) -> str:
     return '2D2D2D' if toward_dark else 'F0F0F0'
 
 
-# ---------------------------------------------------------------------------
-# Chart / data-visualisation helpers
-# ---------------------------------------------------------------------------
-
-# Use Agg backend for headless rendering (no GUI dependency)
-def render_chart_to_image(
-    fig: matplotlib.figure.Figure,
-    workspace_dir: str = '',
-    *,
-    dpi: int = 200,
-) -> str:
-    """Save a matplotlib Figure to a temporary PNG and return its absolute path.
-
-    The image is written to ``{workspace_dir}/previews/charts/`` so it
-    persists alongside other workspace artefacts.
-    """
-    if not workspace_dir:
-        workspace_dir = os.environ.get('WORKSPACE_DIR', '')
-    chart_dir = os.path.join(workspace_dir, 'previews', 'charts') if workspace_dir else os.path.join(os.getcwd(), 'charts')
-    os.makedirs(chart_dir, exist_ok=True)
-
-    import uuid
-    filename = f'chart_{uuid.uuid4().hex[:8]}.png'
-    filepath = os.path.join(chart_dir, filename)
-    fig.savefig(filepath, dpi=dpi, bbox_inches='tight', transparent=True, pad_inches=0.1)
-    plt.close(fig)
-    return filepath
-
-
-def add_chart_picture(
-    shapes,
-    fig: matplotlib.figure.Figure,
-    left,
-    top,
-    width=None,
-    height=None,
-    workspace_dir: str = '',
-):
-    """Render a matplotlib Figure to PNG, then embed it as a slide picture.
-
-    This is the primary helper for seaborn/matplotlib chart images.
-    Returns the picture shape or None on failure.
-    """
-    image_path = render_chart_to_image(fig, workspace_dir)
-    return safe_add_picture(shapes, image_path, left, top, width, height)
-
-
 def add_native_chart(
     slide,
     chart_type,
@@ -841,6 +752,7 @@ def add_native_chart(
     height,
     *,
     theme: dict[str, str] | None = None,
+    name: str = '',
 ):
     """Add an editable python-pptx chart to a slide and apply theme colours.
 
@@ -849,16 +761,33 @@ def add_native_chart(
     Returns the chart shape.
     """
     graphic_frame = slide.shapes.add_chart(chart_type, left, top, width, height, chart_data)
+    if name:
+        graphic_frame.name = name
+    _register_shape_role(graphic_frame, 'layout_managed')
     chart = graphic_frame.chart
     if theme:
-        keys = ['accent1', 'accent2', 'accent3', 'accent4', 'accent5', 'accent6']
-        colors = [f'#{theme[k].lstrip("#")}' for k in keys if k in theme and theme[k]]
-        if not colors:
-            colors = ['#6366F1', '#06B6D4', '#F59E0B', '#EF4444', '#10B981', '#8B5CF6']
-        for idx, series in enumerate(chart.series):
-            hex_val = colors[idx % len(colors)].lstrip('#')
-            series.format.fill.solid()
-            series.format.fill.fore_color.rgb = RGBColor.from_string(hex_val)
+        keys = ['ACCENT1', 'ACCENT2', 'ACCENT3', 'ACCENT4', 'ACCENT5', 'ACCENT6']
+        colors = [theme[k].lstrip('#').upper() for k in keys if k in theme and theme[k]]
+        if colors and hasattr(chart, 'series'):
+            for idx, series in enumerate(chart.series):
+                hex_val = colors[idx % len(colors)]
+                try:
+                    series.format.fill.solid()
+                    series.format.fill.fore_color.rgb = RGBColor.from_string(hex_val)
+                except Exception:
+                    pass
+                try:
+                    series.format.line.color.rgb = RGBColor.from_string(hex_val)
+                except Exception:
+                    pass
+                if chart_type in {XL_CHART_TYPE.PIE, XL_CHART_TYPE.DOUGHNUT}:
+                    try:
+                        for point_idx, point in enumerate(series.points):
+                            point_hex = colors[point_idx % len(colors)]
+                            point.format.fill.solid()
+                            point.format.fill.fore_color.rgb = RGBColor.from_string(point_hex)
+                    except Exception:
+                        pass
     return graphic_frame
 
 
@@ -1132,23 +1061,20 @@ def _fix_text_overflow(output_path: Path) -> int:
     return total_fixes
 
 
-def _get_slide_bg_hex(slide) -> str | None:
-    """Return the best-known slide background colour hex (no '#'), or None.
-
-    Handles solid fills directly and gradient fills by averaging the first
-    gradient stop colour (representative of the dominant visual tone).
-    """
+def _get_surface_bg_hex(surface) -> str | None:
+    """Return the best-known background colour hex (no '#') for a slide-like surface."""
+    if surface is None:
+        return None
     try:
-        bg_fill = slide.background.fill
+        bg_fill = surface.background.fill
         if bg_fill.type is not None and int(bg_fill.type) == 1:  # MSO_FILL.SOLID
             return str(bg_fill.fore_color.rgb)
     except Exception:
         pass
-    # Gradient background: extract the first stop colour as representative bg.
     try:
         ns_a = 'http://schemas.openxmlformats.org/drawingml/2006/main'
         ns_p = 'http://schemas.openxmlformats.org/presentationml/2006/main'
-        bg_pr = slide.background._element.find(f'{{{ns_p}}}bg/{{{ns_p}}}bgPr')
+        bg_pr = surface.background._element.find(f'{{{ns_p}}}bg/{{{ns_p}}}bgPr')
         if bg_pr is not None:
             grad = bg_pr.find(f'{{{ns_a}}}gradFill')
             if grad is not None:
@@ -1161,10 +1087,18 @@ def _get_slide_bg_hex(slide) -> str | None:
                             return srgb.get('val', '').upper()
     except Exception:
         pass
-    if isinstance(TEMPLATE_META, dict):
-        surface_hex = TEMPLATE_META.get('backgroundSurfaceHex')
-        if isinstance(surface_hex, str) and re.fullmatch(r'[0-9A-Fa-f]{6}', surface_hex.strip()):
-            return surface_hex.strip().upper()
+    return None
+
+
+def _get_slide_bg_hex(slide) -> str | None:
+    """Return the best-known slide background colour hex (no '#'), or None.
+
+    Checks the slide first, then the applied layout, then the slide master.
+    """
+    for surface in (slide, getattr(slide, 'slide_layout', None), getattr(getattr(slide, 'slide_layout', None), 'slide_master', None)):
+        surface_hex = _get_surface_bg_hex(surface)
+        if surface_hex:
+            return surface_hex
     return None
 
 
@@ -1620,7 +1554,7 @@ def append_notebooklm_infographics(output_path: Path) -> None:
     prs = Presentation(str(output_path))
     slide_w = prs.slide_width
     slide_h = prs.slide_height
-    blank_layout = get_blank_layout(prs)
+    blank_layout = prs.slide_layouts[min(6, len(prs.slide_layouts) - 1)]
 
     for img_path in valid_paths:
         resolved = safe_image_path(img_path)
@@ -1678,11 +1612,17 @@ def main() -> int:
         print('[renderer-mode] Using deterministic slide renderer.', file=sys.stderr)
         output_path = _unlock_or_rename(output_path)
 
-        # Load theme, specs, assets from env vars (same as build_namespace)
+        # Load theme, specs, and assets from the deterministic renderer env contract
         theme = _load_theme()
         title = os.environ.get('PPTX_TITLE', 'Presentation')
         base_font_family = os.environ.get('PPTX_FONT_FAMILY', 'Calibri')
         color_treatment = (os.environ.get('PPTX_COLOR_TREATMENT', 'solid') or 'solid').strip().lower()
+        panel_fill = (os.environ.get('PPTX_PANEL_FILL', '') or '').strip().lower()
+        panel_fill_opacity_raw = (os.environ.get('PPTX_PANEL_FILL_OPACITY', '') or '').strip()
+        try:
+            panel_fill_opacity = float(panel_fill_opacity_raw) if panel_fill_opacity_raw else None
+        except ValueError:
+            panel_fill_opacity = None
         text_box_style = (os.environ.get('PPTX_TEXT_BOX_STYLE', 'plain') or 'plain').strip().lower()
         text_box_corner_style = (os.environ.get('PPTX_TEXT_BOX_CORNER_STYLE', 'square') or 'square').strip().lower()
         design_style = os.environ.get('PPTX_DESIGN_STYLE', 'Blank White')
@@ -1715,7 +1655,14 @@ def main() -> int:
         # Style config
         from style_config import resolve_style_config  # type: ignore
         custom_background_color = os.environ.get('PPTX_CUSTOM_BACKGROUND_COLOR', '')
-        style = resolve_style_config(design_style, color_treatment, text_box_corner_style, custom_background_color)
+        style = resolve_style_config(
+            design_style,
+            color_treatment,
+            text_box_corner_style,
+            custom_background_color,
+            panel_fill,
+            panel_fill_opacity,
+        )
         global _ACTIVE_GUARDRAILS  # noqa: PLW0603
         _ACTIVE_GUARDRAILS = style.guardrails
         theme_explicit = os.environ.get('PPTX_THEME_EXPLICIT', '0') == '1'
@@ -1723,9 +1670,6 @@ def main() -> int:
         print(f'[renderer] Design style: {design_style!r}, panel_fill={style.panel_fill}, '
               f'color_treatment={style.color_treatment}, theme_explicit={theme_explicit}, '
               f'show_slide_icons={show_slide_icons}', file=sys.stderr)
-
-        # Template
-        template_path_str = TEMPLATE_PATH if TEMPLATE_PATH else None
 
         # Render
         from slide_renderer import render_presentation  # type: ignore
@@ -1736,8 +1680,6 @@ def main() -> int:
             style=style,
             slide_assets=SLIDE_ASSETS,
             output_path=str(output_path),
-            template_path=template_path_str,
-            template_meta=TEMPLATE_META,
             font_family=base_font_family,
             title=title,
             workspace_dir=workspace_dir,
@@ -1755,9 +1697,9 @@ def main() -> int:
             add_design_shape=add_design_shape,
             add_managed_textbox=add_managed_textbox,
             add_managed_shape=add_managed_shape,
+            add_native_chart=add_native_chart,
             tag_as_design=tag_as_design,
             resolve_font=lambda text, base_font=base_font_family: resolve_font(text, base_font),
-            get_blank_layout=get_blank_layout,
             apply_widescreen=apply_widescreen,
             slide_image_paths=slide_image_paths,
             slide_icon_name=slide_icon_name,

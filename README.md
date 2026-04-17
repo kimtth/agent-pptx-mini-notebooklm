@@ -48,10 +48,10 @@ The app uses **constraint-based layout computation** (via the Kiwi solver 🦋, 
 
 ## Documentation Index
 
+- [Architecture](./ARCHITECTURE.md)
 - [Layout Engine Whitepaper](./LAYOUT_ENGINE.md)
-- [Sample PPTX Slides (Web Viewer)](https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2Fkimtth%2Fagent-pptx-mini-notebooklm%2Fmain%2Fsamples%2Fen%2Fpreviews%2Fpresentation-preview.pptx)
 - [Layout Blueprint](https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2Fkimtth%2Fagent-pptx-mini-notebooklm%2Fmain%2Fsamples%2Flayout_blueprint.pptx)
-- [Brand Style Samples](./public/brand-style-samples.html)
+- [Sample #1](https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2Fkimtth%2Fagent-pptx-mini-notebooklm%2Fmain%2Fsamples%2Fsample1.pptx) | [Sample #2](https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2Fkimtth%2Fagent-pptx-mini-notebooklm%2Fmain%2Fsamples%2Fsample2.pptx) | [Sample #3](https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2Fkimtth%2Fagent-pptx-mini-notebooklm%2Fmain%2Fsamples%2Fsample3.pptx)
 
 ## Getting Started
 
@@ -117,10 +117,11 @@ Choose the provider in Settings first, then enter only the matching fields:
 - `Claude`: `MODEL_NAME`, `ANTHROPIC_API_KEY`
 
 `REASONING_EFFORT` is optional for all providers.
+`SHOW_TOOL_CALLING_MESSAGES` is optional and controls whether chat shows tool execution entries such as `tweak_slide`, `patch_layout_infrastructure`, and `rerun_pptx`.
 
 Notes:
 
-- For [GitHub-hosted models](https://models.github.ai/catalog/models), use a token with Copilot entitlement.
+- For [GitHub Copilot hosted models](https://docs.github.com/en/copilot/reference/ai-models/model-hosting), use a token with Copilot entitlement.
 - For Copilot with self-serving Azure, set `LLM_PROVIDER=copilot` and `COPILOT_MODEL_SOURCE=azure-openai`, then provide your Azure endpoint and authentication details in Settings.
 - For Azure, use the full base URL including `/openai/v1`.
 - `MODEL_NAME` can be a GitHub-hosted model name, an Azure deployment name, or another provider-specific model identifier.
@@ -225,6 +226,12 @@ Work can be saved and loaded as `.pptapp` project files (JSON). A project snapsh
 ## Preview
 
 The center preview panel renders local slide PNGs generated from the preview PPTX. Use `Load Preview` to read cached images from the workspace, `Rerender` to export fresh images from PowerPoint via COM, and `Open in PowerPoint` to launch the latest preview deck in the desktop app.
+
+Important behavior:
+
+- Artifact-level PPTX fixes can regenerate the preview `.pptx` without automatically refreshing the PNG previews currently shown in the center pane.
+- After a chat repair changes layout, style, icons, images, or render settings, click `Rerender` to refresh the preview images from the updated PPTX.
+- If you want to inspect the repair steps in chat, enable `Show Tool Calling Messages` in Settings.
 
 ## Agentic Workflows
 

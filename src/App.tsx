@@ -88,6 +88,7 @@ export default function App() {
     postStagingActive.current = true
     useSlidesStore.getState().setStreaming(true)
     useSlidesStore.getState().setPptxBusy(true)
+    useSlidesStore.getState().setActiveWorkflow('poststaging')
 
     const { work } = useSlidesStore.getState()
     const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedTextBoxCornerStyle, selectedIconCollection, selectedSlideIcons, styleTone } = usePaletteStore.getState()
@@ -102,7 +103,6 @@ export default function App() {
       customBackgroundColor: work.customBackgroundColor,
       framework: work.framework,
       customFrameworkPrompt: work.customFrameworkPrompt,
-      templateMeta: work.templateMeta,
       theme: applyThemeSlideIcons(
         applyThemeTextBoxCornerStyle(
           applyThemeTextBoxStyle(
@@ -147,6 +147,9 @@ export default function App() {
       }),
       api.chat.onFrameworkSuggested((payload) => {
         useSlidesStore.getState().setFramework(payload.primary as FrameworkType)
+      }),
+      api.chat.onTool((event) => {
+        useChatStore.getState().upsertToolLog(event)
       }),
       api.chat.onDone(() => {
         // Flush buffered deltas
@@ -195,7 +198,6 @@ export default function App() {
               pptxTitle,
               selectedIconCollection,
               currentWork.slides,
-              currentWork.templateMeta,
               currentWork.customBackgroundColor,
             )
               .then((result) => {
@@ -209,6 +211,7 @@ export default function App() {
                   if (qa) {
                     triggerPostStaging(qa)
                   } else {
+                    useSlidesStore.getState().setActiveWorkflow('poststaging')
                     const warningNote = result.warning ? `\n\n⚠️ ${result.warning}` : ''
                     useChatStore.getState().addMessage(
                       createAssistantMessage(`✅ Deck generated!${warningNote}`),

@@ -8,16 +8,19 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { ChatMessage } from '../application/chat-use-case'
+import type { ChatToolEvent } from '../domain/ports/ipc'
 
 interface ChatStore {
   messages: ChatMessage[]
   pendingContent: string
   pendingThinking: string
+  pendingToolLogs: ChatToolEvent[]
 
   addMessage(msg: ChatMessage): void
   removeMessage(id: string): void
   appendContent(delta: string): void
   appendThinking(delta: string): void
+  upsertToolLog(event: ChatToolEvent): void
   flushAssistantMessage(): void
   clear(): void
 }
@@ -65,6 +68,7 @@ export const useChatStore = create<ChatStore>()(persist(
   messages: [],
   pendingContent: '',
   pendingThinking: '',
+  pendingToolLogs: [],
 
   addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
 
@@ -81,21 +85,33 @@ export const useChatStore = create<ChatStore>()(persist(
     scheduleDeltaFlush()
   },
 
+  upsertToolLog: (event) => set((s) => {
+    const existingIndex = s.pendingToolLogs.findIndex((item) => item.id === event.id)
+    if (existingIndex < 0) {
+      return { pendingToolLogs: [...s.pendingToolLogs, event] }
+    }
+    const next = [...s.pendingToolLogs]
+    next[existingIndex] = { ...next[existingIndex], ...event }
+    return { pendingToolLogs: next }
+  }),
+
   flushAssistantMessage() {
     flushDeltasNow()
-    const { pendingContent, pendingThinking } = get()
-    if (!pendingContent && !pendingThinking) return
+    const { pendingContent, pendingThinking, pendingToolLogs } = get()
+    if (!pendingContent && !pendingThinking && pendingToolLogs.length === 0) return
     const msg: ChatMessage = {
       id: Math.random().toString(36).slice(2),
       role: 'assistant',
       content: pendingContent,
       thinking: pendingThinking || undefined,
+      toolLogs: pendingToolLogs.length > 0 ? pendingToolLogs : undefined,
       timestamp: Date.now(),
     }
     set((s) => ({
       messages: [...s.messages, msg],
       pendingContent: '',
       pendingThinking: '',
+      pendingToolLogs: [],
     }))
   },
 
@@ -103,7 +119,7 @@ export const useChatStore = create<ChatStore>()(persist(
     _contentBuf = ''
     _thinkingBuf = ''
     if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null }
-    set({ messages: [], pendingContent: '', pendingThinking: '' })
+    set({ messages: [], pendingContent: '', pendingThinking: '', pendingToolLogs: [] })
   },
 }),
   {

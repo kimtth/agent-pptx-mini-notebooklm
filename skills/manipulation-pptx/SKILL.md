@@ -389,22 +389,13 @@ tf.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE  # shrink to fit fixed shape
 from pptx import Presentation
 
 def build_presentation(output_path, theme, title):
-    # If a custom template is attached, load it instead of a blank presentation.
-    # apply_widescreen() forces 16:9 dimensions regardless of the template's original size.
-    if TEMPLATE_PATH:
-        prs = apply_widescreen(Presentation(TEMPLATE_PATH))
-        blank = get_blank_layout(prs)
-    else:
-        prs = apply_widescreen(Presentation())
-        blank = prs.slide_layouts[6]
+    prs = apply_widescreen(Presentation())
+    blank = prs.slide_layouts[6]
 
     slide = prs.slides.add_slide(blank)
 
-    # Only set background fill when NOT using a custom template —
-    # template slide masters already provide backgrounds.
-    if not TEMPLATE_PATH:
-        slide.background.fill.solid()
-        slide.background.fill.fore_color.rgb = rgb_color(theme.get('BG'), 'FFFFFF')
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = rgb_color(theme.get('BG'), 'FFFFFF')
 
     # Use PRECOMPUTED_LAYOUT_SPECS for text placement
     spec = PRECOMPUTED_LAYOUT_SPECS[0]
@@ -424,16 +415,6 @@ def build_presentation(output_path, theme, title):
 
     prs.save(output_path)
 ```
-
-### Custom Template Notes
-
-When `TEMPLATE_PATH` is set (not `None`), the user has provided a corporate PPTX as a design template:
-
-- **Initialization**: `prs = apply_widescreen(Presentation(TEMPLATE_PATH))` — loads the template and forces 16:9 dimensions.
-- **Layout selection**: `get_blank_layout(prs)` instead of `prs.slide_layouts[6]` — finds the correct blank layout regardless of template ordering.
-- **Backgrounds**: Do NOT call `slide.background.fill.solid()` — the template's slide master already provides backgrounds.
-- **Placeholders**: All ignored. Use only freeform shapes positioned by `PRECOMPUTED_LAYOUT_SPECS`.
-- **Theme colors**: `PPTX_THEME` is auto-populated from the template's color scheme. Use it as usual.
 
 ## Input Assumptions
 

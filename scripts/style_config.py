@@ -184,7 +184,7 @@ class StyleConfig:
     """Fallback background gradient stops (6-char HEX without ``#``).
 
     Single value → solid fill.  Multiple values → linear gradient.
-    Empty tuple → use theme BG.  First element is used for contrast
+    Empty tuple → preserve the inherited slide background. First element is used for contrast
     calculations when more than one stop is provided.
     """
 
@@ -744,8 +744,6 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
             overlap_mode="subtle",
         ),
     ),
-    # ── Custom ──
-    "custom template": StyleConfig(),
 }
 
 
@@ -754,6 +752,8 @@ def resolve_style_config(
     color_treatment: str = "",
     text_box_corner_style: str = "",
     custom_background_color: str = "",
+    panel_fill: str = "",
+    panel_fill_opacity: float | None = None,
 ) -> StyleConfig:
     """Resolve a style name + overrides into a concrete ``StyleConfig``.
 
@@ -777,6 +777,12 @@ def resolve_style_config(
     overrides: dict[str, object] = {}
     if color_treatment and color_treatment in ("solid", "gradient", "mixed"):
         overrides["color_treatment"] = color_treatment
+
+    if panel_fill and panel_fill in ("transparent", "tinted", "solid", "frosted"):
+        overrides["panel_fill"] = panel_fill
+
+    if panel_fill_opacity is not None and 0.0 <= panel_fill_opacity <= 1.0:
+        overrides["panel_fill_opacity"] = panel_fill_opacity
 
     if text_box_corner_style and text_box_corner_style in ("square", "rounded"):
         overrides["text_box_corner_style"] = text_box_corner_style

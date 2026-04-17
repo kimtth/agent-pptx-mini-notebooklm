@@ -52,7 +52,7 @@ interface ScrapeResult {
 interface ProjectData {
   version: number;
   workspaceDir: string;
-  slidesWork: { slides: SlideItem[]; templatePath?: string | null; [key: string]: unknown };
+  slidesWork: { slides: SlideItem[]; [key: string]: unknown };
   dataSources?: {
     files: DataFile[];
     urls: Array<{ url: string; status: string; result?: ScrapeResult }>;
@@ -171,11 +171,6 @@ function rewritePathsToRelative(
     }
   }
 
-  // templatePath — absolute → relative
-  if (clone.slidesWork.templatePath && wsDir) {
-    clone.slidesWork.templatePath = path.relative(wsDir, clone.slidesWork.templatePath);
-  }
-
   // dataSources artifact paths — absolute → relative
   if (clone.dataSources && wsDir) {
     for (const f of clone.dataSources.files ?? []) {
@@ -209,11 +204,6 @@ function rewritePathsToAbsolute(
         sel.imagePath = path.join(workspaceDir, 'images', basename);
       }
     }
-  }
-
-  // templatePath — relative → absolute
-  if (project.slidesWork.templatePath && !path.isAbsolute(project.slidesWork.templatePath)) {
-    project.slidesWork.templatePath = path.join(workspaceDir, project.slidesWork.templatePath);
   }
 
   // dataSources artifact paths — relative → absolute

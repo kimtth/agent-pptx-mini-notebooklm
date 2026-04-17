@@ -5,7 +5,7 @@ import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import type { ThemeTokens } from '../../../src/domain/entities/palette'
-import type { TemplateMeta } from '../../../src/domain/entities/slide-work'
+import type { SlideAnalysisMeta } from '../../../src/domain/entities/slide-work'
 import { DEFAULT_THEME_C } from '../../../src/domain/theme/default-theme'
 import { enforceIconCollection } from '../../../src/domain/icons/iconify'
 import type { IconifyCollectionId } from '../../../src/domain/icons/iconify'
@@ -143,6 +143,7 @@ type LayoutInputSourceSlide = {
   keyMessage: string
   bullets: string[]
   notes: string
+  analysisMeta?: SlideAnalysisMeta
   icon?: string | null
   imagePath?: string | null
   selectedImages?: Array<{
@@ -155,6 +156,7 @@ export interface LayoutInputSlide {
   title_text: string
   key_message_text: string
   bullets: string[]
+  analysis_meta?: SlideAnalysisMeta
   chip_labels: string[]
   footer_text: string
   notes: string
@@ -162,6 +164,11 @@ export interface LayoutInputSlide {
   has_icon: boolean
   has_hero_image: boolean
   font_family: string
+  shape_overrides?: Array<{
+    name: string
+    fill_color?: string
+    border_color?: string
+  }>
 }
 
 function hasApprovedImage(slide: LayoutInputSourceSlide): boolean {
@@ -171,6 +178,22 @@ function hasApprovedImage(slide: LayoutInputSourceSlide): boolean {
   return (slide.selectedImages ?? []).some(
     (image) => typeof image.imagePath === 'string' && image.imagePath.trim().length > 0,
   )
+}
+
+function formatAnalysisFooter(meta: SlideAnalysisMeta | undefined): string {
+  if (!meta) return ''
+
+  const parts = [
+    meta.caption,
+    meta.source ? `Source: ${meta.source}` : undefined,
+    meta.unit ? `Unit: ${meta.unit}` : undefined,
+    meta.aggregation ? `Aggregation: ${meta.aggregation}` : undefined,
+    meta.confidence ? `Confidence: ${meta.confidence}` : undefined,
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+
+  return parts.join(' | ')
 }
 
 type SlideAssetSourceSlide = {
@@ -299,11 +322,10 @@ function buildLayoutArtifactPaths(workspaceDir: string) {
 
 async function clearWorkspaceArtifactsInternal(): Promise<void> {
   const workspaceDir = await readWorkspaceDir()
-  const { layoutDir, inputPath, outputPath, slideAssetsPath } = buildLayoutArtifactPaths(workspaceDir)
+  const { layoutDir, slideAssetsPath } = buildLayoutArtifactPaths(workspaceDir)
+  const preservedPreviewArtifacts = new Set(['layout-input.json', 'layout-specs.json'])
 
   await Promise.all([
-    fs.unlink(inputPath).catch(() => {}),
-    fs.unlink(outputPath).catch(() => {}),
     fs.unlink(slideAssetsPath).catch(() => {}),
     fs.unlink(path.join(layoutDir, 'layout-meta.json')).catch(() => {}),
     fs.unlink(path.join(layoutDir, 'notebooklm-infographics.json')).catch(() => {}),
@@ -316,6 +338,10 @@ async function clearWorkspaceArtifactsInternal(): Promise<void> {
       if (!entry.isFile()) return
 
       const fullPath = path.join(layoutDir, entry.name)
+
+      if (preservedPreviewArtifacts.has(entry.name)) {
+        return
+      }
 
       if (/^presentation-preview(?:-\d+)?\.pptx$/i.test(entry.name)) {
         await fs.unlink(fullPath).catch(() => {})
@@ -363,8 +389,9 @@ export function buildLayoutInputSlides(slides: LayoutInputSourceSlide[], fontFam
     title_text: slide.title,
     key_message_text: slide.keyMessage,
     bullets: slide.bullets,
+    analysis_meta: slide.analysisMeta,
     chip_labels: slide.layout === 'title' ? slide.bullets : [],
-    footer_text: '',
+    footer_text: formatAnalysisFooter(slide.analysisMeta),
     notes: slide.notes || '',
     item_count: slide.bullets.length,
     has_icon: !!slide.icon,
@@ -521,11 +548,33 @@ export async function computeLayoutSpecs(
   return queuePowerPointAutomation(() => computeLayoutSpecsInternal(slides, fontFamily))
 }
 
+/**
+ * Serialised renderer configuration — all env-var-level inputs to the
+ * deterministic renderer captured as a single JSON artifact.  The LLM can
+ * read and patch this via `patch_layout_infrastructure` → `render_config`
+ * and then `rerun_pptx` to apply the changes.
+ */
+export interface RenderConfig {
+  themeColors: Record<string, string>
+  themeExplicit: boolean
+  title: string
+  fontFamily: string
+  colorTreatment: string
+  panelFill?: string
+  panelFillOpacity?: number
+  textBoxStyle: string
+  textBoxCornerStyle: string
+  showSlideIcons: boolean
+  designStyle: string
+  customBackgroundColor: string
+  iconCollection: string
+}
+
 async function renderPresentationInternal(
   theme: ThemeTokens | null,
   title: string,
   outputPath: string,
-  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; designStyle?: string; customBackgroundColor?: string | null },
+  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; designStyle?: string; customBackgroundColor?: string | null; renderConfigOverrides?: RenderConfig },
 ): Promise<PptxCompletionReport> {
   const workDir = path.dirname(outputPath)
   const runnerScriptPath = resolveBundledPath('scripts', 'pptx-python-runner.py')
@@ -543,13 +592,16 @@ async function renderPresentationInternal(
     `Install python-pptx in the managed environment. ${pythonSetupHint()}`,
   )
 
-  const themePayload = JSON.stringify(theme?.C ?? DEFAULT_THEME_C)
-  const themeExplicit = theme?.C ? '1' : '0'
-  const fontFamily = resolveThemeFontFamily(theme)
-  const colorTreatment = resolveThemeColorTreatment(theme)
-  const textBoxStyle = resolveThemeTextBoxStyle(theme)
-  const textBoxCornerStyle = resolveThemeTextBoxCornerStyle(theme)
-  const showSlideIcons = resolveThemeShowSlideIcons(theme)
+  const rc = opts?.renderConfigOverrides
+  const themePayload = rc ? JSON.stringify(rc.themeColors) : JSON.stringify(theme?.C ?? DEFAULT_THEME_C)
+  const themeExplicit = rc ? (rc.themeExplicit ? '1' : '0') : (theme?.C ? '1' : '0')
+  const fontFamily = rc?.fontFamily ?? resolveThemeFontFamily(theme)
+  const colorTreatment = rc?.colorTreatment ?? resolveThemeColorTreatment(theme)
+  const panelFill = typeof rc?.panelFill === 'string' ? rc.panelFill.trim().toLowerCase() : ''
+  const panelFillOpacity = typeof rc?.panelFillOpacity === 'number' ? rc.panelFillOpacity : undefined
+  const textBoxStyle = rc?.textBoxStyle ?? resolveThemeTextBoxStyle(theme)
+  const textBoxCornerStyle = rc?.textBoxCornerStyle ?? resolveThemeTextBoxCornerStyle(theme)
+  const showSlideIcons = rc ? (rc.showSlideIcons ? '1' : '0') : resolveThemeShowSlideIcons(theme)
   const workspaceDir = await readWorkspaceDir()
   await assertValidLayoutInputArtifact(workspaceDir)
   let layoutSpecsJson = opts?.layoutSpecsJson?.trim() ?? ''
@@ -567,14 +619,7 @@ async function renderPresentationInternal(
     ? await fs.readFile(slideAssetsPath, 'utf-8').catch(() => '')
     : ''
 
-  // Only use the on-disk template when the user explicitly selected "Custom Template"
-  let templatePath = opts?.templatePath
-  if (!templatePath && opts?.designStyle === 'Custom Template') {
-    const candidate = path.join(workspaceDir, 'template', 'template.pptx')
-    if (existsSync(candidate)) templatePath = candidate
-  }
-  const templateMetaJson = opts?.templateMeta ? JSON.stringify(opts.templateMeta) : ''
-  const customBackgroundColor = typeof opts?.customBackgroundColor === 'string' ? opts.customBackgroundColor.trim() : ''
+  const customBackgroundColor = rc?.customBackgroundColor ?? (typeof opts?.customBackgroundColor === 'string' ? opts.customBackgroundColor.trim() : '')
 
   const infographicManifestPath = path.join(workspaceDir, 'previews', 'notebooklm-infographics.json')
   let notebookLMInfographicsJson = ''
@@ -586,7 +631,31 @@ async function renderPresentationInternal(
     }
   } catch { /* no manifest or empty — skip */ }
 
-  const designStyle = opts?.designStyle || 'Blank White'
+  const designStyle = rc?.designStyle ?? opts?.designStyle ?? 'Blank White'
+  const iconCollection = rc?.iconCollection ?? opts?.iconCollection ?? 'all'
+  const resolvedTitle = rc?.title ?? title ?? 'Presentation'
+
+  // Persist render-config.json so the agent can patch and rerun
+  const renderConfig: RenderConfig = {
+    themeColors: JSON.parse(themePayload),
+    themeExplicit: themeExplicit === '1',
+    title: resolvedTitle,
+    fontFamily,
+    colorTreatment,
+    ...(panelFill ? { panelFill } : {}),
+    ...(typeof panelFillOpacity === 'number' ? { panelFillOpacity } : {}),
+    textBoxStyle,
+    textBoxCornerStyle,
+    showSlideIcons: showSlideIcons === '1',
+    designStyle,
+    customBackgroundColor,
+    iconCollection,
+  }
+  await fs.writeFile(
+    path.join(workspaceDir, 'previews', 'render-config.json'),
+    JSON.stringify(renderConfig, null, 2),
+    'utf-8',
+  )
 
   const args = [runnerScriptPath, outputPath, '--renderer-mode']
   if (opts?.renderDir) {
@@ -606,19 +675,21 @@ async function renderPresentationInternal(
         PYTHONIOENCODING: 'utf-8',
         PPTX_THEME_JSON: themePayload,
         PPTX_THEME_EXPLICIT: themeExplicit,
-        PPTX_TITLE: title || 'Presentation',
+        PPTX_TITLE: resolvedTitle,
         PPTX_FONT_FAMILY: fontFamily,
         PPTX_COLOR_TREATMENT: colorTreatment,
+        ...(panelFill ? { PPTX_PANEL_FILL: panelFill } : {}),
+        ...(typeof panelFillOpacity === 'number'
+          ? { PPTX_PANEL_FILL_OPACITY: String(panelFillOpacity) }
+          : {}),
         PPTX_TEXT_BOX_STYLE: textBoxStyle,
         PPTX_TEXT_BOX_CORNER_STYLE: textBoxCornerStyle,
         PPTX_SHOW_SLIDE_ICONS: showSlideIcons,
         PPTX_DESIGN_STYLE: designStyle,
         ...(customBackgroundColor ? { PPTX_CUSTOM_BACKGROUND_COLOR: customBackgroundColor } : {}),
-        PPTX_ICON_COLLECTION: opts?.iconCollection ?? 'all',
+        PPTX_ICON_COLLECTION: iconCollection,
         ...(opts?.renderDir ? { PPTX_SKIP_TEXT_OVERFLOW_FIX: '1' } : {}),
         ...(slideAssetsJson.trim() ? { PPTX_SLIDE_ASSETS_JSON: slideAssetsJson } : {}),
-        ...(templatePath ? { PPTX_TEMPLATE_PATH: templatePath } : {}),
-        ...(templateMetaJson ? { PPTX_TEMPLATE_META_JSON: templateMetaJson } : {}),
         ...(notebookLMInfographicsJson ? { PPTX_NOTEBOOKLM_INFOGRAPHICS: notebookLMInfographicsJson } : {}),
         WORKSPACE_DIR: workspaceDir,
         PPTX_LAYOUT_SPECS_JSON: layoutSpecsJson,
@@ -635,7 +706,7 @@ export async function renderPresentationToFile(
   theme: ThemeTokens | null,
   title: string,
   outputPath: string,
-  opts?: { renderDir?: string; iconCollection?: string; layoutSpecsJson?: string; templatePath?: string; templateMeta?: TemplateMeta | null; designStyle?: string; customBackgroundColor?: string | null },
+  opts?: { iconCollection?: string; layoutSpecsJson?: string; designStyle?: string; customBackgroundColor?: string | null; renderConfigOverrides?: RenderConfig },
 ): Promise<PptxCompletionReport> {
   return queuePowerPointAutomation(() => renderPresentationInternal(theme, title, outputPath, opts))
 }
@@ -739,8 +810,6 @@ export function registerPptxHandlers(): void {
     'pptx:openPreviewPptx',
     'pptx:renderPreview',
     'pptx:computeLayout',
-    'pptx:importTemplate',
-    'pptx:removeTemplate',
     'pptx:clearWorkspaceArtifacts',
   ] as const
 
@@ -822,7 +891,7 @@ export function registerPptxHandlers(): void {
     }
   })
 
-  ipcMain.handle('pptx:renderPreview', async (_event, designStyle: string | null, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], templateMeta?: TemplateMeta | null, customBackgroundColor?: string | null) => {
+  ipcMain.handle('pptx:renderPreview', async (_event, designStyle: string | null, themeTokens: ThemeTokens | null, title: string, iconCollection?: string, slides?: SlideAssetSourceSlide[], customBackgroundColor?: string | null) => {
     try {
       return await queuePowerPointAutomation(async () => {
         const workspaceDir = await readWorkspaceDir()
@@ -847,7 +916,6 @@ export function registerPptxHandlers(): void {
           const completionReport = await renderPresentationInternal(themeTokens, title, outputPath, {
             renderDir,
             iconCollection,
-            templateMeta,
             customBackgroundColor,
             layoutSpecsJson: artifactRefresh.layoutSpecsJson,
             designStyle: designStyle ?? undefined,
@@ -902,78 +970,6 @@ export function registerPptxHandlers(): void {
 
   ipcMain.handle('pptx:computeLayout', async (_event, slidesJson: string) => {
     return computeLayoutSpecs(slidesJson)
-  })
-
-  ipcMain.handle('pptx:importTemplate', async (_event) => {
-    try {
-      const win = BrowserWindow.getFocusedWindow()
-      const dialogOptions = {
-        title: 'Select PPTX Template',
-        filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
-        properties: ['openFile' as const],
-      }
-      const { filePaths, canceled } = win
-        ? await dialog.showOpenDialog(win, dialogOptions)
-        : await dialog.showOpenDialog(dialogOptions)
-
-      if (canceled || filePaths.length === 0) {
-        return { success: false, error: 'Cancelled' }
-      }
-
-      const sourcePath = filePaths[0]
-      const workspaceDir = await readWorkspaceDir()
-      const templateDir = path.join(workspaceDir, 'template')
-      const templatePath = path.join(templateDir, 'template.pptx')
-      const assetsDir = path.join(templateDir, 'assets')
-
-      await fs.mkdir(templateDir, { recursive: true })
-      await fs.copyFile(sourcePath, templatePath)
-
-      // Extract metadata via Python script
-      const python = await resolvePythonExecutable()
-      const extractScript = resolveBundledPath('scripts', 'extract_template_meta.py')
-      const { stdout, stderr } = await execFileAsync(
-        python,
-        [extractScript, templatePath, assetsDir],
-        {
-          windowsHide: true,
-          timeout: 30_000,
-          maxBuffer: 4 * 1024 * 1024,
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
-        },
-      )
-
-      if (stderr?.trim()) {
-        console.log('[importTemplate]', stderr.trim())
-      }
-
-      const meta = JSON.parse(stdout.trim())
-      if (meta.error) {
-        return { success: false, error: meta.error }
-      }
-
-      // Build warning if dimensions are not 16:9
-      const { widthIn, heightIn } = meta.originalDimensions ?? {}
-      const isWidescreen = Math.abs((widthIn ?? 13.333) - 13.333) < 0.1 && Math.abs((heightIn ?? 7.5) - 7.5) < 0.1
-      const warning = isWidescreen
-        ? undefined
-        : `Template dimensions (${widthIn}\" \u00D7 ${heightIn}\") have been adjusted to 16:9 widescreen (13.333\" \u00D7 7.5\") for layout compatibility.`
-
-      return { success: true, templatePath, meta, warning }
-    } catch (err) {
-      return { success: false, error: formatExecutionFailure(err) }
-    }
-  })
-
-  ipcMain.handle('pptx:removeTemplate', async () => {
-    try {
-      const workspaceDir = await readWorkspaceDir()
-      const templateDir = path.join(workspaceDir, 'template')
-      await fs.rm(templateDir, { recursive: true, force: true }).catch(() => {})
-      return { success: true }
-    } catch {
-      return { success: true } // Best-effort cleanup
-    }
   })
 
   ipcMain.handle('pptx:clearWorkspaceArtifacts', async () => {

@@ -32,15 +32,14 @@ function getToneFromHex(hex: string): 'dark' | 'light' {
   return luminance < 0.45 ? 'dark' : 'light'
 }
 
+
 export function SlideNavigator() {
-  const { work, deleteSlide, moveToAppendix, setDesignStyle, setCustomBackgroundColor, setFramework, setCustomFrameworkPrompt, setTemplatePath, setTemplateMeta } = useSlidesStore()
+  const { work, deleteSlide, moveToAppendix, setDesignStyle, setCustomBackgroundColor, setFramework, setCustomFrameworkPrompt } = useSlidesStore()
   const slides = work.slides
   const selectedFramework = getFrameworkMeta(work.framework)
   const selectedStyle = getDesignStyleMeta(work.designStyle)
-  const isCustomTemplate = work.designStyle === 'Custom Template'
   const isCustomBlank = work.designStyle === 'Blank Custom Color'
   const isCustomFramework = work.framework === 'custom-prompt'
-  const [templateLoading, setTemplateLoading] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
 
   async function handleClearSlides() {
@@ -170,9 +169,7 @@ export function SlideNavigator() {
               // Sync style tone to palette store so BG/TEXT tokens flip correctly
               const meta = next ? getDesignStyleMeta(next as Parameters<typeof setDesignStyle>[0]) : null
               const { setStyleTone, commitTokens } = usePaletteStore.getState()
-              const backgroundColor = next === 'Blank Custom Color'
-                ? (work.customBackgroundColor ?? DEFAULT_CUSTOM_BACKGROUND_COLOR)
-                : null
+              const backgroundColor = work.customBackgroundColor ?? DEFAULT_CUSTOM_BACKGROUND_COLOR
               setStyleTone(
                 next === 'Blank Custom Color'
                   ? getToneFromHex(backgroundColor)
@@ -252,74 +249,6 @@ export function SlideNavigator() {
               </p>
             </div>
           )}
-          {isCustomTemplate && (
-            <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
-              The attached PPTX blank page will be used for theme colors and background template styling.
-            </p>
-          )}
-          {isCustomTemplate && (
-            <div className="flex flex-col gap-1.5 mt-1 p-2 border" style={{ borderColor: 'var(--panel-border)', background: 'var(--surface-hover)' }}>
-              {work.templatePath ? (
-                <>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                      {work.templatePath.split(/[\\/]/).pop()}
-                    </span>
-                    <button
-                      onClick={async () => {
-                        await window.electronAPI.pptx.removeTemplate()
-                        setTemplatePath(null)
-                        setTemplateMeta(null)
-                      }}
-                      className="flex-none text-[10px] px-2 py-0.5 border transition-colors hover:bg-[var(--surface)]"
-                      style={{ borderColor: 'var(--panel-border)', color: 'var(--text-secondary)' }}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                  <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
-                    {work.templateMeta
-                      ? 'Theme colors and backgrounds have been extracted. The palette is locked to this template\u2019s color scheme.'
-                      : 'Template attached. Extracting metadata\u2026'}
-                  </p>
-                </>
-              ) : (
-                <>
-                  <button
-                    disabled={templateLoading}
-                    onClick={async () => {
-                      setTemplateLoading(true)
-                      try {
-                        const result = await window.electronAPI.pptx.importTemplate()
-                        if (result.success && result.templatePath) {
-                          setTemplatePath(result.templatePath)
-                          if (result.meta) {
-                            setTemplateMeta(result.meta)
-                            // Auto-populate palette from template's theme colors
-                            const { setSlots, setColors, setThemeName, commitTokens } = usePaletteStore.getState()
-                            setSlots(result.meta.themeColors)
-                            const slotEntries = Object.entries(result.meta.themeColors)
-                            setColors(slotEntries.map(([name, hex]) => ({ name, hex })))
-                            setThemeName('Custom Template')
-                            commitTokens()
-                          }
-                        }
-                      } finally {
-                        setTemplateLoading(false)
-                      }
-                    }}
-                    className="h-8 px-3 text-xs font-semibold transition-colors"
-                    style={{ background: 'var(--accent)', color: '#fff', opacity: templateLoading ? 0.6 : 1 }}
-                  >
-                    {templateLoading ? 'Importing\u2026' : 'Attach PPTX Template'}
-                  </button>
-                  <p className="text-[10px] leading-4" style={{ color: 'var(--text-muted)' }}>
-                    The attached PPTX will be used as a design template. All placeholders will be ignored — only the blank layout, theme colors, and background images will be used.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
         </div>
 
       </div>
@@ -382,10 +311,24 @@ function SlideListItem({
     }
   }, [slide.title, slide.keyMessage, slide.bullets, slide.notes, editing])
 
-  function openPicker(nextQuery: string) {
+  async function openPicker(nextQuery: string) {
     const trimmed = nextQuery.trim()
     if (trimmed !== (slide.imageQuery ?? '')) {
       setSlideImageQuery(slide.number, trimmed || null)
+    }
+    if (!trimmed) {
+      const selected = await window.electronAPI.images.pickLocalFilesForSlide({
+        number: slide.number,
+        title: slide.title,
+        keyMessage: slide.keyMessage,
+        bullets: slide.bullets,
+        imageQuery: null,
+        imageQueries: [],
+      })
+      if (selected.length > 0) {
+        applyResolvedImages(selected)
+      }
+      return
     }
     setPickerOpen(true)
   }
@@ -541,7 +484,7 @@ function SlideListItem({
               style={{ borderColor: 'var(--panel-border)', background: 'var(--surface)', color: 'var(--text-primary)' }}
             />
             <button
-              onClick={() => openPicker(imageQuery)}
+              onClick={() => void openPicker(imageQuery)}
               className="h-8 px-3 text-xs font-semibold transition-colors"
               style={{ background: 'var(--accent)', color: '#fff' }}
             >

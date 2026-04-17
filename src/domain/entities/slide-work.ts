@@ -56,6 +56,18 @@ export type FrameworkType =
   | 'exec-summary-first'
   | 'custom-prompt';
 
+export type SlideChartType = 'bar' | 'column' | 'line' | 'pie' | 'doughnut' | 'area';
+
+export interface SlideAnalysisMeta {
+  chartType?: SlideChartType;
+  caption?: string;
+  source?: string;
+  unit?: string;
+  aggregation?: string;
+  confidence?: string;
+  analysisSummary?: string;
+}
+
 export interface SlideSelectedImage {
   id: string;
   imageQuery: string | null;
@@ -74,6 +86,7 @@ export interface SlideItem {
   layout: SlideLayout;
   bullets: string[];
   notes: string;
+  analysisMeta?: SlideAnalysisMeta;
   icon: string | null;
   imageQuery: string | null;
   imageQueries: string[];
@@ -85,24 +98,12 @@ export interface SlideItem {
   accent: 'blue' | 'green' | 'purple' | 'teal' | 'orange';
 }
 
-export interface TemplateMeta {
-  themeColors: {
-    dk1: string; lt1: string; dk2: string; lt2: string;
-    accent1: string; accent2: string; accent3: string;
-    accent4: string; accent5: string; accent6: string;
-    hlink: string; folHlink: string;
-  };
-  backgroundImages: string[];
-  backgroundSurfaceHex?: string | null;
-  blankLayoutIndex: number;
-  fonts: { major: string; minor: string };
-  originalDimensions: { widthIn: number; heightIn: number };
-}
 
 export type SlidePhase = 'empty' | 'planning' | 'story' | 'generating' | 'ready';
 
 export interface SlideWork {
   phase: SlidePhase;
+  activeWorkflowId: 'prestaging' | 'create-pptx' | 'poststaging' | null;
   title: string;
   story: SlideStory | null;
   designBrief: DesignBrief | null;
@@ -110,8 +111,7 @@ export interface SlideWork {
   customBackgroundColor: string | null;
   framework: FrameworkType | null;
   customFrameworkPrompt: string | null;
-  templatePath: string | null;
-  templateMeta: TemplateMeta | null;
+
   slides: SlideItem[];
   thinking: string | null;
   isStreaming: boolean;
@@ -128,6 +128,7 @@ export interface ScenarioPayload {
     layout: string;
     bullets: string[];
     notes: string;
+    analysisMeta?: SlideAnalysisMeta;
     icon?: string;
     imageQuery?: string;
     imageQueries?: string[];
@@ -144,6 +145,7 @@ export interface SlideUpdatePayload {
   layout: string;
   bullets: string[];
   notes: string;
+  analysisMeta?: SlideAnalysisMeta;
   icon?: string;
   imageQuery?: string;
   imageQueries?: string[];

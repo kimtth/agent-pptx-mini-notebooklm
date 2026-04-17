@@ -437,12 +437,6 @@
     .blank-dark .shape-b { left: 48px; right: 28px; top: 40px; height: 38px; background: rgba(255, 255, 255, 0.08); border: 0; }
     .blank-dark .shape-c { left: 48px; right: 86px; bottom: 30px; height: 14px; background: rgba(255, 255, 255, 0.06); border: 0; }
 
-    .custom-template { --visual-bg: linear-gradient(135deg, #1a1d28, #2c3141 45%, #151923); --visual-ink: #fbfbff; }
-    .custom-template .shape-a { inset: 20px; border-radius: 18px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)); }
-    .custom-template .shape-b { left: 38px; right: 38px; top: 42px; height: 18px; background: rgba(255, 255, 255, 0.08); border: 0; }
-    .custom-template .shape-c { left: 38px; right: 96px; top: 74px; height: 58px; background: rgba(255, 255, 255, 0.05); border: 1px dashed rgba(255, 255, 255, 0.18); }
-    .custom-template .shape-d { right: 38px; top: 74px; width: 42px; height: 58px; background: rgba(138, 224, 178, 0.2); border: 0; }
-
     .glass { --visual-bg: linear-gradient(135deg, #11182a, #24304a 48%, #101a29); --visual-ink: #ffffff; }
     .glass .shape-a { width: 140px; height: 84px; left: 28px; top: 36px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.22); backdrop-filter: blur(8px); transform: rotate(-6deg); }
     .glass .shape-b { width: 110px; height: 68px; right: 28px; bottom: 30px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.22); transform: rotate(7deg); }
@@ -712,7 +706,7 @@
           <h2>Foundation Modes</h2>
           <p>These three options are part of the selector but do not correspond to one of the 30 TodayCode style references.</p>
         </div>
-        <p>Use Blank modes when content needs neutrality. Use Custom Template when your organization already owns the visual system.</p>
+        <p>Use Blank modes when content needs neutrality.</p>
       </div>
       <div class="card-grid">
         <article class="style-card foundation blank-white">
@@ -740,20 +734,6 @@
             <div class="card-topline"><span>Dark</span><span>General purpose</span></div>
             <h3 class="card-title">Blank Dark</h3>
             <p class="foundation-copy">Use when you need a restrained dark stage for charts, dashboards, or live presentations without decorative styling.</p>
-          </div>
-        </article>
-
-        <article class="style-card foundation custom-template">
-          <div class="visual">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div>
-            <div class="style-code">Brand-owned</div>
-            <div class="visual-label">Custom Template</div>
-            <div class="visual-foot">Bring your master</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>Variable</span><span>Corporate templates</span></div>
-            <h3 class="card-title">Custom Template</h3>
-            <p class="foundation-copy">Attach a PPTX template when the deck must inherit a real brand system, theme colors, and background assets.</p>
           </div>
         </article>
       </div>

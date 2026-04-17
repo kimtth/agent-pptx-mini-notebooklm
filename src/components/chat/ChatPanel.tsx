@@ -7,6 +7,7 @@ import { useSlidesStore } from '../../stores/slides-store'
 import { usePaletteStore } from '../../stores/palette-store'
 import { useDataSourcesStore } from '../../stores/data-sources-store'
 import { createUserMessage, historyToIpc } from '../../application/chat-use-case'
+import type { ChatToolEvent } from '../../domain/ports/ipc'
 import { applyThemeBackground, applyThemeColorTreatment, applyThemeFontFamily, applyThemeSlideIcons, applyThemeTextBoxCornerStyle, applyThemeTextBoxStyle } from '../../application/palette-use-case'
 import type { WorkspaceContext } from '../../application/chat-use-case'
 import { getAvailableIconChoices } from '../../domain/icons/iconify'
@@ -78,10 +79,60 @@ function StreamingTextMessage({ content }: { content: string }) {
   )
 }
 
+function ToolLogList({ logs, compact = false }: { logs: ChatToolEvent[]; compact?: boolean }) {
+  if (logs.length === 0) return null
+
+  const statusColor = (status: ChatToolEvent['status']) => {
+    if (status === 'success') return 'var(--accent)'
+    if (status === 'error') return '#dc2626'
+    return 'var(--text-muted)'
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {logs.map((log) => (
+        <div
+          key={log.id}
+          className="border px-3 py-2"
+          style={{
+            borderColor: 'var(--panel-border)',
+            background: compact ? 'var(--surface-hover)' : 'rgba(15, 23, 42, 0.03)',
+          }}
+        >
+          <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.18em]">
+            <span className="font-semibold" style={{ color: 'var(--text-secondary)' }}>{log.toolName}</span>
+            <span className="font-semibold" style={{ color: statusColor(log.status) }}>
+              {log.status === 'running' ? 'Running' : log.status === 'success' ? 'Done' : 'Failed'}
+              {typeof log.durationMs === 'number' ? ` · ${Math.max(1, Math.round(log.durationMs / 100) / 10)}s` : ''}
+            </span>
+          </div>
+          {log.argsPreview && (
+            <pre className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+              args: {log.argsPreview}
+            </pre>
+          )}
+          {log.resultPreview && (
+            <pre className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed" style={{ color: 'var(--text-primary)' }}>
+              result: {log.resultPreview}
+            </pre>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /** Isolated component for streaming — subscribes to pending state independently */
-function StreamingBubble({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement | null> }) {
+function StreamingBubble({
+  scrollRef,
+  showToolCallingMessages,
+}: {
+  scrollRef: React.RefObject<HTMLDivElement | null>
+  showToolCallingMessages: boolean
+}) {
   const pendingContent = useChatStore((s) => s.pendingContent)
   const pendingThinking = useChatStore((s) => s.pendingThinking)
+  const pendingToolLogs = useChatStore((s) => s.pendingToolLogs)
   const streaming = useSlidesStore((s) => s.work.isStreaming)
 
   const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -96,7 +147,7 @@ function StreamingBubble({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElem
 
   if (!streaming) return null
 
-  if (!pendingContent && !pendingThinking) {
+  if (!pendingContent && !pendingThinking && pendingToolLogs.length === 0) {
     return (
       <div className="flex flex-col gap-1.5">
         <span className="text-[11px] font-semibold uppercase tracking-widest px-1" style={{ color: 'var(--text-muted)' }}>
@@ -122,6 +173,9 @@ function StreamingBubble({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElem
           {pendingThinking.slice(-600)}
         </div>
       )}
+      {showToolCallingMessages && pendingToolLogs.length > 0 && (
+        <ToolLogList logs={pendingToolLogs} compact />
+      )}
       {pendingContent && (
         <StreamingTextMessage content={stripPythonCodeForDisplay(pendingContent)} />
       )}
@@ -131,6 +185,7 @@ function StreamingBubble({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElem
 
 export function ChatPanel() {
   const [input, setInput] = useState('')
+  const [showToolCallingMessages, setShowToolCallingMessages] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const busyStartRef = useRef<number | null>(null)
@@ -144,11 +199,24 @@ export function ChatPanel() {
   const pptxBusy = useSlidesStore((s) => s.work.isPptxBusy)
   const hasSlides = useSlidesStore((s) => s.work.slides.length > 0)
   const initializeForBrainstorm = useSlidesStore((s) => s.initializeForBrainstorm)
+  const setActiveWorkflow = useSlidesStore((s) => s.setActiveWorkflow)
   const setStreaming = useSlidesStore((s) => s.setStreaming)
   const setPptxBusy = useSlidesStore((s) => s.setPptxBusy)
   const { tokens, selectedFont, selectedColorTreatment, selectedTextBoxStyle, selectedTextBoxCornerStyle, selectedIconCollection, styleTone } = usePaletteStore()
   const { files: dataSources, urls: urlSources } = useDataSourcesStore()
   const busy = streaming || pptxBusy
+
+  useEffect(() => {
+    if (!window.electronAPI?.settings) return
+
+    const applySetting = (settings: Record<string, string>) => {
+      setShowToolCallingMessages((settings.SHOW_TOOL_CALLING_MESSAGES ?? '0') === '1')
+    }
+
+    void window.electronAPI.settings.get().then(applySetting).catch(() => undefined)
+    const unsubscribe = window.electronAPI.settings.onChanged(applySetting)
+    return unsubscribe
+  }, [])
 
   // Track elapsed time: tick every 30s while busy, snapshot on completion
   useEffect(() => {
@@ -183,7 +251,8 @@ export function ChatPanel() {
 
     const work = useSlidesStore.getState().work
     const availableIcons = getAvailableIconChoices(selectedIconCollection)
-    const workflow = options?.workflowId ? getWorkflowConfig(options.workflowId) : null
+    const workflowId = options?.workflowId ?? null
+    const workflow = workflowId ? getWorkflowConfig(workflowId) : null
     const effectiveTheme = applyThemeSlideIcons(
       applyThemeTextBoxCornerStyle(
         applyThemeTextBoxStyle(
@@ -210,7 +279,6 @@ export function ChatPanel() {
       customBackgroundColor: work.customBackgroundColor,
       framework: work.framework,
       customFrameworkPrompt: work.customFrameworkPrompt,
-      templateMeta: work.templateMeta,
       theme: effectiveTheme,
       workflow,
       dataSources,
@@ -230,6 +298,7 @@ export function ChatPanel() {
   const brainstorm = async () => {
     if (busy) return
     const workflow = getWorkflowConfig('prestaging')
+    setActiveWorkflow(workflow.id)
     initializeForBrainstorm()
     let prompt = input.trim()
     if (!prompt) {
@@ -250,6 +319,7 @@ export function ChatPanel() {
     const workflow = getWorkflowConfig('create-pptx')
     const prompt = input.trim() || workflow.triggerPrompt
 
+    setActiveWorkflow(workflow.id)
     setPptxBusy(true)
     await sendMessage(prompt, { clearInput: false, workflowId: workflow.id })
   }
@@ -350,6 +420,9 @@ export function ChatPanel() {
                     <pre className="mt-2 whitespace-pre-wrap leading-relaxed">{msg.thinking}</pre>
                   </details>
                 )}
+                {showToolCallingMessages && msg.toolLogs && msg.toolLogs.length > 0 && (
+                  <ToolLogList logs={msg.toolLogs} />
+                )}
                 <AssistantMarkdownMessage content={msg.content} />
               </div>
             )}
@@ -357,7 +430,7 @@ export function ChatPanel() {
         ))}
 
         {/* Streaming — isolated component to avoid parent re-renders */}
-        <StreamingBubble scrollRef={messagesEndRef} />
+        <StreamingBubble scrollRef={messagesEndRef} showToolCallingMessages={showToolCallingMessages} />
 
         <div ref={messagesEndRef} />
       </div>

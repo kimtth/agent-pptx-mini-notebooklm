@@ -14,7 +14,6 @@ import type {
   SlideUpdatePayload,
   FrameworkType,
   DesignBrief,
-  TemplateMeta,
 } from '../domain/entities/slide-work';
 
 const DEFAULT_CUSTOM_BACKGROUND_COLOR = '#F5F5F5'
@@ -72,6 +71,7 @@ function mapLayout(raw: string): SlideItem['layout'] {
     'diagram',
     'summary',
     'chart',
+    'table',
     'closing',
     'photo_fullbleed',
     'multi_column',
@@ -93,6 +93,7 @@ interface SlidesStore {
   work: SlideWork;
   applyScenario(payload: ScenarioPayload): void;
   initializeForBrainstorm(): void;
+  setActiveWorkflow(id: SlideWork['activeWorkflowId']): void;
   applySlideUpdate(update: SlideUpdatePayload): void;
   patchSlide(number: number, patch: Partial<Pick<SlideItem, 'title' | 'keyMessage' | 'bullets' | 'notes' | 'layout'>>): void;
   applyResolvedImages(images: Array<{ id: string; number: number; imageQuery: string | null; imageUrl: string | null; imagePath: string | null; imageAttribution: string | null; sourcePageUrl: string | null; thumbnailUrl: string | null }>): void;
@@ -102,8 +103,6 @@ interface SlidesStore {
   setCustomBackgroundColor(color: string | null): void;
   setFramework(fw: FrameworkType): void;
   setCustomFrameworkPrompt(prompt: string | null): void;
-  setTemplatePath(path: string | null): void;
-  setTemplateMeta(meta: TemplateMeta | null): void;
   setStreaming(v: boolean): void;
   setPptxBusy(v: boolean): void;
   setThinking(delta: string): void;
@@ -116,6 +115,7 @@ interface SlidesStore {
 
 const initial: SlideWork = {
   phase: 'empty',
+  activeWorkflowId: null,
   title: '',
   story: null,
   designBrief: null,
@@ -123,8 +123,6 @@ const initial: SlideWork = {
   customBackgroundColor: null,
   framework: null,
   customFrameworkPrompt: null,
-  templatePath: null,
-  templateMeta: null,
   slides: [],
   thinking: null,
   isStreaming: false,
@@ -144,6 +142,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
       layout: mapLayout(s.layout),
       bullets: s.bullets,
       notes: s.notes,
+      analysisMeta: s.analysisMeta,
       icon: s.icon ?? null,
       imageQuery: s.imageQuery ?? null,
       imageQueries: normalizeImageQueries(s.imageQuery ?? null, s.imageQueries),
@@ -158,6 +157,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
       work: {
         ...state.work,
         phase: 'story',
+        activeWorkflowId: 'prestaging',
         title: payload.title,
         slides,
         designBrief: (payload.designBrief as DesignBrief | undefined) ?? state.work.designBrief,
@@ -171,6 +171,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
       work: {
         ...state.work,
         phase: 'planning',
+        activeWorkflowId: 'prestaging',
         title: '',
         story: null,
         designBrief: null,
@@ -186,6 +187,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
+        activeWorkflowId: 'prestaging',
         slides: state.work.slides.map((s) =>
           s.number === update.number
             ? {
@@ -195,6 +197,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
                 layout: mapLayout(update.layout),
                 bullets: update.bullets,
                 notes: update.notes,
+                analysisMeta: update.analysisMeta ?? s.analysisMeta,
                 icon: update.icon ?? s.icon,
                 imageQuery: update.imageQuery ?? s.imageQuery,
                 imageQueries: normalizeImageQueries(update.imageQuery ?? s.imageQuery, update.imageQueries),
@@ -209,6 +212,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
+        activeWorkflowId: 'prestaging',
         slides: state.work.slides.map((s) =>
           s.number === number ? { ...s, ...patch } : s,
         ),
@@ -216,10 +220,17 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     }));
   },
 
+  setActiveWorkflow(activeWorkflowId) {
+    set((state) => ({
+      work: { ...state.work, activeWorkflowId },
+    }));
+  },
+
   applyResolvedImages(images) {
     set((state) => ({
       work: {
         ...state.work,
+        activeWorkflowId: 'prestaging',
         slides: state.work.slides.map((slide) => {
           const resolved = images.filter((item) => item.number === slide.number)
           if (resolved.length === 0) return slide
@@ -240,6 +251,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
+        activeWorkflowId: 'prestaging',
         slides: state.work.slides.map((slide) =>
           slide.number === number
             ? {
@@ -257,6 +269,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
+        activeWorkflowId: 'prestaging',
         slides: state.work.slides.map((slide) => {
           if (slide.number !== number) return slide
           return syncPrimaryImage(slide, slide.selectedImages.filter((image) => image.id !== imageId))
@@ -269,6 +282,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
+        activeWorkflowId: 'prestaging',
         designStyle: style,
         customBackgroundColor: style === 'Blank Custom Color'
           ? state.work.customBackgroundColor ?? DEFAULT_CUSTOM_BACKGROUND_COLOR
@@ -276,8 +290,6 @@ export const useSlidesStore = create<SlidesStore>()(persist(
         designBrief: state.work.designBrief
           ? { ...state.work.designBrief, visualStyle: style ?? state.work.designBrief.visualStyle }
           : state.work.designBrief,
-        // Clear template when switching away from Custom Template
-        ...(style !== 'Custom Template' ? { templatePath: null, templateMeta: null } : {}),
       },
     }));
   },
@@ -286,6 +298,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
     set((state) => ({
       work: {
         ...state.work,
+        activeWorkflowId: 'prestaging',
         customBackgroundColor,
       },
     }));
@@ -293,25 +306,13 @@ export const useSlidesStore = create<SlidesStore>()(persist(
 
   setFramework(fw) {
     set((state) => ({
-      work: { ...state.work, framework: fw, phase: state.work.phase === 'empty' ? 'planning' : state.work.phase },
+      work: { ...state.work, framework: fw, phase: state.work.phase === 'empty' ? 'planning' : state.work.phase, activeWorkflowId: 'prestaging' },
     }));
   },
 
   setCustomFrameworkPrompt(customFrameworkPrompt) {
     set((state) => ({
-      work: { ...state.work, customFrameworkPrompt, phase: state.work.phase === 'empty' ? 'planning' : state.work.phase },
-    }));
-  },
-
-  setTemplatePath(templatePath) {
-    set((state) => ({
-      work: { ...state.work, templatePath },
-    }));
-  },
-
-  setTemplateMeta(templateMeta) {
-    set((state) => ({
-      work: { ...state.work, templateMeta },
+      work: { ...state.work, customFrameworkPrompt, phase: state.work.phase === 'empty' ? 'planning' : state.work.phase, activeWorkflowId: 'prestaging' },
     }));
   },
 
@@ -343,7 +344,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
       const [item] = slides.splice(from - 1, 1);
       slides.splice(to - 1, 0, item);
       const renumbered = slides.map((s, i) => ({ ...s, number: i + 1 }));
-      return { work: { ...state.work, slides: renumbered } };
+      return { work: { ...state.work, slides: renumbered, activeWorkflowId: 'prestaging' } };
     });
   },
 
@@ -352,7 +353,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
       const slides = state.work.slides
         .filter((s) => s.number !== number)
         .map((s, i) => ({ ...s, number: i + 1 }));
-      return { work: { ...state.work, slides } };
+      return { work: { ...state.work, slides, activeWorkflowId: 'prestaging' } };
     });
   },
 
@@ -364,7 +365,7 @@ export const useSlidesStore = create<SlidesStore>()(persist(
       const [item] = slides.splice(idx, 1);
       slides.push({ ...item, accent: 'orange' });
       const renumbered = slides.map((s, i) => ({ ...s, number: i + 1 }));
-      return { work: { ...state.work, slides: renumbered } };
+      return { work: { ...state.work, slides: renumbered, activeWorkflowId: 'prestaging' } };
     });
   },
 }),

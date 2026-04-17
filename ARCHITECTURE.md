@@ -97,9 +97,12 @@ sequenceDiagram
 - `update_slide`
 - `suggest_framework`
 - `patch_layout_infrastructure`
+- `tweak_slide`
 - `rerun_pptx`
 
 Those tools do not render directly. They update the workspace model first. The canonical slide state lives in `src\stores\slides-store.ts` as `SlideWork`.
+
+When `Show Tool Calling Messages` is enabled in Settings, structured tool execution events from these actions are surfaced in the chat transcript with running/success/error status.
 
 That is an important design decision: **the LLM mutates structured slide state, not the PowerPoint file directly**.
 
@@ -155,8 +158,6 @@ The main process injects all runtime inputs through environment variables, inclu
 | `PPTX_DESIGN_STYLE` | selected design style |
 | `PPTX_ICON_COLLECTION` | active icon collection |
 | `PPTX_SLIDE_ASSETS_JSON` | per-slide image/icon metadata |
-| `PPTX_TEMPLATE_PATH` | optional custom template file |
-| `PPTX_TEMPLATE_META_JSON` | parsed template metadata |
 | `PPTX_NOTEBOOKLM_INFOGRAPHICS` | optional NotebookLM infographic manifest |
 | `PPTX_LAYOUT_SPECS_JSON` | precomputed geometry |
 | `WORKSPACE_DIR` | workspace root for artifacts |
@@ -198,7 +199,53 @@ That split is intentional:
 - `LAYOUT_ENGINE.md` covers **geometry**
 - `slide_renderer.py` covers **visual realization**
 
-## 6. Semantic shape roles and why they matter
+## 6. Chart and table rendering
+
+`slide_renderer.py` includes dedicated renderers for data-driven slide layouts: `_render_chart_slide` and `_render_table_slide`.
+
+### 6.1 Chart pipeline
+
+Chart data travels from the LLM through the TypeScript layer into Python:
+
+1. The LLM emits a slide with `layout: "chart"` and bullet data encoded as pipe-delimited rows.
+2. Optionally, the LLM provides `analysisMeta` — a structured metadata object with `chartType`, `caption`, `source`, `unit`, `aggregation`, and `confidence`.
+3. `pptx-handler.ts` maps `analysisMeta` into `analysis_meta` on `LayoutInputSlide` and generates a `footer_text` from the metadata fields.
+4. `slide_renderer.py` parses the bullet data with `_parse_chart_data()`, which consults both inline metadata bullets (`chart:type=bar`) and the structured `analysis_meta` dict. Structured metadata takes precedence.
+5. The parsed result is a `ParsedChart` dataclass containing chart type, categories, series, and caption.
+6. `add_native_chart()` in `pptx-python-runner.py` creates a real editable python-pptx chart and colors each series using `ACCENT1`–`ACCENT6` from the active theme.
+7. `_style_chart()` sets axis line colors from the theme `BORDER` token and configures gridlines, legends, and data-label formatting.
+
+Supported chart types: `bar`, `column`, `line`, `pie`, `doughnut`, `area`.
+
+Known limitation: chart internal text (legend labels, axis tick labels, data labels) does **not** receive explicit theme font colors. In dark-mode themes this can cause visibility issues.
+
+### 6.2 Table pipeline
+
+1. The LLM emits a slide with `layout: "table"` and pipe-delimited rows as bullets.
+2. `_render_table_slide()` parses rows via `_parse_table_rows()` (supports pipe, tab, and comma delimiters).
+3. The header row uses the accent color as a fill; body rows use zebra striping via `_mix_hex(bg_base, accent, weight)` to blend the accent into the slide background.
+4. Column widths auto-size with the first column 1.25× wider for labels.
+5. Numeric columns are detected and right-aligned automatically.
+6. Font sizing uses density-based buckets (≤12 cells → 12pt, ≤24 → 11pt, ≤40 → 10pt, else → 9pt).
+7. Text colors are contrast-checked at render time via `ctx.ensure_contrast()`.
+
+### 6.3 `analysisMeta` contract
+
+`SlideAnalysisMeta` is an optional field on `SlideItem`, `ScenarioPayload`, and `SlideUpdatePayload`:
+
+| Field | Purpose |
+|---|---|
+| `chartType` | Preferred chart form (bar, column, line, pie, doughnut, area) |
+| `caption` | Short analytical caption rendered as footer text |
+| `source` | Data provenance (e.g. "Gartner 2025") |
+| `unit` | Measurement unit (e.g. "USD millions") |
+| `aggregation` | How values were aggregated (e.g. "YoY growth %") |
+| `confidence` | Data confidence level |
+| `analysisSummary` | Analyst commentary for speaker notes |
+
+The TypeScript layer converts `analysisMeta` to `analysis_meta` (snake_case) for Python, and `formatAnalysisFooter()` produces a combined footer string from caption/source/unit/aggregation/confidence.
+
+## 7. Semantic shape roles and why they matter
 
 One subtle but important runtime decision is the **shape semantic registry** in `pptx-python-runner.py`.
 
@@ -218,7 +265,7 @@ The renderer registers shapes through helpers like:
 
 That design makes validation much more reliable than relying on shape names or heuristics alone.
 
-## 7. Validation, repair, and QA are part of rendering
+## 8. Validation, repair, and QA are part of rendering
 
 The Python runner does not stop at “file written successfully.” It performs a post-render QA pass:
 
@@ -249,7 +296,7 @@ Important behaviors in `pptx-python-runner.py`:
 
 This is why the UI receives a QA object, not just a success flag.
 
-## 8. Post-staging feedback loop
+## 9. Post-staging feedback loop
 
 `src\App.tsx` turns QA into another workflow step. If `pptx.renderPreview()` returns a `qa` payload, the app can automatically start the `poststaging` workflow through chat instead of silently accepting the deck.
 
@@ -266,7 +313,7 @@ flowchart LR
 
 This is another core architectural choice: **QA findings stay inside the same agent loop**, instead of being dumped to logs for a human to interpret manually.
 
-## 9. Preview generation and why it is separate from PPTX generation
+## 10. Preview generation and why it is separate from PPTX generation
 
 Preview images are not generated by `python-pptx`. They come from **PowerPoint COM export** on Windows.
 
@@ -287,7 +334,7 @@ That preserves the main artifact even when preview rendering is unavailable.
 
 There is one more important operational detail: `pptx:generate` does **not** run the renderer again. It looks up the most recent preview PPTX in `workspace\previews` and copies that file to the user-selected destination. In other words, preview generation is the canonical build step; export is a save/copy step.
 
-## 10. How the renderer UI consumes previews
+## 11. How the renderer UI consumes previews
 
 The renderer side uses a very light protocol:
 
@@ -302,7 +349,7 @@ The renderer side uses a very light protocol:
 
 So local image serving is explicit and sandboxed to known workspace roots.
 
-## 11. Workspace artifacts that drive the whole system
+## 12. Workspace artifacts that drive the whole system
 
 These files are the real interface between layers:
 
@@ -318,7 +365,7 @@ These files are the real interface between layers:
 
 Persisting these files is what makes the system inspectable and recoverable.
 
-## 12. Data ingestion and retrieval in the architecture
+## 13. Data ingestion and retrieval in the architecture
 
 Although rendering is the end goal, the upstream data path matters because it shapes the prompt and the final slides.
 
@@ -340,7 +387,7 @@ flowchart LR
 
 The architectural point is that the app does **not** stuff full documents directly into every generation prompt. It indexes them once, then retrieves only the sections relevant to the current slide or storyboard step.
 
-## 13. Important code hotspots
+## 14. Important code hotspots
 
 If you need to understand or change rendering behavior, these are the primary files:
 
@@ -360,7 +407,7 @@ If you need to understand or change rendering behavior, these are the primary fi
 | `scripts\style_config.py` | style presets and guardrails |
 | `scripts\layout\layout_validator.py` | final validation rules |
 
-## 14. Palette always wins — style-override precedence
+## 15. Palette always wins — style-override precedence
 
 Every user-facing visual control in the palette UI flows into the render pipeline through a dedicated environment variable:
 
@@ -384,7 +431,7 @@ layout-solver JSON contract.
 
 When adding a new palette control, follow the same contract: read it from an environment variable and apply it without checking whether a named preset is active. Document the new variable in the table above.
 
-## 15. The most important architectural takeaway (two-plane design)
+## 16. The most important architectural takeaway (two-plane design)
 
 The system is best understood as a **two-plane design**:
 
@@ -394,7 +441,7 @@ The system is best understood as a **two-plane design**:
 `LAYOUT_ENGINE.md` explains one important slice of the render plane: coordinate solving.  
 The rest of the render plane — artifact orchestration, deterministic slide writing, preview export, and QA feedback — lives in the files above and is what this document adds.
 
-## 16. Short summary
+## 17. Short summary
 
 In the current codebase, rendering works like this:
 

@@ -164,6 +164,7 @@ N+1. Appendix section (layout: section)
 | `layout` | ✅ | Layout hint (see below) — may be reinterpreted by PPTX generator |
 | `bullets` | ✅ | Content items with specific data/numbers |
 | `notes` | ✅ | Speaker notes, 2–3 sentences (mandatory on every slide) |
+| `analysisMeta` | — | Optional structured metadata for chart/table slides: `chartType`, `caption`, `source`, `unit`, `aggregation`, `confidence`, `analysisSummary` |
 | `icon` | — | Icon name from the available set |
 
 ## Available Layouts
@@ -181,6 +182,7 @@ N+1. Appendix section (layout: section)
 | `diagram` | Concept diagram / architecture |
 | `summary` | Key Takeaways (3 points) |
 | `chart` | Chart-focused layout: large chart zone |
+| `table` | Table-focused layout: structured header + data rows |
 | `closing` | Thank-you / end slide |
 | `photo_fullbleed` | Full-bleed photo with overlaid title |
 | `multi_column` | 3–5 equal-width content columns |
@@ -202,6 +204,14 @@ Icons are fetched live from the **Iconify** public API. Use a full valid Iconify
 - Match the user's language when creating slides
 - Append original terms for technical jargon (e.g., "Retrieval-Augmented Generation (RAG)")
 - Use official names for products/services
+
+## Data-Driven Layout Rules
+
+- For `chart`, encode the dataset in `bullets` as pipe-delimited rows.
+- Prefer `analysisMeta.chartType` to choose the chart form (`bar`, `column`, `line`, `pie`, `doughnut`, `area`).
+- Use `analysisMeta.caption` for a short analytical caption and `analysisMeta.source` / `unit` / `aggregation` / `confidence` for provenance and interpretation hints.
+- For backward compatibility, a chart bullet such as `chart:type=line` is still accepted, but structured `analysisMeta` is preferred.
+- For `table`, encode the first bullet as the header row and remaining bullets as data rows using `|` separators.
 
 ## Content Quality Checklist
 

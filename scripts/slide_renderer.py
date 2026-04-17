@@ -29,13 +29,16 @@ import json
 import math
 import os
 import sys
+import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 if __package__ in {None, ''}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from pptx.chart.data import CategoryChartData
 
 from pptx import Presentation
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
@@ -66,7 +69,6 @@ class RenderContext:
     font_family: str
     slide_assets: list[dict]
     accent_cycle: list[str]
-    template_path: str | None
     workspace_dir: str
     theme_explicit: bool  # True when user provided custom theme colors
     text_box_style: str
@@ -84,9 +86,9 @@ class RenderContext:
     add_design_shape: object  # Callable[..., object]
     add_managed_textbox: object  # Callable[..., object]
     add_managed_shape: object  # Callable[..., object]
+    add_native_chart: object  # Callable[..., object]
     tag_as_design: object  # Callable[[object, str], None]
     resolve_font: object  # Callable[[str, str], str]
-    get_blank_layout: object  # Callable[[object], object]
     apply_widescreen: object  # Callable[[object], object]
     slide_image_paths: object  # Callable[[int], list[str]]
     slide_icon_name: object  # Callable[[int], str | None]
@@ -220,12 +222,113 @@ def _apply_slide_bg_gradient(
     bg_pr.insert(0, grad)
 
 
+def _reset_slide_background(slide) -> None:
+    """Remove any slide-level background override and inherit from layout/master."""
+    background = getattr(slide, "background", None)
+    element = getattr(background, "_element", None)
+    if element is None:
+        return
+
+    ns_p = "http://schemas.openxmlformats.org/presentationml/2006/main"
+    bg = element.find(f"{{{ns_p}}}bg")
+    if bg is not None:
+        element.remove(bg)
+
+
+def _apply_slide_background(
+    slide, color_stops: tuple[str, ...], angle_degrees: float = 90.0,
+) -> None:
+    """Apply an intentional slide background fill.
+
+    Empty stops mean "leave inherited background alone".
+    """
+    if not color_stops:
+        _reset_slide_background(slide)
+        return
+    if len(color_stops) == 1:
+        slide.background.fill.solid()
+        slide.background.fill.fore_color.rgb = RGBColor.from_string(
+            color_stops[0].lstrip("#").upper()
+        )
+        return
+    _apply_slide_bg_gradient(slide, color_stops, angle_degrees=angle_degrees)
+
+
+def _extract_background_hex(surface) -> str | None:
+    """Read a representative background hex from a slide-like surface."""
+    background = getattr(surface, "background", None)
+    fill = getattr(background, "fill", None)
+    fill_type = getattr(fill, "type", None)
+    if fill_type is not None and int(fill_type) == 1:
+        fore_color = getattr(fill, "fore_color", None)
+        rgb = getattr(fore_color, "rgb", None)
+        if rgb is not None:
+            return str(rgb)
+
+    element = getattr(background, "_element", None)
+    if element is None:
+        return None
+
+    ns_a = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    ns_p = "http://schemas.openxmlformats.org/presentationml/2006/main"
+    bg_pr = element.find(f"{{{ns_p}}}bg/{{{ns_p}}}bgPr")
+    if bg_pr is None:
+        return None
+
+    grad = bg_pr.find(f"{{{ns_a}}}gradFill")
+    if grad is None:
+        return None
+
+    gs_lst = grad.find(f"{{{ns_a}}}gsLst")
+    if gs_lst is None:
+        return None
+
+    stops = gs_lst.findall(f"{{{ns_a}}}gs")
+    if not stops:
+        return None
+
+    srgb = stops[0].find(f"{{{ns_a}}}srgbClr")
+    if srgb is None:
+        return None
+
+    value = (srgb.get("val") or "").strip().upper()
+    return value if re.fullmatch(r"[0-9A-F]{6}", value) else None
+
+
+def _resolve_slide_surface_hex(
+    slide,
+    *,
+    fallback_hex: str,
+) -> str:
+    """Return the visible slide surface used for contrast decisions."""
+    for surface in (slide, getattr(slide, "slide_layout", None), getattr(getattr(slide, "slide_layout", None), "slide_master", None)):
+        surface_hex = _extract_background_hex(surface)
+        if surface_hex:
+            return surface_hex
+
+    return fallback_hex
+
+
+def _clear_seed_slides(prs) -> None:
+    """Remove any pre-authored slides while keeping layouts and masters intact."""
+    slide_id_list = getattr(prs.slides, "_sldIdLst", None)
+    if slide_id_list is None:
+        return
+
+    for slide_id in list(slide_id_list):
+        rel_id = slide_id.rId
+        prs.part.drop_rel(rel_id)
+        slide_id_list.remove(slide_id)
+
+
 def _resolve_slide_colors(
     ctx: RenderContext,
     base_colors: dict[str, str],
     accent_a: str,
     accent_b: str,
     slide_index: int,
+    *,
+    prefer_style_background: bool = True,
 ) -> dict[str, str]:
     """Derive per-slide colour roles from the user's palette + the active style.
 
@@ -240,8 +343,10 @@ def _resolve_slide_colors(
     # theme colors and the style defines its own characteristic background.
     # First color in bg_colors is the representative solid for contrast math.
     bg_hex = colors["BG"]
-    if style.bg_colors:
+    if prefer_style_background and style.bg_colors:
         bg_hex = style.bg_colors[0]
+
+    bg_is_dark = _luminance(bg_hex) < 0.22
 
     if style.dark_mode:
         panel_base = _mix_hex(colors["DARK2"], accent_a, 0.28)
@@ -253,8 +358,12 @@ def _resolve_slide_colors(
         panel_base = _mix_hex(colors["LIGHT"], accent_a, 0.28)
         panel_alt = _mix_hex(colors["LIGHT"], accent_b, 0.22)
         border_hex = _mix_hex(colors["BORDER"], accent_a, 0.35)
-        text_hex = ctx.ensure_contrast(colors["TEXT"], bg_hex)
-        secondary_hex = ctx.ensure_contrast(colors["TEXT"], panel_base)
+        if bg_is_dark:
+            text_hex = ctx.ensure_contrast(colors["LIGHT"], bg_hex)
+            secondary_hex = ctx.ensure_contrast(colors["LIGHT2"], bg_hex)
+        else:
+            text_hex = ctx.ensure_contrast(colors["TEXT"], bg_hex)
+            secondary_hex = ctx.ensure_contrast(colors["TEXT"], panel_base)
 
     # Style-specific panel fill overrides
     if style.panel_fill == "solid":
@@ -1068,6 +1177,256 @@ def _stats_panel_fonts(title_text: str, body_text: str) -> tuple[float, float]:
     return 24, 13
 
 
+_CHART_TYPE_MAP: dict[str, XL_CHART_TYPE] = {
+    "bar": XL_CHART_TYPE.BAR_CLUSTERED,
+    "column": XL_CHART_TYPE.COLUMN_CLUSTERED,
+    "line": XL_CHART_TYPE.LINE_MARKERS,
+    "pie": XL_CHART_TYPE.PIE,
+    "doughnut": XL_CHART_TYPE.DOUGHNUT,
+    "area": XL_CHART_TYPE.AREA,
+}
+
+
+@dataclass
+class ParsedChart:
+    chart_type: str
+    categories: list[str]
+    series: list[tuple[str, list[float]]]
+    caption: str = ""
+
+
+def _parse_chart_number(value: str) -> float | None:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return 0.0
+
+    is_negative = cleaned.startswith("(") and cleaned.endswith(")")
+    if is_negative:
+        cleaned = cleaned[1:-1].strip()
+
+    cleaned = cleaned.replace(",", "")
+    cleaned = re.sub(r"^[^0-9+\-.]+", "", cleaned)
+    cleaned = re.sub(r"[^0-9+\-.]+$", "", cleaned)
+    if cleaned.endswith("%"):
+        cleaned = cleaned[:-1].strip()
+
+    try:
+        number = float(cleaned)
+    except ValueError:
+        return None
+    return -number if is_negative else number
+
+
+def _normalize_chart_type(value: str) -> str | None:
+    normalized = (value or "").strip().lower().replace("_", "-")
+    aliases = {
+        "bar-chart": "bar",
+        "horizontal-bar": "bar",
+        "column-chart": "column",
+        "vertical-bar": "column",
+        "stacked-column": "column",
+        "line-chart": "line",
+        "donut": "doughnut",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in _CHART_TYPE_MAP else None
+
+
+def _normalize_analysis_meta(raw_meta) -> dict[str, str]:
+    if not isinstance(raw_meta, dict):
+        return {}
+
+    normalized: dict[str, str] = {}
+    for key, value in raw_meta.items():
+        key_text = str(key or "").strip()
+        value_text = str(value or "").strip()
+        if key_text and value_text:
+            normalized[key_text] = value_text
+    return normalized
+
+
+def _normalize_shape_overrides(raw_overrides) -> dict[str, dict[str, str]]:
+    if not isinstance(raw_overrides, list):
+        return {}
+
+    normalized: dict[str, dict[str, str]] = {}
+    for raw_override in raw_overrides:
+        if not isinstance(raw_override, dict):
+            continue
+
+        name = str(raw_override.get("name") or raw_override.get("shapeName") or "").strip()
+        if not name:
+            continue
+
+        override: dict[str, str] = {}
+        fill_color = str(raw_override.get("fill_color") or raw_override.get("fillColor") or "").strip().lstrip("#").upper()
+        border_color = str(raw_override.get("border_color") or raw_override.get("borderColor") or "").strip().lstrip("#").upper()
+
+        if fill_color and re.fullmatch(r"[0-9A-F]{6}", fill_color):
+            override["fill_color"] = fill_color
+        if border_color and re.fullmatch(r"[0-9A-F]{6}", border_color):
+            override["border_color"] = border_color
+
+        if override:
+            normalized[name] = override
+
+    return normalized
+
+
+def _extract_chart_metadata(lines: list[str], analysis_meta: dict[str, str] | None = None) -> tuple[dict[str, str], list[str]]:
+    metadata: dict[str, str] = {}
+    payload_lines: list[str] = []
+
+    for raw in lines:
+        line = (raw or "").strip()
+        if not line:
+            continue
+
+        lower = line.lower()
+        key: str | None = None
+        value: str | None = None
+
+        if lower.startswith("chart:"):
+            suffix = line.split(":", 1)[1].strip()
+            if "=" in suffix:
+                key, value = [part.strip() for part in suffix.split("=", 1)]
+            elif ":" in suffix:
+                key, value = [part.strip() for part in suffix.split(":", 1)]
+            else:
+                key, value = "type", suffix
+        elif lower.startswith("type:"):
+            key, value = "type", line.split(":", 1)[1].strip()
+        elif lower.startswith("caption:"):
+            key, value = "caption", line.split(":", 1)[1].strip()
+
+        if key and value:
+            metadata[key.strip().lower()] = value.strip()
+            continue
+
+        payload_lines.append(line)
+
+    if analysis_meta:
+        chart_type = analysis_meta.get("chartType") or analysis_meta.get("chart_type") or analysis_meta.get("type")
+        if chart_type:
+            metadata["type"] = chart_type.strip()
+
+        caption = analysis_meta.get("caption")
+        if caption:
+            metadata["caption"] = caption.strip()
+
+    return metadata, payload_lines
+
+
+def _infer_chart_type(series_count: int, categories: list[str], explicit_type: str | None) -> str:
+    if explicit_type:
+        return explicit_type
+    if series_count == 1 and len(categories) <= 6:
+        return "pie"
+    if series_count == 1 and any(len(category) > 12 for category in categories):
+        return "bar"
+    return "column"
+
+
+def _parse_chart_data(lines: list[str], title_text: str,
+                      analysis_meta: dict[str, str] | None = None) -> ParsedChart | None:
+    metadata, payload_lines = _extract_chart_metadata(lines, analysis_meta)
+    rows = _parse_table_rows(payload_lines)
+    if not rows:
+        return None
+
+    explicit_type = _normalize_chart_type(metadata.get("type", ""))
+    caption = metadata.get("caption", "")
+
+    # Two-column category/value shorthand:
+    #   Q1 | 12
+    #   Q2 | 18
+    if (
+        len(rows) >= 2
+        and all(len(row) == 2 for row in rows)
+        and all(_parse_chart_number(row[1]) is not None for row in rows)
+    ):
+        categories = [row[0] for row in rows]
+        values = [_parse_chart_number(row[1]) or 0.0 for row in rows]
+        chart_type = _infer_chart_type(1, categories, explicit_type)
+        return ParsedChart(
+            chart_type=chart_type,
+            categories=categories,
+            series=[(title_text or "Series 1", values)],
+            caption=caption,
+        )
+
+    if len(rows) < 2 or len(rows[0]) < 2:
+        return None
+
+    header = rows[0]
+    categories = [cell for cell in header[1:] if cell]
+    if not categories:
+        return None
+
+    series: list[tuple[str, list[float]]] = []
+    category_count = len(categories)
+    for index, row in enumerate(rows[1:], start=1):
+        name = row[0] if row and row[0] else f"Series {index}"
+        values: list[float] = []
+        valid = True
+        for cell in row[1:1 + category_count]:
+            parsed_value = _parse_chart_number(cell)
+            if parsed_value is None:
+                valid = False
+                break
+            values.append(parsed_value)
+        if valid and len(values) == category_count:
+            series.append((name, values))
+
+    if not series:
+        return None
+
+    chart_type = _infer_chart_type(len(series), categories, explicit_type)
+    if chart_type in {"pie", "doughnut"} and len(series) > 1:
+        series = [series[0]]
+
+    return ParsedChart(
+        chart_type=chart_type,
+        categories=categories,
+        series=series,
+        caption=caption,
+    )
+
+
+def _build_chart_data(parsed: ParsedChart) -> CategoryChartData:
+    chart_data = CategoryChartData()
+    chart_data.categories = parsed.categories
+    for series_name, values in parsed.series:
+        chart_data.add_series(series_name, tuple(values))
+    return chart_data
+
+
+def _style_chart(chart, parsed: ParsedChart, colors: dict[str, str]) -> None:
+    chart.has_title = False
+    chart.has_legend = len(parsed.series) > 1 or parsed.chart_type in {"pie", "doughnut"}
+    if chart.has_legend:
+        chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+        chart.legend.include_in_layout = False
+
+    try:
+        if parsed.chart_type in {"bar", "column", "line", "area"}:
+            chart.value_axis.has_major_gridlines = True
+            chart.value_axis.tick_labels.number_format = "0.##"
+            axis_line_hex = colors.get("BORDER") or colors.get("LIGHT2") or colors.get("ACCENT2") or colors.get("TEXT", "000000")
+            chart.value_axis.format.line.color.rgb = RGBColor.from_string(axis_line_hex)
+            chart.category_axis.format.line.color.rgb = RGBColor.from_string(axis_line_hex)
+    except Exception:
+        pass
+
+    if parsed.chart_type in {"pie", "doughnut"}:
+        try:
+            chart.plots[0].has_data_labels = True
+            chart.plots[0].data_labels.number_format = "0.##"
+            chart.plots[0].data_labels.show_percentage = True
+        except Exception:
+            pass
+
+
 def _parse_table_rows(lines: list[str]) -> list[list[str]]:
     """Parse a slide's bullet lines into table rows.
 
@@ -1106,18 +1465,6 @@ def _parse_table_rows(lines: list[str]) -> list[list[str]]:
 
     col_count = max(len(row) for row in parsed)
     return [row + [''] * (col_count - len(row)) for row in parsed]
-
-
-def _lighten_hex(hex_color: str, factor: float = 0.92) -> str:
-    """Lighten a hex color towards white by the given factor (0=original, 1=white)."""
-    hex_color = hex_color.lstrip('#').upper()
-    r = int(hex_color[0:2], 16)
-    g = int(hex_color[2:4], 16)
-    b = int(hex_color[4:6], 16)
-    r = int(r + (255 - r) * factor)
-    g = int(g + (255 - g) * factor)
-    b = int(b + (255 - b) * factor)
-    return f"{r:02X}{g:02X}{b:02X}"
 
 
 def _is_numeric_cell(text: str) -> bool:
@@ -1183,8 +1530,8 @@ def _render_table_slide(ctx: RenderContext, slide, spec: LayoutSpec,
         # ── Colors ──
         header_fill = accent_a
         bg_base = colors['BG']
-        # Zebra stripe: tinted version of accent for alternate rows
-        stripe_fill = _lighten_hex(accent_a, 0.92)
+        # Zebra stripe: blend the accent into the slide background using theme colors.
+        stripe_fill = _mix_hex(bg_base, accent_a, 0.10 if ctx.style.dark_mode else 0.12)
         header_text_color = ctx.ensure_contrast(colors['BG'], header_fill)
         body_text_color = ctx.ensure_contrast(colors['TEXT'], bg_base)
         # ── Font sizing — adaptive based on table density ──
@@ -1371,7 +1718,33 @@ def _place_panel_icon(ctx: RenderContext, slide, icon_id: str, accent_hex: str,
 # ── Slide-level functions ────────────────────────────────────────────
 
 def _set_speaker_notes(slide, text: str) -> None:
-    slide.notes_slide.notes_text_frame.text = text or ""
+    if not text:
+        return
+
+    try:
+        notes_slide = slide.notes_slide
+    except Exception:
+        return
+
+    notes_frame = getattr(notes_slide, "notes_text_frame", None)
+    if notes_frame is not None:
+        try:
+            notes_frame.text = text
+            return
+        except Exception:
+            pass
+
+    for shape in getattr(notes_slide, "shapes", []):
+        if not getattr(shape, "has_text_frame", False):
+            continue
+        try:
+            shape.text_frame.text = text
+            return
+        except Exception:
+            continue
+
+    # Some templates omit a writable notes placeholder entirely. Skip silently
+    # so preview rerenders remain deterministic instead of failing on notes.
 
 
 def _add_footer(ctx: RenderContext, slide, spec: LayoutSpec,
@@ -1416,6 +1789,7 @@ def _render_title_slide(ctx: RenderContext, slide, spec: LayoutSpec,
                         accent_a: str, accent_b: str,
                         colors: dict[str, str]) -> None:
     images = ctx.slide_image_paths(slide_index)
+    shape_overrides = data.get("shape_overrides") or {}
     if images:
         target_rect = spec.hero_rect or spec.sidebar_rect or spec.content_rect
         _tile_images(ctx, slide, images, target_rect)
@@ -1453,8 +1827,11 @@ def _render_title_slide(ctx: RenderContext, slide, spec: LayoutSpec,
                 spec.chips_rect.x + idx * (chip_w + gap),
                 spec.chips_rect.y, chip_w, spec.chips_rect.h,
             )
-            fill_hex = ctx.accent_cycle[(slide_index + idx + 2) % len(ctx.accent_cycle)]
-            chip = _add_panel(ctx, slide, chip_rect, fill_hex, fill_hex,
+            default_fill_hex = ctx.accent_cycle[(slide_index + idx + 2) % len(ctx.accent_cycle)]
+            chip_override = shape_overrides.get(f"chip_{idx}") or {}
+            fill_hex = chip_override.get("fill_color") or default_fill_hex
+            border_hex = chip_override.get("border_color") or fill_hex
+            chip = _add_panel(ctx, slide, chip_rect, fill_hex, border_hex,
                               name=f"chip_{idx}")
             tf = chip.text_frame
             tf.word_wrap = True
@@ -1933,20 +2310,38 @@ def _render_chart_slide(ctx: RenderContext, slide, spec: LayoutSpec,
                         data: dict, slide_index: int,
                         accent_a: str, accent_b: str,
                         colors: dict[str, str]) -> None:
-    """Chart placeholder — title + empty content rect for chart data."""
+    """Render a native PowerPoint chart from bullet-encoded tabular data."""
     _add_title_and_key_message(ctx, slide, spec, data, colors, accent_a, accent_b)
-    # Chart data rendering is handled separately; place a placeholder border
     if spec.content_rect:
-        placeholder = ctx.add_managed_shape(
-            slide.shapes, MSO_AUTO_SHAPE_TYPE.RECTANGLE,
-            Inches(spec.content_rect.x), Inches(spec.content_rect.y),
-            Inches(spec.content_rect.w), Inches(spec.content_rect.h),
-            name="chart_area",
+        parsed_chart = _parse_chart_data(
+            data.get("bullets", []),
+            data.get("title_text", ""),
+            data.get("analysis_meta", {}),
         )
-        placeholder.fill.background()
-        placeholder.line.fill.solid()
-        placeholder.line.color.rgb = ctx.rgb_color(colors["BORDER"])
-        placeholder.line.width = Pt(0.5)
+        if parsed_chart is not None:
+            chart_shape = ctx.add_native_chart(
+                slide,
+                _CHART_TYPE_MAP[parsed_chart.chart_type],
+                _build_chart_data(parsed_chart),
+                Inches(spec.content_rect.x),
+                Inches(spec.content_rect.y),
+                Inches(spec.content_rect.w),
+                Inches(spec.content_rect.h),
+                theme=ctx.theme,
+                name="chart_area",
+            )
+            _style_chart(chart_shape.chart, parsed_chart, colors)
+        else:
+            placeholder = ctx.add_managed_shape(
+                slide.shapes, MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                Inches(spec.content_rect.x), Inches(spec.content_rect.y),
+                Inches(spec.content_rect.w), Inches(spec.content_rect.h),
+                name="chart_area",
+            )
+            placeholder.fill.background()
+            placeholder.line.fill.solid()
+            placeholder.line.color.rgb = ctx.rgb_color(colors["BORDER"])
+            placeholder.line.width = Pt(0.5)
     _add_footer(ctx, slide, spec, data.get("footer_text", ""), colors)
     _place_slide_icon(ctx, slide, spec, slide_index, accent_a)
     _set_speaker_notes(slide, data.get("notes", ""))
@@ -2036,8 +2431,6 @@ def render_presentation(
     slide_assets: list[dict],
     output_path: str,
     *,
-    template_path: str | None = None,
-    template_meta: dict | None = None,
     font_family: str = "Calibri",
     title: str = "Presentation",
     # Utility functions injected from pptx-python-runner.py
@@ -2051,9 +2444,9 @@ def render_presentation(
     add_design_shape=None,
     add_managed_textbox=None,
     add_managed_shape=None,
+    add_native_chart=None,
     tag_as_design=None,
     resolve_font=None,
-    get_blank_layout=None,
     apply_widescreen=None,
     slide_image_paths=None,
     slide_icon_name=None,
@@ -2080,7 +2473,6 @@ def render_presentation(
         "add_design_shape": add_design_shape,
         "add_managed_textbox": add_managed_textbox,
         "add_managed_shape": add_managed_shape,
-        "get_blank_layout": get_blank_layout,
         "apply_widescreen": apply_widescreen,
         "slide_image_paths": slide_image_paths,
         "slide_icon_name": slide_icon_name,
@@ -2091,12 +2483,8 @@ def render_presentation(
         raise ValueError(f"Missing required utility functions: {', '.join(missing)}")
 
     # ── Create presentation ──
-    if template_path:
-        prs = apply_widescreen(Presentation(template_path))
-        blank_layout = get_blank_layout(prs)
-    else:
-        prs = apply_widescreen(Presentation())
-        blank_layout = prs.slide_layouts[6]
+    prs = apply_widescreen(Presentation())
+    blank_layout = prs.slide_layouts[min(6, len(prs.slide_layouts) - 1)]
 
     prs.core_properties.title = title
 
@@ -2134,7 +2522,6 @@ def render_presentation(
         font_family=font_family,
         slide_assets=slide_assets,
         accent_cycle=accent_cycle,
-        template_path=template_path,
         workspace_dir=workspace_dir,
         theme_explicit=theme_explicit,
         text_box_style=text_box_style,
@@ -2149,9 +2536,9 @@ def render_presentation(
         add_design_shape=add_design_shape,
         add_managed_textbox=add_managed_textbox,
         add_managed_shape=add_managed_shape,
+        add_native_chart=add_native_chart,
         tag_as_design=tag_as_design or (lambda s, n="": None),
         resolve_font=resolve_font or (lambda t, b="Calibri": b),
-        get_blank_layout=get_blank_layout,
         apply_widescreen=apply_widescreen,
         slide_image_paths=slide_image_paths,
         slide_icon_name=slide_icon_name,
@@ -2169,10 +2556,12 @@ def render_presentation(
             "title_text": str(raw_data.get("title_text") or raw_data.get("title") or "").strip(),
             "key_message_text": str(raw_data.get("key_message_text") or raw_data.get("keyMessage") or "").strip(),
             "bullets": [str(item).strip() for item in raw_bullets if str(item).strip()],
+            "analysis_meta": _normalize_analysis_meta(raw_data.get("analysis_meta") or raw_data.get("analysisMeta") or {}),
             "chip_labels": [str(item).strip() for item in raw_chip_labels if str(item).strip()],
             "footer_text": str(raw_data.get("footer_text") or "").strip(),
             "notes": str(raw_data.get("notes") or "").strip(),
             "item_count": int(raw_data.get("item_count") or 0),
+            "shape_overrides": _normalize_shape_overrides(raw_data.get("shape_overrides") or raw_data.get("shapeOverrides") or []),
         }
 
         if slide_index >= len(layout_specs):
@@ -2182,24 +2571,41 @@ def render_presentation(
         spec = layout_specs[slide_index]
         accent_a = accent_cycle[slide_index % len(accent_cycle)]
         accent_b = accent_cycle[(slide_index + 1) % len(accent_cycle)]
-        slide_colors = _resolve_slide_colors(ctx, colors, accent_a, accent_b, slide_index)
+        slide_colors = _resolve_slide_colors(
+            ctx,
+            colors,
+            accent_a,
+            accent_b,
+            slide_index,
+            prefer_style_background=True,
+        )
 
         # Add slide
         slide = prs.slides.add_slide(blank_layout)
-        if not template_path:
-            # Apply style-specific gradient background when available.
-            # bg_colors is a signature element of the design style and
-            # should be honoured even when the user has set an explicit
-            # theme palette (theme_explicit only gates content colours).
-            use_style_bg = (
-                style.bg_colors
-                and len(style.bg_colors) >= 2
+        _reset_slide_background(slide)
+        surface_hex = _resolve_slide_surface_hex(
+            slide,
+            fallback_hex=slide_colors["BG"],
+        )
+        if surface_hex != slide_colors["BG"]:
+            surface_base_colors = dict(colors)
+            surface_base_colors["BG"] = surface_hex
+            surface_base_colors["TEXT"] = ensure_contrast(colors["TEXT"], surface_hex)
+            slide_colors = _resolve_slide_colors(
+                ctx,
+                surface_base_colors,
+                accent_a,
+                accent_b,
+                slide_index,
+                prefer_style_background=True,
             )
-            if use_style_bg:
-                _apply_slide_bg_gradient(slide, style.bg_colors)
-            else:
-                slide.background.fill.solid()
-                slide.background.fill.fore_color.rgb = rgb_color(slide_colors["BG"])
+        # Only write a slide background when the active style explicitly
+        # defines one. Otherwise preserve the inherited default surface.
+        _apply_slide_background(
+            slide,
+            style.bg_colors,
+            angle_degrees=style.gradient_angle,
+        )
 
         # Decorative accents (controlled by style)
         _add_design_language(ctx, slide, spec, accent_a, accent_b, slide_colors)
@@ -2337,7 +2743,6 @@ def _cli_main() -> int:
         add_managed_textbox=_make_textbox_adder,
         add_managed_shape=_make_shape_adder,
         tag_as_design=lambda s, n="": None,
-        get_blank_layout=lambda prs: prs.slide_layouts[6],
         apply_widescreen=lambda prs: prs,
         slide_image_paths=_stub_image_paths,
         slide_icon_name=_stub_icon_name,

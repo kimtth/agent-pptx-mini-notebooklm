@@ -3,7 +3,7 @@
  * This interface is mirrored by window.electronAPI in the renderer.
  */
 
-import type { ScenarioPayload, SlideItem, SlideUpdatePayload, TemplateMeta } from '../entities/slide-work';
+import type { ScenarioPayload, SlideItem, SlideUpdatePayload } from '../entities/slide-work';
 import type { PaletteColor, ThemeSlots, ThemeTokens } from '../entities/palette';
 import type { IconifyCollectionId } from '../icons/iconify';
 import type { WorkflowConfig } from '../workflows/workflow-config';
@@ -72,6 +72,17 @@ export interface ResolvedSlideImage {
   thumbnailUrl: string | null;
 }
 
+export interface ChatToolEvent {
+  id: string;
+  toolName: string;
+  status: 'running' | 'success' | 'error';
+  argsPreview?: string;
+  resultPreview?: string;
+  startedAt: number;
+  finishedAt?: number;
+  durationMs?: number;
+}
+
 export interface IpcChatAPI {
   send(
     message: string,
@@ -83,7 +94,6 @@ export interface IpcChatAPI {
       designStyle: import('../entities/slide-work').DesignStyle | null;
       framework: import('../entities/slide-work').FrameworkType | null;
       customFrameworkPrompt: string | null;
-      templateMeta: import('../entities/slide-work').TemplateMeta | null;
       theme: ThemeTokens | null;
       workflow: WorkflowConfig | null;
       dataSources: DataFile[];
@@ -100,6 +110,7 @@ export interface IpcChatAPI {
   onScenario(cb: (payload: ScenarioPayload) => void): () => void;
   onSlideUpdate(cb: (slide: SlideUpdatePayload) => void): () => void;
   onFrameworkSuggested(cb: (payload: { primary: string; reasoning: string }) => void): () => void;
+  onTool(cb: (event: ChatToolEvent) => void): () => void;
   onError(cb: (msg: string) => void): () => void;
   onDone(cb: () => void): () => void;
 }
@@ -120,14 +131,11 @@ export interface IpcPptxAPI {
     title: string,
     iconCollection?: string,
     slides?: Array<{ number: number; title: string; layout: string; icon?: string | null; imageQuery?: string | null; imageQueries?: string[]; imagePath?: string | null; selectedImages?: Array<{ id: string; imageQuery?: string | null; imageUrl?: string | null; imagePath?: string | null; thumbnailUrl?: string | null }> }>,
-    templateMeta?: TemplateMeta | null,
     customBackgroundColor?: string | null,
   ): Promise<{ success: boolean; imagePaths?: string[]; error?: string; warning?: string; qa?: { contrastFixes: number; missingIcons: Array<{ icon: string; reason: string }>; rejectedIcons: Array<{ icon: string; reason: string }>; iconStats: { requested: number; missing: number; missingRatio: number; rejectedByCollection?: number; rejectedRatio?: number }; missingImages: string[]; layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }> } }>;
   readExistingPreviews(): Promise<{ success: boolean; imagePaths: string[] }>;
   rerenderPreview(): Promise<{ success: boolean; imagePaths: string[]; error?: string }>;
   openPreviewPptx(): Promise<{ success: boolean; path?: string; error?: string }>;
-  importTemplate(): Promise<{ success: boolean; templatePath?: string; meta?: TemplateMeta; error?: string; warning?: string }>;
-  removeTemplate(): Promise<{ success: boolean }>;
   clearWorkspaceArtifacts(): Promise<{ success: boolean }>;
 }
 
@@ -150,6 +158,7 @@ export interface IpcImagesAPI {
 export interface IpcSettingsAPI {
   get(): Promise<Record<string, string>>;
   save(settings: Record<string, string>): Promise<void>;
+  onChanged(cb: (settings: Record<string, string>) => void): () => void;
 }
 
 export interface NotebookLMNotebook {

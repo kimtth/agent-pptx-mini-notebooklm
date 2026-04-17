@@ -23,16 +23,16 @@ import type {
   SlideItem,
   DesignBrief,
   FrameworkType,
-  TemplateMeta,
   ScenarioPayload,
   SlideUpdatePayload,
 } from '../../../src/domain/entities/slide-work';
-import type { DataFile, ScrapeResult } from '../../../src/domain/ports/ipc';
+import type { ChatToolEvent, DataFile, ScrapeResult } from '../../../src/domain/ports/ipc';
 import { getIconifyCollectionById } from '../../../src/domain/icons/iconify';
 import type { IconifyCollectionId } from '../../../src/domain/icons/iconify';
 import { formatCatalogForPrompt } from '../../../src/domain/icons/icon-catalog';
 import { formatWorkflowForPrompt, getWorkflowConfig, type WorkflowConfig } from '../../../src/domain/workflows/workflow-config';
 import { renderPresentationToFile, formatExecutionFailure, computeLayoutSpecs, persistSlideAssetsToWorkspace } from '../pptx/pptx-handler.ts';
+import type { RenderConfig } from '../pptx/pptx-handler.ts';
 import { buildManagedSystemPrompt } from './system-prompts.ts';
 import { readWorkspaceDir, resolveBundledPath } from '../project/workspace-utils.ts';
 import { retrieveContext, hasRaptorTree } from '../data/raptor-handler.ts';
@@ -61,7 +61,6 @@ interface WorkspaceContext {
   customBackgroundColor: string | null;
   framework: FrameworkType | null;
   customFrameworkPrompt: string | null;
-  templateMeta: TemplateMeta | null;
   theme: ThemeTokens | null;
   workflow: WorkflowConfig | null;
   dataSources: DataFile[];
@@ -93,8 +92,18 @@ async function listSkillDirectories(): Promise<SkillDirectoryEntry[]> {
   }
 }
 
-function rankSkillDirectory(mode: SessionMode, skillName: string): number {
+function isTargetedPptxRepair(workflow: WorkflowConfig | null): boolean {
+  return workflow?.id === 'poststaging'
+}
+
+function rankSkillDirectory(mode: SessionMode, skillName: string, workflow: WorkflowConfig | null): number {
   const normalized = skillName.toLowerCase();
+
+  if (isTargetedPptxRepair(workflow)) {
+    if (/manipulation|review|qa|validation|final/.test(normalized)) return 0;
+    if (/design|style|designer/.test(normalized)) return 5;
+    return 10;
+  }
 
   if (mode === 'pptx') {
     if (/manipulation|python-pptx|generate-pptx/.test(normalized)) return 0;
@@ -112,14 +121,14 @@ function rankSkillDirectory(mode: SessionMode, skillName: string): number {
   return 10;
 }
 
-async function getSkillDirectories(mode: SessionMode): Promise<string[]> {
+async function getSkillDirectories(mode: SessionMode, workflow: WorkflowConfig | null): Promise<string[]> {
   const entries = await listSkillDirectories();
   if (entries.length === 0) return [];
 
   const ranked = entries
     .map((entry) => ({
       ...entry,
-      rank: rankSkillDirectory(mode, entry.name),
+      rank: rankSkillDirectory(mode, entry.name, workflow),
     }))
     .filter((entry) => entry.rank < 10)
     .sort((left, right) => left.rank - right.rank || left.name.localeCompare(right.name));
@@ -127,23 +136,16 @@ async function getSkillDirectories(mode: SessionMode): Promise<string[]> {
   return ranked.map((entry) => entry.path);
 }
 
-function resolveWorkflow(message: string, workspace: WorkspaceContext): WorkflowConfig | null {
+async function resolveWorkflow(_message: string, workspace: WorkspaceContext): Promise<WorkflowConfig | null> {
+  // Workflow is determined by workspace state set via UI buttons, not by
+  // regex-parsing the user's message (which would only work for English).
   if (workspace.workflow) return workspace.workflow
-  if (isPptxGenerationRequest(message, workspace)) return getWorkflowConfig('create-pptx')
   return null
 }
 
-function resolveSessionMode(message: string, workspace: WorkspaceContext): SessionMode {
-  const workflow = resolveWorkflow(message, workspace)
+function resolveSessionMode(_message: string, _workspace: WorkspaceContext, workflow: WorkflowConfig | null): SessionMode {
   if (workflow) return workflow.mode as SessionMode
-  return isPptxGenerationRequest(message, workspace) ? 'pptx' : 'story'
-}
-
-function isPptxGenerationRequest(message: string, workspace: WorkspaceContext): boolean {
-  const normalized = message.trim().toLowerCase();
-  if (!normalized) return false;
-  if (workspace.slides.length === 0) return false;
-  return /\b(create|generate|build|export)\b.*\b(pptx|powerpoint|deck)\b|\bpython-pptx\b/.test(normalized);
+  return 'story'
 }
 
 function truncateText(value: string, maxLen: number): string {
@@ -156,6 +158,16 @@ function truncateMarkdown(value: string, maxLen: number): string {
   const trimmed = value.trim();
   if (trimmed.length <= maxLen) return trimmed;
   return `${trimmed.slice(0, maxLen)}\n\n[Truncated]`;
+}
+
+async function readGeneratedArtifactExcerpt(filePath: string, maxLen: number): Promise<string | null> {
+  try {
+    const content = await fs.readFile(filePath, 'utf-8');
+    const trimmed = content.trim();
+    return trimmed ? truncateMarkdown(trimmed, maxLen) : null;
+  } catch {
+    return null;
+  }
 }
 
 async function readArtifactMarkdown(artifact: { markdownPath: string } | undefined, maxLen: number): Promise<string | null> {
@@ -431,15 +443,52 @@ async function formatUrlSource(entry: WorkspaceContext['urlSources'][number], sl
   return parts;
 }
 
+async function buildGeneratedArtifactContext(workspaceAbsPath: string): Promise<string[]> {
+  const previewDir = path.join(workspaceAbsPath, 'previews');
+  const artifacts = [
+    { label: 'Generated PPTX', path: path.join(previewDir, 'presentation-preview.pptx'), kind: 'binary' as const },
+    { label: 'Layout input JSON', path: path.join(previewDir, 'layout-input.json'), kind: 'json' as const },
+    { label: 'Layout specs JSON', path: path.join(previewDir, 'layout-specs.json'), kind: 'json' as const },
+    { label: 'Slide assets JSON', path: path.join(previewDir, 'slide-assets.json'), kind: 'json' as const },
+  ];
+
+  const parts = [
+    '## Generated PPTX Repair Scope\n',
+    'This is a targeted post-generation repair pass.',
+    'Only inspect and modify the generated PPTX and preview JSON artifacts below.',
+    'Do NOT inspect application source files, bundled skills, or unrelated workspace data sources unless the user explicitly asks for app-code changes.',
+  ];
+
+  for (const artifact of artifacts) {
+    const exists = fsExistsSync(artifact.path);
+    parts.push(`- ${artifact.label}: ${artifact.path}${exists ? '' : ' (missing)'}`);
+    if (!exists || artifact.kind !== 'json') continue;
+    const excerpt = await readGeneratedArtifactExcerpt(artifact.path, 4_000);
+    if (!excerpt) continue;
+    parts.push(`  Current content (${path.basename(artifact.path)}):`);
+    parts.push('```json');
+    parts.push(excerpt);
+    parts.push('```');
+  }
+
+  parts.push('');
+  return parts;
+}
+
 async function buildPrompt(
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   workspace: WorkspaceContext,
   mode: SessionMode,
+  workflow: WorkflowConfig | null,
 ): Promise<string> {
   const parts: string[] = [];
-  const historyForPrompt = mode === 'pptx'
-    ? history.filter((msg) => msg.role === 'user')
+  const effectiveWorkflow = workflow ?? workspace.workflow;
+  const targetedRepairMode = isTargetedPptxRepair(effectiveWorkflow);
+  const historyForPrompt = targetedRepairMode
+    ? history.filter((msg) => msg.role === 'user').slice(-3)
+    : mode === 'pptx'
+      ? history.filter((msg) => msg.role === 'user')
     : history;
 
   // Chat history
@@ -464,20 +513,6 @@ async function buildPrompt(
       parts.push(`Custom framework prompt: ${workspace.customFrameworkPrompt.trim()}`);
     }
     if (workspace.designStyle) parts.push(`Design style: ${workspace.designStyle}`);
-    // Signal to the AI when a custom template is active
-    const wsTemplatePath = path.join(workspaceAbsPath, 'template', 'template.pptx');
-    if (workspace.designStyle === 'Custom Template' && fsExistsSync(wsTemplatePath)) {
-      parts.push('Custom PPTX template: ACTIVE — use TEMPLATE_PATH variable. See CUSTOM TEMPLATE RULES in system prompt.');
-      if (workspace.templateMeta) {
-        const bgImages = workspace.templateMeta.backgroundImages ?? [];
-        parts.push(`Template metadata: blankLayoutIndex=${workspace.templateMeta.blankLayoutIndex}, fonts.major=${workspace.templateMeta.fonts.major}, fonts.minor=${workspace.templateMeta.fonts.minor}, extractedBackgroundImages=${bgImages.length}`);
-        parts.push('Template runtime helpers available in Python: TEMPLATE_META, TEMPLATE_BACKGROUND_IMAGES, TEMPLATE_BLANK_LAYOUT_INDEX. Use the predefined font behavior unless explicitly required otherwise.');
-        parts.push('Two-phase shape model: (1) Template/design shapes (backgrounds, borders, brand elements) → use tag_as_design(), safe_add_design_picture(), or add_design_shape() — excluded from collision checks. (2) Content shapes from PRECOMPUTED_LAYOUT_SPECS → use add_managed_shape(), add_managed_textbox(), or safe_add_picture() — layout-managed and collision-checked. Every shape is registered in the semantic registry at creation time; the validator uses this as the primary classifier.');
-        if (bgImages.length > 0) {
-          parts.push(`Template background assets: ${bgImages.slice(0, 4).join(' | ')}`);
-        }
-      }
-    }
     if (workspace.slides.length > 0) {
       parts.push(`Slides: ${workspace.slides.length}`);
       for (const s of workspace.slides) {
@@ -509,12 +544,16 @@ async function buildPrompt(
     parts.push('');
   }
 
+  if (targetedRepairMode) {
+    parts.push(...await buildGeneratedArtifactContext(workspaceAbsPath));
+  }
+
   // Data sources — extract slide queries for RAPTOR retrieval
   const slideQueries = workspace.slides.length > 0
     ? workspace.slides.map(s => `${s.title} ${s.keyMessage}`.trim()).filter(q => q.length > 0)
     : undefined;
 
-  if (workspace.dataSources.length > 0) {
+  if (!targetedRepairMode && workspace.dataSources.length > 0) {
     parts.push('## Available File Data Sources\n');
     for (const ds of workspace.dataSources) {
       parts.push(...await formatFileSource(ds, slideQueries));
@@ -522,7 +561,7 @@ async function buildPrompt(
     parts.push('');
   }
 
-  if (workspace.urlSources.length > 0) {
+  if (!targetedRepairMode && workspace.urlSources.length > 0) {
     parts.push('## Available URL Sources\n');
     for (const entry of workspace.urlSources) {
       parts.push(...await formatUrlSource(entry, slideQueries));
@@ -554,18 +593,15 @@ async function buildPrompt(
     }
     parts.push('CRITICAL: The palette colors above are the ONLY color source for this deck. Use OOXML slot and palette hex values exclusively. Do NOT use any hardcoded hex colors from the design style spec — those are overridden by this palette. Readability is mandatory: when text sits on any colored or image background, ensure adequate contrast. If style conflicts with readability, readability wins.');
     parts.push('CRITICAL: The renderer uses PPTX_THEME for role colors and PPTX_THEME_SLOTS for OOXML slot values. Slide background comes from the selected design style or template background logic. Use BG only as the runtime-provided slide surface color. Do NOT invent blended or averaged hex colors. Only use gradients or tints when the selected style explicitly calls for them on accent or decorative surfaces.');
-    if (workspace.designStyle === 'Blank Custom Color' && workspace.customBackgroundColor) {
-      parts.push(`CRITICAL: The selected blank canvas background color is ${workspace.customBackgroundColor}. Treat it as the slide background color for the entire deck unless a template image explicitly overrides the surface.`);
-    }
     parts.push('CRITICAL: These style controls are not advisory only. They affect the deterministic renderer output. PPTX_COLOR_TREATMENT controls fill style (solid, gradient, or mixed). PPTX_TEXT_BOX_STYLE controls icon companions on text panels (plain, with-icons, or mixed). These are applied automatically by the renderer.');
     parts.push('CRITICAL: Horizontally aligned card/stat/process/comparison rows MUST stay within slide bounds. Use the pre-computed spec geometry (spec.cards.card_rect, spec.stats.box_rect, spec.comparison.left/right) without adding offsets that push the last item past the right edge. If content exceeds the available width, reduce copy instead of widening boxes.');
     parts.push('');
   }
 
-  if (workspace.workflow) {
+  if (effectiveWorkflow) {
     parts.push('## Active Workflow\n');
-    parts.push(formatWorkflowForPrompt(workspace.workflow));
-    const workflowMarkdown = await readWorkflowMarkdown(workspace.workflow, 12_000);
+    parts.push(formatWorkflowForPrompt(effectiveWorkflow));
+    const workflowMarkdown = await readWorkflowMarkdown(effectiveWorkflow, 12_000);
     if (workflowMarkdown) {
       parts.push('Workflow instruction file:');
       parts.push('```md');
@@ -578,11 +614,15 @@ async function buildPrompt(
   if (workspace.slides.length > 0) {
     parts.push('## PPTX Preflight\n');
     parts.push('The layout validator automatically checks overlap, out-of-bounds, and text overflow after generation.');
-    parts.push('If validation fails with ERROR-level issues, inspect and repair layout_specs.py or layout_validator.py with the available app tooling, then rerun the render.');
+    if (targetedRepairMode) {
+      parts.push('For post-generation fixes, patch only previews/layout-input.json, previews/layout-specs.json, or previews/slide-assets.json with the available repair tool, then rerun the render.');
+    } else {
+      parts.push('If validation fails with ERROR-level issues, patch the generated preview artifacts with the available app tooling, then rerun the render.');
+    }
     parts.push('');
   }
 
-  if (workspace.designStyle) {
+  if (workspace.designStyle && !targetedRepairMode) {
     parts.push('## Selected PPTX Design Style\n');
     parts.push(`Apply the "${workspace.designStyle}" style consistently across the deck.`);
     parts.push('Ensure contrast safety and readability when applying the design style — avoid mid-tone on mid-tone, and add overlay panels behind text over images.');
@@ -723,13 +763,18 @@ async function buildPrompt(
     parts.push('## Icon Constraints\n');
     parts.push(`Icon provider: ${workspace.iconProvider}`);
     parts.push(`Selected icon set: ${collection.label} (\`${collectionId}\`)\n`);
-    parts.push('**Pick icons ONLY from the catalog below.** Do not invent icon names or use IDs from other collections.');
-    parts.push('Each icon must be a full Iconify ID with the collection prefix (e.g., `fluent:database-24-regular`).');
-    parts.push('If no icon in the catalog fits a slide, omit the icon field.\n');
-    const catalogText = formatCatalogForPrompt(collectionId);
-    if (catalogText) {
-      parts.push('### Icon Catalog\n');
-      parts.push(catalogText);
+    if (targetedRepairMode) {
+      parts.push('Preserve the selected collection when repairing slide-assets.json. Do not switch collections during post-generation QA.');
+      parts.push('');
+    } else {
+      parts.push('**Pick icons ONLY from the catalog below.** Do not invent icon names or use IDs from other collections.');
+      parts.push('Each icon must be a full Iconify ID with the collection prefix (e.g., `fluent:database-24-regular`).');
+      parts.push('If no icon in the catalog fits a slide, omit the icon field.\n');
+      const catalogText = formatCatalogForPrompt(collectionId);
+      if (catalogText) {
+        parts.push('### Icon Catalog\n');
+        parts.push(catalogText);
+      }
     }
     parts.push('');
   }
@@ -783,8 +828,9 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         return;
       }
 
-      const mode = resolveSessionMode(message, workspace);
-      const prompt = await buildPrompt(message, history, workspace, mode);
+      const workflow = await resolveWorkflow(message, workspace);
+      const mode = resolveSessionMode(message, workspace, workflow);
+      const prompt = await buildPrompt(message, history, workspace, mode, workflow);
 
       // Pre-compute content-adaptive layout specs for PPTX generation workflows.
       // Uses Pillow text measurement + kiwisolver constraint solver to produce
@@ -793,8 +839,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
       let slideAssetsJson: string | undefined;
       let layoutSpecsPromise: Promise<void> | null = null;
       let slideAssetsPromise: Promise<void> | null = null;
-      const workflow = resolveWorkflow(message, workspace);
-      if (mode === 'pptx' && workspace.slides.length > 0) {
+      if (mode === 'pptx' && workspace.slides.length > 0 && !isTargetedPptxRepair(workflow)) {
         layoutSpecsPromise = computeLayoutSpecs(workspace.slides, workspace.theme?.fontFamily)
           .then((result) => {
             if (result.success && result.specs) layoutSpecsJson = result.specs;
@@ -855,14 +900,75 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         },
       };
 
+      const previewToolValue = (value: unknown, maxLen = 260): string | undefined => {
+        if (value === undefined) return undefined;
+        try {
+          const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+          return truncateText(serialized, maxLen);
+        } catch {
+          return truncateText(String(value), maxLen);
+        }
+      };
+
+      const emitToolEvent = (event: ChatToolEvent): void => {
+        sendToWindow(win, 'chat:tool', event);
+      };
+
+      const withToolLogging = (tool: LLMToolDefinition): LLMToolDefinition => ({
+        ...tool,
+        handler: async (args: any) => {
+          const eventId = `${tool.name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          const startedAt = Date.now();
+          resetInactivityTimeout();
+          emitToolEvent({
+            id: eventId,
+            toolName: tool.name,
+            status: 'running',
+            argsPreview: previewToolValue(args),
+            startedAt,
+          });
+          try {
+            const result = await tool.handler(args);
+            resetInactivityTimeout();
+            emitToolEvent({
+              id: eventId,
+              toolName: tool.name,
+              status: result.success ? 'success' : 'error',
+              argsPreview: previewToolValue(args),
+              resultPreview: previewToolValue(result.success ? (result.message ?? result.content ?? result) : (result.error ?? result)),
+              startedAt,
+              finishedAt: Date.now(),
+              durationMs: Date.now() - startedAt,
+            });
+            return result;
+          } catch (err) {
+            resetInactivityTimeout();
+            emitToolEvent({
+              id: eventId,
+              toolName: tool.name,
+              status: 'error',
+              argsPreview: previewToolValue(args),
+              resultPreview: previewToolValue(formatExecutionFailure(err)),
+              startedAt,
+              finishedAt: Date.now(),
+              durationMs: Date.now() - startedAt,
+            });
+            throw err;
+          }
+        },
+      });
+
       // Tool definitions (provider-neutral — close over win for IPC emission)
       const scenarioTool: LLMToolDefinition = {
         name: 'set_scenario',
         description:
           'Set the slide scenario (outline) for the presentation workspace panel. ' +
           'Each slide must have a keyMessage (the "so what" / key takeaway), a layout hint, and optionally an icon hint. ' +
+          'For data-driven slides, you may include analysisMeta to describe chart type, caption, source, unit, aggregation, confidence, or a short analysis summary. ' +
           'You may also include imageQuery when supporting images should later be searched for and selected on the slide. ' +
-          'Available layouts: title, agenda, section, bullets, cards, stats, comparison, timeline, diagram, summary, table. ' +
+          'Available layouts: title, agenda, section, bullets, cards, stats, comparison, timeline, diagram, summary, chart, table. ' +
+          'For chart layout, encode data as pipe-delimited bullets. Preferred format: first bullet is the category header row (for example "Metric | Q1 | Q2 | Q3"), following bullets are named series rows (for example "Revenue | 12 | 18 | 21"). ' +
+          'Prefer analysisMeta.chartType for chart selection, but you may also add a metadata bullet like "chart:type=bar", "chart:type=line", "chart:type=column", "chart:type=pie", or "chart:type=doughnut" before the data rows for backward compatibility. ' +
           'For table layout, encode rows as pipe-delimited bullets: first bullet is the header row (e.g. "Region | Q1 | Q2 | Q3"), subsequent bullets are data rows. ' +
           'The layout and icon are guidance for the later PPTX design step, not a rigid rendering contract. ' +
           'When helpful, include a designBrief describing tone, audience, visual style, density, and layout approach. ' +
@@ -883,6 +989,18 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
                   layout: { type: 'string' },
                   bullets: { type: 'array', items: { type: 'string' } },
                   notes: { type: 'string' },
+                  analysisMeta: {
+                    type: 'object',
+                    properties: {
+                      chartType: { type: 'string' },
+                      caption: { type: 'string' },
+                      source: { type: 'string' },
+                      unit: { type: 'string' },
+                      aggregation: { type: 'string' },
+                      confidence: { type: 'string' },
+                      analysisSummary: { type: 'string' },
+                    },
+                  },
                   icon: { type: 'string' },
                   imageQuery: { type: 'string' },
                 },
@@ -928,6 +1046,18 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
             layout: { type: 'string' },
             bullets: { type: 'array', items: { type: 'string' } },
             notes: { type: 'string' },
+            analysisMeta: {
+              type: 'object',
+              properties: {
+                chartType: { type: 'string' },
+                caption: { type: 'string' },
+                source: { type: 'string' },
+                unit: { type: 'string' },
+                aggregation: { type: 'string' },
+                confidence: { type: 'string' },
+                analysisSummary: { type: 'string' },
+              },
+            },
             icon: { type: 'string' },
             imageQuery: { type: 'string' },
           },
@@ -941,25 +1071,31 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
 
       // ---------- PPTX layout infrastructure tools ----------
 
-      /** Resolve a scripts/*.py path safely (whitelist only). */
-      const resolveInfraFile = (file: string): string | null => {
+      const artifactRepairDirty = new Set<string>();
+
+      /** Resolve a previews/*.json path safely (whitelist only). */
+      const resolveInfraFile = async (file: string): Promise<string | null> => {
         const allowed: Record<string, string> = {
-          layout_specs: 'layout_specs.py',
-          layout_validator: 'layout_validator.py',
+          layout_input: 'layout-input.json',
+          layout_specs: 'layout-specs.json',
+          slide_assets: 'slide-assets.json',
+          render_config: 'render-config.json',
         };
         const basename = allowed[file];
         if (!basename) return null;
-        return resolveBundledPath('scripts', 'layout', basename);
+        const workspaceDir = await readWorkspaceDir();
+        return path.join(workspaceDir, 'previews', basename);
       };
 
       const patchLayoutInfrastructureTool: LLMToolDefinition = {
         name: 'patch_layout_infrastructure',
         description:
-          'Read or patch the layout infrastructure files (layout_specs.py or layout_validator.py). ' +
-          'Use this when layout validation errors occur and the layout spec coordinates or validator thresholds need adjustment. ' +
+          'Read or patch the generated preview artifact files. ' +
+          'Targets: layout_input (slide content), layout_specs (geometry), slide_assets (icons/images), render_config (theme, font, style, colors). ' +
+          'Use render_config to change design style, font family, color treatment, panel fill behavior, text box style, or slide icons. ' +
           'Action "read" returns the full file content so you can understand current values. ' +
           'Action "patch" performs a search-and-replace edit on the file. ' +
-          'Only layout_specs and layout_validator are allowed targets.',
+          'After patching, call rerun_pptx to re-render the deck with the updated settings.',
         parameters: {
           type: 'object' as const,
           properties: {
@@ -970,8 +1106,8 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
             },
             file: {
               type: 'string',
-              description: 'Target file: "layout_specs" or "layout_validator".',
-              enum: ['layout_specs', 'layout_validator'],
+              description: 'Target file: "layout_input", "layout_specs", "slide_assets", or "render_config".',
+              enum: ['layout_input', 'layout_specs', 'slide_assets', 'render_config'],
             },
             search: {
               type: 'string',
@@ -985,9 +1121,9 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           required: ['action', 'file'],
         },
         handler: async (args: { action: string; file: string; search?: string; replace?: string }) => {
-          const filePath = resolveInfraFile(args.file);
+          const filePath = await resolveInfraFile(args.file);
           if (!filePath) {
-            return { success: false, error: `Unknown file "${args.file}". Allowed: layout_specs, layout_validator.` };
+            return { success: false, error: `Unknown file "${args.file}". Allowed: layout_input, layout_specs, slide_assets, render_config.` };
           }
           if (!fsExistsSync(filePath)) {
             return { success: false, error: `File not found: ${filePath}` };
@@ -1011,7 +1147,13 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
               return { success: false, error: `Search string matches ${occurrences} locations. Provide a more specific search string.` };
             }
             const updated = content.replace(args.search, args.replace);
+            try {
+              JSON.parse(updated);
+            } catch (err) {
+              return { success: false, error: `Patched content is not valid JSON: ${formatExecutionFailure(err)}` };
+            }
             await fs.writeFile(filePath, updated, 'utf-8');
+            artifactRepairDirty.add(args.file);
             return { success: true, message: `Patched ${args.file}: replaced 1 occurrence.` };
           }
 
@@ -1019,47 +1161,583 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         },
       };
 
+      const runPptxRerender = async (): Promise<{
+        success: boolean;
+        message?: string;
+        slideCount?: number;
+        warnings?: string[];
+        error?: string;
+      }> => {
+        try {
+          // Wait for background layout spec computation if still in-flight
+          if (layoutSpecsPromise) await layoutSpecsPromise;
+          if (slideAssetsPromise) await slideAssetsPromise;
+
+          const workspaceDir = await readWorkspaceDir();
+          const previewRoot = path.join(workspaceDir, 'previews');
+          const outputPath = path.join(previewRoot, 'presentation-preview.pptx');
+          const layoutInputPath = path.join(previewRoot, 'layout-input.json');
+          const layoutSpecsPath = path.join(previewRoot, 'layout-specs.json');
+          const renderConfigPath = path.join(previewRoot, 'render-config.json');
+
+          // Load render config overrides when the agent patched render-config.json
+          let renderConfigOverrides: RenderConfig | undefined;
+          if (artifactRepairDirty.has('render_config') && fsExistsSync(renderConfigPath)) {
+            try {
+              renderConfigOverrides = JSON.parse(await fs.readFile(renderConfigPath, 'utf-8')) as RenderConfig;
+            } catch {
+              // fall through to workspace defaults
+            }
+          }
+
+          const theme = workspace.theme;
+          const title = renderConfigOverrides?.title ?? workspace.title ?? 'Presentation';
+          const fontFamily = renderConfigOverrides?.fontFamily ?? theme?.fontFamily ?? undefined;
+
+          let rerunLayoutSpecsJson = '';
+          if (artifactRepairDirty.has('layout_specs') && fsExistsSync(layoutSpecsPath)) {
+            rerunLayoutSpecsJson = (await fs.readFile(layoutSpecsPath, 'utf-8')).trim();
+          } else if (artifactRepairDirty.has('layout_input') && fsExistsSync(layoutInputPath)) {
+            const layoutInputJson = await fs.readFile(layoutInputPath, 'utf-8');
+            const computed = await computeLayoutSpecs(layoutInputJson, fontFamily);
+            if (!computed.success || !computed.specs?.trim()) {
+              return { success: false, error: computed.error ?? 'Failed to recompute layout specs from layout-input.json.' };
+            }
+            rerunLayoutSpecsJson = computed.specs.trim();
+          } else if (fsExistsSync(layoutSpecsPath)) {
+            rerunLayoutSpecsJson = (await fs.readFile(layoutSpecsPath, 'utf-8')).trim();
+          }
+
+          // Remove old output so we get fresh validation
+          await fs.unlink(outputPath).catch(() => { });
+
+          const report = await renderPresentationToFile(theme, title, outputPath, {
+            iconCollection: renderConfigOverrides?.iconCollection ?? workspace.iconCollection,
+            layoutSpecsJson: rerunLayoutSpecsJson || undefined,
+            designStyle: renderConfigOverrides?.designStyle ?? workspace.designStyle ?? undefined,
+            customBackgroundColor: renderConfigOverrides?.customBackgroundColor ?? workspace.customBackgroundColor,
+            renderConfigOverrides,
+          });
+          artifactRepairDirty.clear();
+
+          return {
+            success: true,
+            message: `PPTX re-generated successfully (${report.slideCount} slides). Click Rerender in the preview pane to refresh the slide images.`,
+            slideCount: report.slideCount,
+            warnings: report.warnings,
+          };
+        } catch (err) {
+          return { success: false, error: formatExecutionFailure(err) };
+        }
+      };
+
       const rerunPptxTool: LLMToolDefinition = {
         name: 'rerun_pptx',
         description:
-          'Re-render the PPTX presentation using the deterministic renderer after patching layout infrastructure files. ' +
-          'Use this after calling patch_layout_infrastructure to verify the fix resolves validation errors.',
+          'Re-render the PPTX presentation using the deterministic renderer after patching generated preview artifacts. ' +
+          'Use this after calling patch_layout_infrastructure to apply the changes.',
         parameters: {
           type: 'object' as const,
           properties: {},
           required: [],
         },
-        handler: async () => {
-          try {
-            // Wait for background layout spec computation if still in-flight
-            if (layoutSpecsPromise) await layoutSpecsPromise;
-            if (slideAssetsPromise) await slideAssetsPromise;
+        handler: runPptxRerender,
+      };
 
-            const workspaceDir = await readWorkspaceDir();
-            const previewRoot = path.join(workspaceDir, 'previews');
-            const outputPath = path.join(previewRoot, 'presentation-preview.pptx');
+      /** Navigate a dot-separated property path on an object. */
+      const getNestedValue = (obj: Record<string, unknown>, dotPath: string): unknown => {
+        let cur: unknown = obj;
+        for (const key of dotPath.split('.')) {
+          if (cur == null || typeof cur !== 'object') return undefined;
+          cur = (cur as Record<string, unknown>)[key];
+        }
+        return cur;
+      };
 
-            const theme = workspace.theme;
-            const title = workspace.title || 'Presentation';
+      /** Set a value at a dot-separated property path. Creates intermediate objects if needed. */
+      const setNestedValue = (obj: Record<string, unknown>, dotPath: string, value: unknown): boolean => {
+        const parts = dotPath.split('.');
+        let cur: Record<string, unknown> = obj;
+        for (let i = 0; i < parts.length - 1; i++) {
+          const next = cur[parts[i]];
+          if (next == null || typeof next !== 'object') {
+            const child: Record<string, unknown> = {};
+            cur[parts[i]] = child;
+            cur = child;
+          } else {
+            cur = next as Record<string, unknown>;
+          }
+        }
+        cur[parts[parts.length - 1]] = value;
+        return true;
+      };
 
-            // Remove old output so we get fresh validation
-            await fs.unlink(outputPath).catch(() => { });
+      const tweakSlideTool: LLMToolDefinition = {
+        name: 'tweak_slide',
+        description:
+          'Read or modify a specific object/zone on a specific slide. Always call with action="read" first to see current state before patching. ' +
+          'Action "read": returns all properties for the given slide from layout-input (content + shape_overrides), layout-specs (geometry), and slide-assets (icons/images). ' +
+          'Action "patch": updates a single property on a specific slide. Use dot notation for nested properties (e.g. "title_rect.x", "title_rect.h"). ' +
+          'Action "set_text": updates title_text, key_message_text, notes, footer_text, bullets[index], or chip_labels[index]. ' +
+          'Action "set_array_item": updates one item inside bullets, chip_labels, imageQueries, or selectedImages by index. ' +
+          'Action "set_zone_geometry": updates x/y/w/h for one layout-spec rect such as title_rect, key_message_rect, content_rect, chips_rect, hero_rect, icon_rect, footer_rect, summary_box, sidebar_rect, or nested zones like comparison.left. ' +
+          'Action "set_icon": updates the slide icon metadata in slide-assets. ' +
+          'Action "set_image": updates the primary image path and selectedImages[0] in slide-assets. ' +
+          'Action "set_override": add or update a per-shape color override on a slide. The renderer applies these overrides to named shapes. ' +
+          'Action "remove_override": removes a per-shape color override and restores default renderer styling for that shape. ' +
+          'Shape names: chip_0, chip_1, chip_2 (chip panels), card_0..card_N (card panels), stat_0..stat_N (stat boxes), title_panel, content_panel, key_message_panel. ' +
+          'Override properties: fill_color (6-digit hex without #, e.g. "ED7D31"), border_color (6-digit hex). ' +
+          'After any write action, call rerun_pptx to re-render the deck. ' +
+          'Examples: ' +
+          'change chip color → set_override shape_name="chip_0" fill_color="ED7D31"; ' +
+          'remove chip override → remove_override shape_name="chip_0"; ' +
+          'change slide title → set_text field="title_text" text="New title"; ' +
+          'change first bullet → set_text field="bullets" index=0 text="New bullet"; ' +
+          'swap icon → set_icon icon="lucide:database"; ' +
+          'swap image → set_image image_path="D:/.../hero.png"; ' +
+          'move title down → patch layout_specs title_rect.y; ' +
+          'enlarge content → set_zone_geometry zone="content_rect" h=1.8; ' +
+          'change bullet text → set_text field="bullets" index=0 text="Updated bullet".',
+        parameters: {
+          type: 'object' as const,
+          properties: {
+            action: {
+              type: 'string',
+              description: 'Structured slide repair action.',
+              enum: ['read', 'patch', 'set_text', 'set_array_item', 'set_zone_geometry', 'set_icon', 'set_image', 'set_override', 'remove_override'],
+            },
+            slide_index: {
+              type: 'number',
+              description: '0-based slide index.',
+            },
+            file: {
+              type: 'string',
+              description: 'Target artifact file (required for "patch"). "layout_input" for content, "layout_specs" for geometry, "slide_assets" for icons/images.',
+              enum: ['layout_input', 'layout_specs', 'slide_assets'],
+            },
+            property: {
+              type: 'string',
+              description: 'Dot-separated property path within the slide entry, e.g. "title_rect.h", "bullets", "icon". Required for "patch".',
+            },
+            value: {
+              description: 'New value to set (string, number, boolean, array, object, or null). Required for "patch".',
+            },
+            field: {
+              type: 'string',
+              description: 'Field for "set_text": title_text, key_message_text, notes, footer_text, bullets, or chip_labels.',
+            },
+            text: {
+              type: 'string',
+              description: 'Text value for "set_text".',
+            },
+            index: {
+              type: 'number',
+              description: '0-based index for bullets/chip_labels or for "set_array_item".',
+            },
+            array_field: {
+              type: 'string',
+              description: 'Array field for "set_array_item", e.g. bullets, chip_labels, imageQueries, selectedImages.',
+            },
+            zone: {
+              type: 'string',
+              description: 'Layout spec zone for "set_zone_geometry", e.g. title_rect, content_rect, comparison.left.',
+            },
+            x: {
+              type: 'number',
+              description: 'New x position for "set_zone_geometry".',
+            },
+            y: {
+              type: 'number',
+              description: 'New y position for "set_zone_geometry".',
+            },
+            w: {
+              type: 'number',
+              description: 'New width for "set_zone_geometry".',
+            },
+            h: {
+              type: 'number',
+              description: 'New height for "set_zone_geometry".',
+            },
+            icon: {
+              type: 'string',
+              description: 'Full icon ID for "set_icon", e.g. "lucide:database".',
+            },
+            image_path: {
+              type: 'string',
+              description: 'Absolute or workspace-resolved image path for "set_image".',
+            },
+            shape_name: {
+              type: 'string',
+              description: 'Shape name for "set_override" or "remove_override", e.g. "chip_0", "card_1", "title_panel".',
+            },
+            fill_color: {
+              type: 'string',
+              description: '6-digit hex color for shape fill (no # prefix), e.g. "ED7D31". Used with "set_override".',
+            },
+            border_color: {
+              type: 'string',
+              description: '6-digit hex color for shape border (no # prefix). Used with "set_override".',
+            },
+          },
+          required: ['action', 'slide_index'],
+        },
+        handler: async (args: {
+          action: string;
+          slide_index: number;
+          file?: string;
+          property?: string;
+          value?: unknown;
+          field?: string;
+          text?: string;
+          index?: number;
+          array_field?: string;
+          zone?: string;
+          x?: number;
+          y?: number;
+          w?: number;
+          h?: number;
+          icon?: string;
+          image_path?: string;
+          shape_name?: string;
+          fill_color?: string;
+          border_color?: string;
+        }) => {
+          const workspaceDir = await readWorkspaceDir();
+          const previewRoot = path.join(workspaceDir, 'previews');
+          const fileMap: Record<string, string> = {
+            layout_input: path.join(previewRoot, 'layout-input.json'),
+            layout_specs: path.join(previewRoot, 'layout-specs.json'),
+            slide_assets: path.join(previewRoot, 'slide-assets.json'),
+          };
 
-            const report = await renderPresentationToFile(theme, title, outputPath, {
-              iconCollection: workspace.iconCollection,
-              layoutSpecsJson,
-              designStyle: workspace.designStyle ?? undefined,
-            });
+          const readJsonArray = async (filePath: string): Promise<unknown[] | null> => {
+            if (!fsExistsSync(filePath)) return null;
+            try {
+              const parsed = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+              return Array.isArray(parsed) ? parsed : null;
+            } catch {
+              return null;
+            }
+          };
+
+          const writeJsonArray = async (filePath: string, arr: unknown[]): Promise<{ success: boolean; error?: string }> => {
+            const updated = JSON.stringify(arr, null, 2);
+            try {
+              JSON.parse(updated);
+            } catch (err) {
+              return { success: false, error: `Resulting JSON is invalid: ${formatExecutionFailure(err)}` };
+            }
+            await fs.writeFile(filePath, updated, 'utf-8');
+            return { success: true };
+          };
+
+          const validateSlideIndex = (arr: unknown[]): string | null => {
+            if (args.slide_index < 0 || args.slide_index >= arr.length) {
+              return `slide_index ${args.slide_index} out of range (0..${arr.length - 1}).`;
+            }
+            return null;
+          };
+
+          const getSlideEntry = async (fileKey: keyof typeof fileMap): Promise<{ arr?: unknown[]; slide?: Record<string, unknown>; error?: string }> => {
+            const filePath = fileMap[fileKey];
+            const arr = await readJsonArray(filePath);
+            if (!arr) {
+              return { error: `File not found or not a JSON array: ${filePath}` };
+            }
+            const idxErr = validateSlideIndex(arr);
+            if (idxErr) return { error: idxErr };
+            return { arr, slide: arr[args.slide_index] as Record<string, unknown> };
+          };
+
+          const persist = async (fileKey: keyof typeof fileMap, arr: unknown[]) => {
+            const result = await writeJsonArray(fileMap[fileKey], arr);
+            if (!result.success) return result;
+            artifactRepairDirty.add(fileKey);
+            return { success: true };
+          };
+
+          if (args.action === 'read') {
+            const result: Record<string, unknown> = { slide_index: args.slide_index };
+            for (const [key, filePath] of Object.entries(fileMap)) {
+              const arr = await readJsonArray(filePath);
+              if (!arr) { result[key] = null; continue; }
+              const err = validateSlideIndex(arr);
+              if (err) { result[key] = err; } else { result[key] = arr[args.slide_index]; }
+            }
+            return { success: true, slide: result };
+          }
+
+          if (args.action === 'set_text') {
+            if (!args.field || args.text === undefined) {
+              return { success: false, error: '"field" and "text" are required for action="set_text".' };
+            }
+            const validScalarFields = new Set(['title_text', 'key_message_text', 'notes', 'footer_text']);
+            const validArrayFields = new Set(['bullets', 'chip_labels']);
+            const result = await getSlideEntry('layout_input');
+            if (result.error || !result.arr || !result.slide) return { success: false, error: result.error };
+
+            if (validScalarFields.has(args.field)) {
+              const oldValue = result.slide[args.field];
+              result.slide[args.field] = args.text;
+              const writeResult = await persist('layout_input', result.arr);
+              if (!writeResult.success) return writeResult;
+              return {
+                success: true,
+                message: `Slide ${args.slide_index}: ${args.field} updated.`,
+                old_value: oldValue ?? null,
+                new_value: args.text,
+              };
+            }
+
+            if (validArrayFields.has(args.field)) {
+              if (!Number.isInteger(args.index)) {
+                return { success: false, error: '"index" is required for array text fields like bullets or chip_labels.' };
+              }
+              const arrValue = result.slide[args.field];
+              if (!Array.isArray(arrValue)) {
+                return { success: false, error: `Field "${args.field}" is not an array on this slide.` };
+              }
+              if ((args.index as number) < 0 || (args.index as number) >= arrValue.length) {
+                return { success: false, error: `index ${args.index} out of range for ${args.field} (0..${arrValue.length - 1}).` };
+              }
+              const oldValue = arrValue[args.index as number];
+              arrValue[args.index as number] = args.text;
+              const writeResult = await persist('layout_input', result.arr);
+              if (!writeResult.success) return writeResult;
+              return {
+                success: true,
+                message: `Slide ${args.slide_index}: ${args.field}[${args.index}] updated.`,
+                old_value: oldValue ?? null,
+                new_value: args.text,
+              };
+            }
+
+            return { success: false, error: `Unsupported field "${args.field}" for set_text.` };
+          }
+
+          if (args.action === 'set_array_item') {
+            if (!args.array_field || !Number.isInteger(args.index) || args.value === undefined) {
+              return { success: false, error: '"array_field", "index", and "value" are required for action="set_array_item".' };
+            }
+            const result = await getSlideEntry('layout_input');
+            if (result.error || !result.arr || !result.slide) return { success: false, error: result.error };
+            const arrValue = result.slide[args.array_field];
+            if (!Array.isArray(arrValue)) {
+              return { success: false, error: `Field "${args.array_field}" is not an array on this slide.` };
+            }
+            if ((args.index as number) < 0 || (args.index as number) >= arrValue.length) {
+              return { success: false, error: `index ${args.index} out of range for ${args.array_field} (0..${arrValue.length - 1}).` };
+            }
+            const oldValue = arrValue[args.index as number];
+            arrValue[args.index as number] = args.value;
+            const writeResult = await persist('layout_input', result.arr);
+            if (!writeResult.success) return writeResult;
+            return {
+              success: true,
+              message: `Slide ${args.slide_index}: ${args.array_field}[${args.index}] updated.`,
+              old_value: oldValue ?? null,
+              new_value: args.value,
+            };
+          }
+
+          if (args.action === 'set_zone_geometry') {
+            if (!args.zone) {
+              return { success: false, error: '"zone" is required for action="set_zone_geometry".' };
+            }
+            if ([args.x, args.y, args.w, args.h].every((value) => value === undefined)) {
+              return { success: false, error: 'At least one of "x", "y", "w", or "h" is required for action="set_zone_geometry".' };
+            }
+            const result = await getSlideEntry('layout_specs');
+            if (result.error || !result.arr || !result.slide) return { success: false, error: result.error };
+            const zoneValue = getNestedValue(result.slide, args.zone);
+            if (!zoneValue || typeof zoneValue !== 'object') {
+              return { success: false, error: `Zone "${args.zone}" was not found on this slide.` };
+            }
+            const zoneRect = zoneValue as Record<string, unknown>;
+            const oldValue = { x: zoneRect.x ?? null, y: zoneRect.y ?? null, w: zoneRect.w ?? null, h: zoneRect.h ?? null };
+            if (args.x !== undefined) zoneRect.x = args.x;
+            if (args.y !== undefined) zoneRect.y = args.y;
+            if (args.w !== undefined) zoneRect.w = args.w;
+            if (args.h !== undefined) zoneRect.h = args.h;
+            const writeResult = await persist('layout_specs', result.arr);
+            if (!writeResult.success) return writeResult;
+            return {
+              success: true,
+              message: `Slide ${args.slide_index}: geometry updated for ${args.zone}.`,
+              old_value: oldValue,
+              new_value: { x: zoneRect.x ?? null, y: zoneRect.y ?? null, w: zoneRect.w ?? null, h: zoneRect.h ?? null },
+            };
+          }
+
+          if (args.action === 'set_icon') {
+            if (!args.icon) {
+              return { success: false, error: '"icon" is required for action="set_icon".' };
+            }
+            const result = await getSlideEntry('slide_assets');
+            if (result.error || !result.arr || !result.slide) return { success: false, error: result.error };
+            const oldValue = { icon: result.slide.icon ?? null, iconName: result.slide.iconName ?? null };
+            result.slide.icon = args.icon;
+            result.slide.iconName = args.icon;
+            const writeResult = await persist('slide_assets', result.arr);
+            if (!writeResult.success) return writeResult;
+            return {
+              success: true,
+              message: `Slide ${args.slide_index}: icon updated.`,
+              old_value: oldValue,
+              new_value: { icon: args.icon, iconName: args.icon },
+            };
+          }
+
+          if (args.action === 'set_image') {
+            if (!args.image_path) {
+              return { success: false, error: '"image_path" is required for action="set_image".' };
+            }
+            const result = await getSlideEntry('slide_assets');
+            if (result.error || !result.arr || !result.slide) return { success: false, error: result.error };
+            const oldValue = {
+              primaryImagePath: result.slide.primaryImagePath ?? null,
+              selectedImages: Array.isArray(result.slide.selectedImages) ? result.slide.selectedImages : null,
+            };
+            result.slide.primaryImagePath = args.image_path;
+            if (!Array.isArray(result.slide.selectedImages)) {
+              result.slide.selectedImages = [];
+            }
+            const selectedImages = result.slide.selectedImages as Array<Record<string, unknown>>;
+            if (selectedImages.length === 0) {
+              selectedImages.push({ id: 'manual-selection', imagePath: args.image_path });
+            } else {
+              selectedImages[0] = { ...selectedImages[0], imagePath: args.image_path };
+            }
+            const writeResult = await persist('slide_assets', result.arr);
+            if (!writeResult.success) return writeResult;
+            return {
+              success: true,
+              message: `Slide ${args.slide_index}: primary image updated.`,
+              old_value: oldValue,
+              new_value: {
+                primaryImagePath: args.image_path,
+                selectedImages: selectedImages,
+              },
+            };
+          }
+
+          if (args.action === 'set_override') {
+            if (!args.shape_name) {
+              return { success: false, error: '"shape_name" is required for action="set_override". Use names like "chip_0", "card_1", "title_panel".' };
+            }
+            if (!args.fill_color && !args.border_color) {
+              return { success: false, error: 'At least one of "fill_color" or "border_color" is required for "set_override".' };
+            }
+            const hexPattern = /^[0-9A-Fa-f]{6}$/;
+            if (args.fill_color && !hexPattern.test(args.fill_color)) {
+              return { success: false, error: `Invalid fill_color "${args.fill_color}". Must be 6-digit hex without # prefix.` };
+            }
+            if (args.border_color && !hexPattern.test(args.border_color)) {
+              return { success: false, error: `Invalid border_color "${args.border_color}". Must be 6-digit hex without # prefix.` };
+            }
+
+            const filePath = fileMap.layout_input;
+            const arr = await readJsonArray(filePath);
+            if (!arr) {
+              return { success: false, error: `layout-input.json not found or not a JSON array.` };
+            }
+            const idxErr = validateSlideIndex(arr);
+            if (idxErr) return { success: false, error: idxErr };
+
+            const slideEntry = arr[args.slide_index] as Record<string, unknown>;
+
+            // Get or create shape_overrides array
+            let overrides = slideEntry.shape_overrides as Array<Record<string, string>> | undefined;
+            if (!Array.isArray(overrides)) {
+              overrides = [];
+              slideEntry.shape_overrides = overrides;
+            }
+
+            // Find existing entry for this shape or create new
+            let entry = overrides.find((o) => (o.name || o.shapeName) === args.shape_name);
+            if (!entry) {
+              entry = { name: args.shape_name! };
+              overrides.push(entry);
+            }
+
+            const oldFill = entry.fill_color || entry.fillColor;
+            const oldBorder = entry.border_color || entry.borderColor;
+
+            if (args.fill_color) entry.fill_color = args.fill_color.toUpperCase();
+            if (args.border_color) entry.border_color = args.border_color.toUpperCase();
+
+            const writeResult = await writeJsonArray(filePath, arr);
+            if (!writeResult.success) return writeResult;
+            artifactRepairDirty.add('layout_input');
 
             return {
               success: true,
-              message: `PPTX re-generated successfully (${report.slideCount} slides).`,
-              slideCount: report.slideCount,
-              warnings: report.warnings,
+              message: `Slide ${args.slide_index}: shape "${args.shape_name}" override set.`,
+              old: { fill_color: oldFill ?? null, border_color: oldBorder ?? null },
+              new: { fill_color: args.fill_color?.toUpperCase() ?? null, border_color: args.border_color?.toUpperCase() ?? null },
             };
-          } catch (err) {
-            return { success: false, error: formatExecutionFailure(err) };
           }
+
+          if (args.action === 'remove_override') {
+            if (!args.shape_name) {
+              return { success: false, error: '"shape_name" is required for action="remove_override".' };
+            }
+            const result = await getSlideEntry('layout_input');
+            if (result.error || !result.arr || !result.slide) return { success: false, error: result.error };
+            const overrides = result.slide.shape_overrides;
+            if (!Array.isArray(overrides)) {
+              return { success: false, error: 'This slide has no shape_overrides array.' };
+            }
+            const existingIndex = overrides.findIndex((item) => {
+              if (!item || typeof item !== 'object') return false;
+              const override = item as Record<string, unknown>;
+              return (override.name || override.shapeName) === args.shape_name;
+            });
+            if (existingIndex < 0) {
+              return { success: false, error: `No override found for shape "${args.shape_name}".` };
+            }
+            const [removed] = overrides.splice(existingIndex, 1);
+            const writeResult = await persist('layout_input', result.arr);
+            if (!writeResult.success) return writeResult;
+            return {
+              success: true,
+              message: `Slide ${args.slide_index}: shape override removed for "${args.shape_name}".`,
+              old_value: removed,
+            };
+          }
+
+          if (args.action === 'patch') {
+            if (!args.file || !args.property || args.value === undefined) {
+              return { success: false, error: '"file", "property", and "value" are required for action="patch".' };
+            }
+            const filePath = fileMap[args.file];
+            if (!filePath) {
+              return { success: false, error: `Unknown file "${args.file}". Allowed: layout_input, layout_specs, slide_assets.` };
+            }
+            const arr = await readJsonArray(filePath);
+            if (!arr) {
+              return { success: false, error: `File not found or not a JSON array: ${filePath}` };
+            }
+            const idxErr = validateSlideIndex(arr);
+            if (idxErr) return { success: false, error: idxErr };
+
+            const slideEntry = arr[args.slide_index] as Record<string, unknown>;
+            const oldValue = getNestedValue(slideEntry, args.property);
+            setNestedValue(slideEntry, args.property, args.value);
+
+            const writeResult = await writeJsonArray(filePath, arr);
+            if (!writeResult.success) return writeResult;
+            artifactRepairDirty.add(args.file);
+
+            return {
+              success: true,
+              message: `Slide ${args.slide_index}: ${args.property} updated.`,
+              old_value: oldValue,
+              new_value: args.value,
+            };
+          }
+
+          return { success: false, error: `Unknown action "${args.action}". Use "read", "patch", "set_text", "set_array_item", "set_zone_geometry", "set_icon", "set_image", "set_override", or "remove_override".` };
         },
       };
 
@@ -1092,6 +1770,7 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         workflow: WorkflowConfig | null,
         frameworkAlreadySet: boolean,
         workspaceAbsPath: string,
+        deckExists: boolean,
       ): LLMSessionConfig => {
         const workflowDirective = workflow?.agentDirective ?? '';
         const hasCustomFrameworkPrompt = workspace.framework === 'custom-prompt' && !!workspace.customFrameworkPrompt?.trim();
@@ -1109,31 +1788,49 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
         const storySystemMessage = buildManagedSystemPrompt('story', {
           workflowDirective,
           storyFrameworkInstruction,
+          // When a deck exists, inject workspace paths so the LLM can use repair tools
+          ...(deckExists ? { workspaceDir: workspaceAbsPath, imagesDir: path.join(workspaceAbsPath, 'images') } : {}),
         });
 
+        // Tool selection: additive based on workspace state
+        const storyTools = frameworkAlreadySet
+          ? [scenarioTool, updateSlideTool]
+          : [scenarioTool, updateSlideTool, suggestFrameworkTool];
+        const repairTools = [patchLayoutInfrastructureTool, tweakSlideTool, rerunPptxTool];
+
+        let tools: LLMToolDefinition[];
+        if (mode === 'pptx') {
+          // Explicit PPTX workflow (create-pptx or poststaging QA)
+          tools = repairTools;
+        } else if (deckExists) {
+          // Story mode but a rendered deck exists — include repair tools so the
+          // LLM can handle visual tweaks without explicit workflow routing.
+          tools = [...storyTools, ...repairTools];
+        } else {
+          tools = storyTools;
+        }
+
         return {
-          tools: mode === 'pptx'
-            ? [patchLayoutInfrastructureTool, rerunPptxTool]
-            : frameworkAlreadySet
-              ? [scenarioTool, updateSlideTool]
-              : [scenarioTool, updateSlideTool, suggestFrameworkTool],
+          tools: tools.map(withToolLogging),
           skillDirectories,
           systemMessage: mode === 'pptx' ? pptxSystemMessage : storySystemMessage,
           model: process.env.MODEL_NAME || undefined,
           streaming: true,
-          reasoningEffort: (process.env.REASONING_EFFORT as 'low' | 'medium' | 'high') || undefined,
+          reasoningEffort: isTargetedPptxRepair(workflow)
+            ? 'low'
+            : (process.env.REASONING_EFFORT as 'low' | 'medium' | 'high') || undefined,
         };
       };
 
       try {
         const provider = getActiveProvider();
-        const workflow = resolveWorkflow(message, workspace);
-        const sessionMode: SessionMode = resolveSessionMode(message, workspace);
-        const skillDirectories = await getSkillDirectories(sessionMode);
+        const sessionMode: SessionMode = resolveSessionMode(message, workspace, workflow);
+        const skillDirectories = await getSkillDirectories(sessionMode, workflow);
 
         const frameworkAlreadySet = !!workspace.framework;
         const wsDir = await readWorkspaceDir();
-        const sessionConfig = buildSessionConfig(skillDirectories, sessionMode, workflow, frameworkAlreadySet, wsDir);
+        const deckExists = fsExistsSync(path.join(wsDir, 'previews', 'render-config.json'));
+        const sessionConfig = buildSessionConfig(skillDirectories, sessionMode, workflow, frameworkAlreadySet, wsDir, deckExists);
 
         // ---- Single-shot path ----
         const onDelta = (delta: LLMStreamDelta) => {
@@ -1171,6 +1868,50 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           session.sendAndWait(prompt, CHAT_REQUEST_TIMEOUT_MS),
           timeoutPromise,
         ]);
+
+        if (artifactRepairDirty.size > 0) {
+          const syncEventId = `rerun_pptx-auto-${Date.now()}`;
+          const dirtyArtifacts = Array.from(artifactRepairDirty);
+          emitToolEvent({
+            id: syncEventId,
+            toolName: 'rerun_pptx',
+            status: 'running',
+            argsPreview: previewToolValue({ autoSync: true, dirtyArtifacts }),
+            startedAt: Date.now(),
+          });
+          sendToWindow(win, 'chat:stream', {
+            thinking: `Syncing updated deck after artifact edits (${dirtyArtifacts.join(', ')})...`,
+          });
+          const syncStartedAt = Date.now();
+          const rerunResult = await runPptxRerender();
+          if (!rerunResult.success) {
+            emitToolEvent({
+              id: syncEventId,
+              toolName: 'rerun_pptx',
+              status: 'error',
+              argsPreview: previewToolValue({ autoSync: true, dirtyArtifacts }),
+              resultPreview: previewToolValue(rerunResult.error),
+              startedAt: syncStartedAt,
+              finishedAt: Date.now(),
+              durationMs: Date.now() - syncStartedAt,
+            });
+            failRequest(rerunResult.error ?? 'Failed to sync updated PPTX after artifact edits.');
+            return;
+          }
+          emitToolEvent({
+            id: syncEventId,
+            toolName: 'rerun_pptx',
+            status: 'success',
+            argsPreview: previewToolValue({ autoSync: true, dirtyArtifacts }),
+            resultPreview: previewToolValue(rerunResult.message),
+            startedAt: syncStartedAt,
+            finishedAt: Date.now(),
+            durationMs: Date.now() - syncStartedAt,
+          });
+          sendToWindow(win, 'chat:stream', {
+            content: `\n\n[PPTX synced: ${rerunResult.slideCount ?? 0} slides rendered${rerunResult.warnings?.length ? `, warnings: ${rerunResult.warnings.length}` : ''}. Click Rerender in the preview pane to refresh images.]`,
+          });
+        }
 
         completeRequest();
       } catch (err) {

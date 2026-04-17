@@ -3,9 +3,10 @@
  * Business logic for chat history, prompt formatting, and workspace serialization.
  */
 
-import type { SlideItem, DesignBrief, DesignStyle, FrameworkType, TemplateMeta } from '../domain/entities/slide-work';
+import type { SlideItem, DesignBrief, DesignStyle, FrameworkType } from '../domain/entities/slide-work';
 import type { ThemeTokens } from '../domain/entities/palette';
 import type { DataFile, ScrapeResult } from '../domain/ports/ipc';
+import type { ChatToolEvent } from '../domain/ports/ipc';
 import type { IconifyCollectionId } from '../domain/icons/iconify';
 import type { WorkflowConfig } from '../domain/workflows/workflow-config';
 
@@ -14,6 +15,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   thinking?: string;
+  toolLogs?: ChatToolEvent[];
   timestamp: number;
 }
 
@@ -25,7 +27,6 @@ export interface WorkspaceContext {
   customBackgroundColor: string | null;
   framework: FrameworkType | null;
   customFrameworkPrompt: string | null;
-  templateMeta: TemplateMeta | null;
   theme: ThemeTokens | null;
   workflow: WorkflowConfig | null;
   dataSources: DataFile[];

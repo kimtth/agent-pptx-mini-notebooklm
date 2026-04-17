@@ -33,6 +33,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('chat:framework-suggested', handler);
       return () => ipcRenderer.removeListener('chat:framework-suggested', handler);
     },
+    onTool(cb: (event: unknown) => void) {
+      const handler = (_: unknown, event: unknown) => cb(event);
+      ipcRenderer.on('chat:tool', handler);
+      return () => ipcRenderer.removeListener('chat:tool', handler);
+    },
     onError(cb: (msg: string) => void) {
       const handler = (_: unknown, msg: string) => cb(msg);
       ipcRenderer.on('chat:error', handler);
@@ -54,8 +59,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pptx: {
     generate: (title: string) =>
       ipcRenderer.invoke('pptx:generate', '', null, title),
-    renderPreview: (designStyle: string | null, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[], templateMeta?: unknown, customBackgroundColor?: string | null) =>
-      ipcRenderer.invoke('pptx:renderPreview', designStyle, themeTokens, title, iconCollection, slides, templateMeta, customBackgroundColor),
+    renderPreview: (designStyle: string | null, themeTokens: unknown, title: string, iconCollection?: string, slides?: unknown[], customBackgroundColor?: string | null) =>
+      ipcRenderer.invoke('pptx:renderPreview', designStyle, themeTokens, title, iconCollection, slides, customBackgroundColor),
     readExistingPreviews: () =>
       ipcRenderer.invoke('pptx:readExistingPreviews'),
     rerenderPreview: () =>
@@ -64,10 +69,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('pptx:openPreviewPptx'),
     computeLayout: (slidesJson: string) =>
       ipcRenderer.invoke('pptx:computeLayout', slidesJson),
-    importTemplate: () =>
-      ipcRenderer.invoke('pptx:importTemplate'),
-    removeTemplate: () =>
-      ipcRenderer.invoke('pptx:removeTemplate'),
     clearWorkspaceArtifacts: () =>
       ipcRenderer.invoke('pptx:clearWorkspaceArtifacts'),
   },
@@ -91,6 +92,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     save: (settings: Record<string, string>) => ipcRenderer.invoke('settings:save', settings),
+    onChanged: (cb: (settings: Record<string, string>) => void) => {
+      const handler = (_: unknown, settings: Record<string, string>) => cb(settings)
+      ipcRenderer.on('settings:changed', handler)
+      return () => ipcRenderer.removeListener('settings:changed', handler)
+    },
   },
 
   project: {

@@ -3,7 +3,7 @@
  * Applied to process.env on startup and after save.
  */
 
-import { ipcMain, app } from 'electron';
+import { ipcMain, app, BrowserWindow } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -20,6 +20,7 @@ export const SETTINGS_KEYS = [
   'ANTHROPIC_API_KEY',
   'MODEL_NAME',
   'REASONING_EFFORT',
+  'SHOW_TOOL_CALLING_MESSAGES',
 
 ] as const;
 
@@ -59,6 +60,9 @@ export function onSettingsSaved(cb: () => void): void {
 }
 
 export function registerSettingsHandlers(): void {
+  ipcMain.removeHandler('settings:get');
+  ipcMain.removeHandler('settings:save');
+
   ipcMain.handle('settings:get', async () => {
     const saved = await readSettings();
     const result: Settings = {};
@@ -88,5 +92,11 @@ export function registerSettingsHandlers(): void {
 
     await writeSettings(clean);
     onSaveCallback?.();
+
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send('settings:changed', clean);
+      }
+    }
   });
 }
