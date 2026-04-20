@@ -222,6 +222,26 @@ def estimate_text_height_in(
     return base_height + cushion
 
 
+def is_metric_like_big_number_text(text: str) -> bool:
+    """Return True when a big-number title should be treated as a KPI display."""
+    stripped = (text or '').strip()
+    if not stripped:
+        return False
+    words = stripped.split()
+    digit_count = sum(ch.isdigit() for ch in stripped)
+    alpha_count = sum(ch.isalpha() for ch in stripped)
+    if digit_count == 0:
+        return len(words) <= 2 and len(stripped) <= 12
+    return len(words) <= 4 and digit_count >= max(1, alpha_count // 6)
+
+
+def big_number_font_profile(title_text: str) -> tuple[float, float, float]:
+    """Return title base, title minimum, and key-message sizes for big-number slides."""
+    if is_metric_like_big_number_text(title_text):
+        return (72.0, 28.0, 18.0)
+    return (42.0, 24.0, 18.0)
+
+
 def _cascade_subzone(rect: RectSpec | None, content_y: float, content_bottom: float) -> RectSpec | None:
     """Reposition a sub-zone (hero, sidebar) so its top aligns with the content zone.
 

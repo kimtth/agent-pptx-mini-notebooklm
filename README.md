@@ -43,8 +43,8 @@ graph LR
 
 The app uses **constraint-based layout computation** (via the Kiwi solver 🦋, an implementation of the Cassowary algorithm; **Matplotlib** uses kiwisolver internally in a limited subset of layout calculations). and **🦖 RAPTOR-style hierarchical retrieval and summarization** to structure the final output. RAPTOR fits this app well because PPTX content is naturally hierarchical: a top-down story breaks into sections, slides, and supporting details, so tree-based retrieval keeps the narrative coherent while preserving local context.
 
-- **Generation Speed**: 50 slides in under 2 minutes
-- **Long-Context Support**: 779-page PDF condensed into a 30- to 50-page PPTX
+- **Generation Speed**: 100 slides in under 2 minutes
+- **Long-Context Support**: 779-page PDF condensed into a 10–100 slide PowerPoint presentation.
 
 ## Documentation Index
 

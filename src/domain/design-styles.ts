@@ -10,6 +10,7 @@ export const DESIGN_STYLE_OPTIONS = [
   { value: 'Gradient Mesh', label: 'Gradient Mesh', mood: 'Artistic · Vibrant', bestFor: 'Brand launches', tone: 'dark', category: 'Named Style' },
   { value: 'Claymorphism', label: 'Claymorphism', mood: 'Friendly · 3D', bestFor: 'Apps, education', tone: 'light', category: 'Named Style' },
   { value: 'Swiss International', label: 'Swiss International', mood: 'Functional · Corporate', bestFor: 'Consulting, finance IR', tone: 'light', category: 'Named Style' },
+  { value: 'Foundry Workbench', label: 'Foundry Workbench', mood: 'Product · Technical', bestFor: 'AI tools, platform demos', tone: 'dark', category: 'Named Style' },
   { value: 'Aurora Neon Glow', label: 'Aurora Neon Glow', mood: 'Futuristic · AI', bestFor: 'AI, cybersecurity', tone: 'dark', category: 'Named Style' },
   { value: 'Retro Y2K', label: 'Retro Y2K', mood: 'Nostalgic · Pop', bestFor: 'Events, marketing', tone: 'dark', category: 'Named Style' },
   { value: 'Nordic Minimalism', label: 'Nordic Minimalism', mood: 'Calm · Natural', bestFor: 'Wellness, non-profit', tone: 'light', category: 'Named Style' },

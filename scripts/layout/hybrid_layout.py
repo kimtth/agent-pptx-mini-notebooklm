@@ -52,6 +52,7 @@ if __package__ in {None, ''}:
         SolveQuality,
         StatsSpec,
         TimelineSpec,
+        big_number_font_profile,
         estimate_text_height_in,
     )
 else:
@@ -65,6 +66,7 @@ else:
         SolveQuality,
         StatsSpec,
         TimelineSpec,
+        big_number_font_profile,
         estimate_text_height_in,
     )
 
@@ -139,6 +141,17 @@ def _zone_text(slide: SlideContent, role: ZoneRole) -> str:
 def _zone_needs_measurement(role: ZoneRole) -> bool:
     """Only text-bearing zones need measurement."""
     return role in (ZoneRole.TITLE, ZoneRole.KEY_MESSAGE, ZoneRole.CONTENT, ZoneRole.CHIPS, ZoneRole.FOOTER, ZoneRole.NOTES)
+
+
+def _measurement_font_size(slide: SlideContent, role: ZoneRole, default_pt: float) -> float:
+    if slide.layout_type != 'big_number':
+        return default_pt
+    title_pt, _title_min_pt, key_pt = big_number_font_profile(slide.title_text)
+    if role == ZoneRole.TITLE:
+        return title_pt
+    if role == ZoneRole.KEY_MESSAGE:
+        return key_pt
+    return default_pt
 
 
 def _columnar_height_reserve(blueprint: LayoutBlueprint) -> float:
@@ -347,7 +360,7 @@ def compute_adaptive_specs(
                                 text=bullet_text,
                                 width_in=col_w,
                                 font_family=slide.font_family,
-                                font_size_pt=zd.font_pt,
+                                font_size_pt=_measurement_font_size(slide, zd.role, zd.font_pt),
                                 bold=zd.bold,
                             ),
                         ))
@@ -364,7 +377,7 @@ def compute_adaptive_specs(
                     text=text,
                     width_in=width,
                     font_family=slide.font_family,
-                    font_size_pt=zd.font_pt,
+                    font_size_pt=_measurement_font_size(slide, zd.role, zd.font_pt),
                     bold=zd.bold,
                 ),
             ))

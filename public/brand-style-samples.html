@@ -3,947 +3,1095 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PPTX Slide Agent Brand Style Samples</title>
+  <title>Brand Style Preview — All 40 Styles</title>
   <style>
     :root {
-      --bg: #0c1117;
-      --panel: rgba(16, 24, 35, 0.78);
-      --panel-border: rgba(163, 177, 198, 0.18);
-      --text: #edf2f7;
-      --muted: #9eacc0;
-      --accent: #8ae0b2;
-      --accent-2: #f5c96d;
-      --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
-      --radius: 20px;
+      --page-bg: #f4f0e8;
+      --page-ink: #172230;
+      --page-muted: #5f6b79;
+      --page-accent: #0f766e;
+      --page-panel: rgba(255, 255, 255, 0.72);
+      --page-border: rgba(23, 34, 48, 0.1);
+      --page-shadow: 0 24px 70px rgba(27, 38, 49, 0.12);
+      --display-font: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      --body-font: "Aptos", "Segoe UI Variable Text", "Trebuchet MS", sans-serif;
+      --mono-font: "Consolas", "SFMono-Regular", monospace;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: "Segoe UI Variable", "Aptos", "Trebuchet MS", sans-serif;
-      color: var(--text);
+      font-family: var(--body-font);
+      color: var(--page-ink);
       background:
-        radial-gradient(circle at top left, rgba(112, 164, 255, 0.18), transparent 34%),
-        radial-gradient(circle at top right, rgba(246, 178, 107, 0.14), transparent 30%),
-        linear-gradient(180deg, #0c1117 0%, #121b26 46%, #0c1117 100%);
-      padding: 40px 24px 72px;
+        radial-gradient(circle at top left, rgba(68, 149, 196, 0.14), transparent 28%),
+        radial-gradient(circle at top right, rgba(245, 201, 109, 0.18), transparent 30%),
+        linear-gradient(180deg, #fbf7f2 0%, #f4f0e8 46%, #efe8dd 100%);
+      padding: 32px 20px 64px;
     }
 
-    a {
-      color: inherit;
-    }
+    .page { max-width: 1440px; margin: 0 auto; }
 
-    .page {
-      max-width: 1360px;
-      margin: 0 auto;
-    }
-
-    .hero {
-      display: grid;
-      grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.9fr);
-      gap: 24px;
-      align-items: stretch;
-      margin-bottom: 28px;
-    }
-
-    .hero-main,
-    .hero-side,
-    .rules,
-    .style-card,
-    .section-head {
-      border: 1px solid var(--panel-border);
-      background: var(--panel);
-      backdrop-filter: blur(18px);
-      box-shadow: var(--shadow);
-    }
-
-    .hero-main {
+    /* ── Header ── */
+    .header {
+      background: var(--page-panel);
+      border: 1px solid var(--page-border);
+      box-shadow: var(--page-shadow);
+      backdrop-filter: blur(20px);
       border-radius: 28px;
-      padding: 28px 30px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .hero-main::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background:
-        linear-gradient(135deg, rgba(138, 224, 178, 0.12), transparent 45%),
-        linear-gradient(315deg, rgba(122, 149, 255, 0.12), transparent 42%);
-      pointer-events: none;
-    }
-
-    .eyebrow {
-      font-family: Consolas, "SFMono-Regular", monospace;
-      text-transform: uppercase;
-      letter-spacing: 0.28em;
-      font-size: 11px;
-      color: var(--accent);
-      margin-bottom: 18px;
-    }
-
-    h1 {
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      font-size: clamp(38px, 6vw, 74px);
-      line-height: 0.94;
-      letter-spacing: -0.04em;
-      max-width: 10ch;
-    }
-
-    .hero-copy {
-      margin-top: 18px;
-      max-width: 68ch;
-      color: var(--muted);
-      font-size: 15px;
-      line-height: 1.7;
-    }
-
-    .hero-tags,
-    .pill-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .hero-tags {
-      margin-top: 22px;
-    }
-
-    .pill,
-    .micro-pill {
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      color: var(--text);
-      background: rgba(255, 255, 255, 0.04);
-      border-radius: 999px;
-      font-family: Consolas, "SFMono-Regular", monospace;
-    }
-
-    .pill {
-      padding: 7px 12px;
-      font-size: 11px;
-      letter-spacing: 0.08em;
-    }
-
-    .micro-pill {
-      padding: 4px 8px;
-      font-size: 10px;
-      letter-spacing: 0.1em;
-    }
-
-    .hero-side {
-      border-radius: 24px;
-      padding: 22px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      justify-content: space-between;
-    }
-
-    .side-block h2,
-    .rules h2,
-    .section-head h2 {
-      margin: 0 0 10px;
-      font-size: 14px;
-      text-transform: uppercase;
-      letter-spacing: 0.18em;
-      color: var(--accent-2);
-      font-family: Consolas, "SFMono-Regular", monospace;
-    }
-
-    .side-block p,
-    .rules p,
-    .section-head p,
-    .card-copy,
-    .card-best,
-    .card-cue,
-    .foundation-copy {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.6;
-      font-size: 13px;
-    }
-
-    .rules {
-      border-radius: 24px;
-      padding: 22px 24px;
+      padding: 28px 32px;
       margin-bottom: 28px;
     }
-
-    .rules-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 18px;
-    }
-
-    .rule {
-      padding: 14px;
-      border-radius: 16px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .rule strong {
-      display: block;
-      margin-bottom: 8px;
-      font-size: 12px;
-      letter-spacing: 0.1em;
+    .header .eyebrow {
+      font-family: var(--mono-font);
+      font-size: 11px;
       text-transform: uppercase;
-      color: var(--text);
+      letter-spacing: 0.14em;
+      color: var(--page-accent);
+      margin-bottom: 10px;
     }
-
-    .section-head {
-      border-radius: 22px;
-      padding: 18px 20px;
-      margin: 28px 0 16px;
+    .header h1 {
+      margin: 0;
+      font-family: var(--display-font);
+      font-size: clamp(28px, 4vw, 48px);
+      line-height: 1.06;
+      letter-spacing: -0.04em;
+    }
+    .header p {
+      margin: 10px 0 0;
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--page-muted);
+      max-width: 80ch;
+    }
+    .header .counts {
+      margin-top: 14px;
       display: flex;
-      justify-content: space-between;
       gap: 16px;
-      align-items: end;
+      flex-wrap: wrap;
+    }
+    .header .count-pill {
+      font-family: var(--mono-font);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.62);
+      border: 1px solid rgba(23, 34, 48, 0.1);
+      color: var(--page-muted);
     }
 
-    .card-grid {
+    /* ── Group label ── */
+    .group-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono-font);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--page-muted);
+      margin-bottom: 14px;
+    }
+    .group-label::after {
+      content: "";
+      display: inline-block;
+      width: 80px;
+      height: 1px;
+      background: var(--page-border);
+    }
+
+    /* ── Card grid ── */
+    .style-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 18px;
+      grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+      gap: 20px;
+      margin-bottom: 40px;
     }
 
     .style-card {
-      border-radius: 22px;
-      overflow: hidden;
-      min-height: 100%;
-    }
-
-    .pattern-card .visual {
-      background: linear-gradient(160deg, rgba(28, 39, 58, 0.98), rgba(13, 19, 29, 0.98));
-    }
-
-    .pattern-card .card-copy,
-    .pattern-card .card-cue,
-    .pattern-card .foundation-copy {
-      font-size: 12px;
-    }
-
-    .icon-card-visual .shape-a {
-      left: 26px;
-      top: 24px;
-      width: 56px;
-      height: 56px;
-      border-radius: 18px;
-      background: linear-gradient(135deg, rgba(138, 224, 178, 0.9), rgba(79, 145, 255, 0.92));
-      box-shadow: 0 16px 34px rgba(79, 145, 255, 0.24);
-      border: 0;
-    }
-
-    .icon-card-visual .shape-b {
-      left: 26px;
-      right: 26px;
-      top: 96px;
-      height: 12px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.92);
-      border: 0;
-    }
-
-    .icon-card-visual .shape-c {
-      left: 26px;
-      right: 72px;
-      top: 122px;
-      height: 9px;
-      border-radius: 999px;
-      background: rgba(158, 172, 192, 0.82);
-      border: 0;
-    }
-
-    .icon-card-visual .shape-d {
-      left: 26px;
-      right: 58px;
-      top: 144px;
-      height: 9px;
-      border-radius: 999px;
-      background: rgba(158, 172, 192, 0.55);
-      border: 0;
-    }
-
-    .icon-card-visual .shape-e {
-      right: 24px;
-      top: 28px;
-      width: 110px;
-      height: 138px;
+      background: var(--page-panel);
+      border: 1px solid var(--page-border);
+      box-shadow: var(--page-shadow);
+      backdrop-filter: blur(20px);
       border-radius: 24px;
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    .header-icon-visual .shape-a {
-      left: 22px;
-      right: 22px;
-      top: 20px;
-      height: 34px;
-      border-radius: 14px;
-      background: linear-gradient(90deg, rgba(245, 201, 109, 0.9), rgba(138, 224, 178, 0.82));
-      border: 0;
-    }
-
-    .header-icon-visual .shape-b,
-    .header-icon-visual .shape-c,
-    .header-icon-visual .shape-d {
-      top: 28px;
-      width: 12px;
-      height: 12px;
-      border-radius: 4px;
-      background: rgba(16, 24, 35, 0.82);
-      border: 0;
-      box-shadow: 18px 0 0 rgba(16, 24, 35, 0.82), 36px 0 0 rgba(16, 24, 35, 0.82);
-    }
-
-    .header-icon-visual .shape-b {
-      left: 34px;
-    }
-
-    .header-icon-visual .shape-c,
-    .header-icon-visual .shape-d {
-      display: none;
-    }
-
-    .header-icon-visual .shape-e {
-      left: 22px;
-      right: 22px;
-      top: 70px;
-      bottom: 22px;
-      border-radius: 22px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    }
-
-    .visual {
-      height: 190px;
-      position: relative;
-      overflow: hidden;
-      background: var(--visual-bg, linear-gradient(135deg, #213146, #10161f));
-      color: var(--visual-ink, #ffffff);
-      isolation: isolate;
-    }
-
-    .visual::before,
-    .visual::after,
-    .shape-a,
-    .shape-b,
-    .shape-c,
-    .shape-d,
-    .shape-e {
-      position: absolute;
-      content: "";
-      display: block;
-      pointer-events: none;
-    }
-
-    .shape-a,
-    .shape-b,
-    .shape-c,
-    .shape-d,
-    .shape-e {
-      border-radius: var(--shape-radius, 18px);
-      background: var(--shape-fill, rgba(255, 255, 255, 0.12));
-      border: var(--shape-border, 1px solid rgba(255, 255, 255, 0.12));
-      box-shadow: var(--shape-shadow, none);
-    }
-
-    .style-code,
-    .visual-label,
-    .visual-foot {
-      position: absolute;
-      z-index: 2;
-      font-family: Consolas, "SFMono-Regular", monospace;
-      text-transform: uppercase;
-      letter-spacing: 0.16em;
-    }
-
-    .style-code {
-      top: 14px;
-      left: 16px;
-      font-size: 10px;
-      opacity: 0.72;
-    }
-
-    .visual-label {
-      left: 18px;
-      right: 18px;
-      bottom: 20px;
-      font-size: 22px;
-      font-family: Georgia, "Times New Roman", serif;
-      letter-spacing: -0.03em;
-      text-transform: none;
-    }
-
-    .visual-foot {
-      right: 16px;
-      bottom: 16px;
-      font-size: 9px;
-      opacity: 0.64;
-    }
-
-    .card-body {
-      padding: 18px;
-      display: flex;
-      flex-direction: column;
+      padding: 16px;
+      display: grid;
       gap: 10px;
     }
 
-    .card-topline {
+    .card-head {
       display: flex;
       justify-content: space-between;
-      gap: 12px;
       align-items: center;
-      color: var(--muted);
-      font-size: 11px;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      font-family: Consolas, "SFMono-Regular", monospace;
+      gap: 12px;
     }
-
-    .card-title {
+    .card-head h3 {
       margin: 0;
-      font-size: 22px;
-      line-height: 1.06;
+      font-size: 16px;
+      letter-spacing: -0.025em;
     }
-
-    .card-best {
-      color: #c9d3df;
-    }
-
-    .foundation .visual {
-      height: 150px;
-    }
-
-    .foundation .card-title {
-      font-size: 20px;
-    }
-
-    .blank-white { --visual-bg: linear-gradient(135deg, #f6f4ef, #ffffff 55%, #ece6da); --visual-ink: #111319; }
-    .blank-white .shape-a { inset: 26px 26px auto; height: 1px; background: rgba(17, 19, 25, 0.16); border: 0; }
-    .blank-white .shape-b { left: 26px; right: 130px; top: 46px; height: 44px; background: rgba(17, 19, 25, 0.06); border: 0; border-radius: 14px; }
-    .blank-white .shape-c { right: 26px; top: 46px; width: 84px; height: 84px; border-radius: 50%; background: rgba(17, 19, 25, 0.05); border: 1px solid rgba(17, 19, 25, 0.08); }
-
-    .blank-dark { --visual-bg: linear-gradient(135deg, #0e131b, #1c2734 58%, #10161d); --visual-ink: #f1f6ff; }
-    .blank-dark .shape-a { left: 24px; top: 26px; width: 8px; height: 98px; border-radius: 8px; background: rgba(255, 255, 255, 0.14); border: 0; }
-    .blank-dark .shape-b { left: 48px; right: 28px; top: 40px; height: 38px; background: rgba(255, 255, 255, 0.08); border: 0; }
-    .blank-dark .shape-c { left: 48px; right: 86px; bottom: 30px; height: 14px; background: rgba(255, 255, 255, 0.06); border: 0; }
-
-    .glass { --visual-bg: linear-gradient(135deg, #11182a, #24304a 48%, #101a29); --visual-ink: #ffffff; }
-    .glass .shape-a { width: 140px; height: 84px; left: 28px; top: 36px; background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.22); backdrop-filter: blur(8px); transform: rotate(-6deg); }
-    .glass .shape-b { width: 110px; height: 68px; right: 28px; bottom: 30px; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.22); transform: rotate(7deg); }
-    .glass .shape-c { width: 120px; height: 120px; right: -18px; top: -18px; border-radius: 50%; background: radial-gradient(circle, rgba(138, 224, 178, 0.52), transparent 68%); border: 0; filter: blur(4px); }
-
-    .brutal { --visual-bg: linear-gradient(135deg, #f3e94c, #fff687); --visual-ink: #101010; }
-    .brutal .shape-a { left: 24px; top: 36px; width: 126px; height: 52px; background: #ffffff; border: 3px solid #111111; box-shadow: 7px 7px 0 #111111; }
-    .brutal .shape-b { right: 28px; bottom: 30px; width: 92px; height: 42px; background: #fd624e; border: 3px solid #111111; box-shadow: 7px 7px 0 #111111; }
-    .brutal .shape-c { left: 50%; top: 24px; width: 4px; height: 136px; background: #111111; border: 0; transform: translateX(-50%); }
-
-    .bento { --visual-bg: linear-gradient(180deg, #f7f6f2, #ecebe4); --visual-ink: #101319; }
-    .bento .shape-a { left: 18px; top: 20px; width: 130px; height: 72px; background: #151d28; border: 0; }
-    .bento .shape-b { right: 18px; top: 20px; width: 88px; height: 72px; background: #8ae0b2; border: 0; }
-    .bento .shape-c { left: 18px; bottom: 20px; width: 76px; height: 58px; background: #f5c96d; border: 0; }
-    .bento .shape-d { left: 102px; right: 18px; bottom: 20px; height: 58px; background: #7c9dff; border: 0; }
-
-    .academia { --visual-bg: linear-gradient(135deg, #17120d, #261d15); --visual-ink: #e8d7a3; }
-    .academia .shape-a { inset: 18px; border: 1px solid rgba(232, 215, 163, 0.24); background: transparent; }
-    .academia .shape-b { left: 24px; right: 24px; top: 76px; height: 1px; background: rgba(232, 215, 163, 0.26); border: 0; }
-    .academia .visual-label { text-align: center; bottom: 72px; letter-spacing: 0.18em; }
-
-    .mesh { --visual-bg: radial-gradient(circle at 18% 24%, #ff7cb6, transparent 28%), radial-gradient(circle at 82% 16%, #7b85ff, transparent 26%), radial-gradient(circle at 64% 76%, #55d7ff, transparent 30%), radial-gradient(circle at 34% 64%, #ffbd73, transparent 26%), #f6f5f2; --visual-ink: #ffffff; }
-    .mesh .shape-a { inset: 0; background: rgba(0, 0, 0, 0.08); border: 0; }
-
-    .clay { --visual-bg: linear-gradient(135deg, #f8efe5, #f3dccf); --visual-ink: #2d1f19; }
-    .clay .shape-a { left: 34px; top: 36px; width: 84px; height: 84px; border-radius: 28px; background: #a8e6dc; border: 0; box-shadow: 0 14px 28px rgba(168, 230, 220, 0.55); }
-    .clay .shape-b { right: 34px; top: 48px; width: 68px; height: 68px; border-radius: 50%; background: #ffd1e1; border: 0; box-shadow: 0 12px 24px rgba(255, 209, 225, 0.55); }
-    .clay .shape-c { left: 50%; bottom: 28px; width: 64px; height: 64px; border-radius: 22px; background: #f6e58d; border: 0; transform: translateX(-50%); box-shadow: 0 10px 22px rgba(246, 229, 141, 0.48); }
-
-    .swiss { --visual-bg: linear-gradient(180deg, #ffffff, #f4f2ef); --visual-ink: #111319; }
-    .swiss .shape-a { left: 0; top: 0; bottom: 0; width: 8px; background: #e74a3b; border: 0; }
-    .swiss .shape-b { left: 28px; right: 28px; top: 94px; height: 1px; background: rgba(17, 19, 25, 0.15); border: 0; }
-    .swiss .shape-c { right: 26px; bottom: 24px; width: 70px; height: 70px; border-radius: 50%; background: transparent; border: 3px solid #e74a3b; }
-
-    .neon { --visual-bg: linear-gradient(135deg, #050814, #0d1530); --visual-ink: #ebf9ff; }
-    .neon .shape-a { width: 160px; height: 120px; left: -24px; top: -18px; border-radius: 50%; background: rgba(71, 255, 195, 0.45); border: 0; filter: blur(22px); }
-    .neon .shape-b { width: 142px; height: 110px; right: -18px; top: 10px; border-radius: 50%; background: rgba(122, 108, 255, 0.42); border: 0; filter: blur(22px); }
-    .neon .shape-c { width: 140px; height: 92px; left: 36%; bottom: -18px; border-radius: 50%; background: rgba(71, 201, 255, 0.38); border: 0; filter: blur(20px); }
-
-    .y2k { --visual-bg: linear-gradient(135deg, #150b43, #061955); --visual-ink: #ffffff; }
-    .y2k .shape-a { left: 0; right: 0; top: 26px; height: 6px; background: linear-gradient(90deg, #ff36a2, #ffe45e, #42f59e, #49c9ff, #7c9dff, #d476ff); border: 0; }
-    .y2k .shape-b { left: 0; right: 0; bottom: 26px; height: 6px; background: linear-gradient(90deg, #d476ff, #7c9dff, #49c9ff, #42f59e, #ffe45e, #ff36a2); border: 0; }
-    .y2k .shape-c { left: 18px; top: 42px; width: 22px; height: 22px; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 68%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); background: #ffe45e; border: 0; }
-    .y2k .shape-d { right: 18px; bottom: 42px; width: 22px; height: 22px; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 68%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); background: #ffe45e; border: 0; }
-
-    .nordic { --visual-bg: linear-gradient(135deg, #f2efe8, #ece7de); --visual-ink: #2e2721; }
-    .nordic .shape-a { left: 50%; top: 50%; width: 138px; height: 138px; border-radius: 58% 42% 63% 37% / 43% 63% 37% 57%; background: rgba(122, 106, 85, 0.18); border: 0; transform: translate(-50%, -50%); }
-    .nordic .shape-b { left: 34px; top: 28px; width: 12px; height: 12px; border-radius: 50%; background: rgba(46, 39, 33, 0.85); border: 0; }
-    .nordic .shape-c { left: 56px; top: 28px; width: 12px; height: 12px; border-radius: 50%; background: rgba(122, 106, 85, 0.8); border: 0; }
-    .nordic .shape-d { left: 78px; top: 28px; width: 12px; height: 12px; border-radius: 50%; background: rgba(198, 183, 165, 0.95); border: 0; }
-
-    .typo { --visual-bg: linear-gradient(135deg, #f1ece4, #ece8de); --visual-ink: #18130f; }
-    .typo .visual-label { font-size: 52px; bottom: 54px; letter-spacing: -0.04em; }
-    .typo .shape-a { right: 24px; bottom: 18px; width: 92px; height: 14px; background: rgba(24, 19, 15, 0.1); border: 0; }
-
-    .duotone { --visual-bg: linear-gradient(90deg, #ff5d35 0 50%, #181c2b 50% 100%); --visual-ink: #ffffff; }
-    .duotone .shape-a { left: calc(50% - 1px); top: 0; bottom: 0; width: 2px; background: rgba(255, 255, 255, 0.88); border: 0; }
-    .duotone .visual-label { font-size: 18px; letter-spacing: 0.18em; bottom: auto; top: 36px; left: 24px; right: auto; width: 34px; writing-mode: vertical-rl; transform: rotate(180deg); }
-    .duotone .visual-foot { bottom: auto; top: 36px; right: 24px; writing-mode: vertical-rl; font-size: 18px; letter-spacing: 0.18em; opacity: 1; color: #ff5d35; }
-
-    .mono { --visual-bg: linear-gradient(135deg, #faf9f6, #f1f0eb); --visual-ink: #131519; }
-    .mono .shape-a { left: 50%; top: 50%; width: 136px; height: 136px; border-radius: 50%; background: transparent; border: 1px solid rgba(19, 21, 25, 0.14); transform: translate(-50%, -50%); }
-    .mono .shape-b { left: 50%; top: 72px; width: 118px; height: 5px; background: #131519; border: 0; transform: translateX(-50%); }
-    .mono .shape-c { left: 50%; top: 92px; width: 76px; height: 5px; background: #131519; border: 0; transform: translateX(-50%); }
-    .mono .shape-d { left: 50%; top: 112px; width: 36px; height: 5px; background: rgba(19, 21, 25, 0.22); border: 0; transform: translateX(-50%); }
-
-    .cyber { --visual-bg: linear-gradient(135deg, #0a0d11, #10161d); --visual-ink: #60ffd5; }
-    .cyber .shape-a { inset: 0; background-image: linear-gradient(rgba(96, 255, 213, 0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(96, 255, 213, 0.06) 1px, transparent 1px); background-size: 28px 28px; border: 0; }
-    .cyber .shape-b { left: 12px; top: 12px; width: 20px; height: 20px; border-width: 2px 0 0 2px; border-style: solid; border-color: currentColor; background: transparent; }
-    .cyber .shape-c { right: 12px; top: 12px; width: 20px; height: 20px; border-width: 2px 2px 0 0; border-style: solid; border-color: currentColor; background: transparent; }
-    .cyber .shape-d { left: 12px; bottom: 12px; width: 20px; height: 20px; border-width: 0 0 2px 2px; border-style: solid; border-color: currentColor; background: transparent; }
-    .cyber .shape-e { right: 12px; bottom: 12px; width: 20px; height: 20px; border-width: 0 2px 2px 0; border-style: solid; border-color: currentColor; background: transparent; }
-
-    .editorial { --visual-bg: linear-gradient(90deg, #fefcf8 0 58%, #12151c 58% 100%); --visual-ink: #111319; }
-    .editorial .shape-a { left: 24px; top: 96px; width: 62px; height: 2px; background: #d15141; border: 0; }
-    .editorial .shape-b { right: 16px; top: 50%; width: 12px; height: 120px; background: transparent; border: 0; transform: translateY(-50%); }
-    .editorial .visual-foot { top: 26px; right: 16px; bottom: auto; writing-mode: vertical-rl; font-size: 10px; color: rgba(255,255,255,0.5); opacity: 1; }
-
-    .pastel { --visual-bg: linear-gradient(145deg, #fce9f2, #e7f3ff 52%, #eff9df); --visual-ink: #392d39; }
-    .pastel .shape-a { left: 26px; top: 28px; width: 122px; height: 72px; background: rgba(255, 255, 255, 0.68); border: 1px solid rgba(255, 255, 255, 0.82); }
-    .pastel .shape-b { left: 50%; top: 50%; width: 72px; height: 72px; border-radius: 50%; background: rgba(255, 255, 255, 0.72); border: 1px solid rgba(255,255,255,0.84); transform: translate(-50%, -50%); }
-    .pastel .shape-c { right: 26px; bottom: 26px; width: 102px; height: 64px; background: rgba(255, 255, 255, 0.68); border: 1px solid rgba(255,255,255,0.82); }
-
-    .miami { --visual-bg: linear-gradient(180deg, #080015, #13092b); --visual-ink: #ffb6df; }
-    .miami .shape-a { left: 50%; bottom: 46px; width: 118px; height: 58px; border-radius: 58px 58px 0 0; background: linear-gradient(180deg, #ff914d, #ff4ca1); border: 0; transform: translateX(-50%); }
-    .miami .shape-b { left: 0; right: 0; bottom: 40px; height: 1px; background: rgba(255, 76, 161, 0.5); border: 0; box-shadow: 0 -12px 0 rgba(255, 76, 161, 0.32), 0 12px 0 rgba(255, 76, 161, 0.24), 0 24px 0 rgba(255, 76, 161, 0.16); }
-    .miami .shape-c { left: 18px; bottom: 46px; width: 20px; height: 32px; background: rgba(255,255,255,0.12); border: 0; clip-path: polygon(50% 0, 70% 32%, 88% 20%, 74% 44%, 98% 54%, 70% 55%, 80% 100%, 50% 66%, 20% 100%, 30% 55%, 2% 54%, 26% 44%, 12% 20%, 30% 32%); }
-    .miami .shape-d { right: 18px; bottom: 46px; width: 20px; height: 32px; background: rgba(255,255,255,0.12); border: 0; clip-path: polygon(50% 0, 70% 32%, 88% 20%, 74% 44%, 98% 54%, 70% 55%, 80% 100%, 50% 66%, 20% 100%, 30% 55%, 2% 54%, 26% 44%, 12% 20%, 30% 32%); }
-
-    .organic { --visual-bg: linear-gradient(135deg, #fbf4e8, #f7efe0); --visual-ink: #6a5339; }
-    .organic .shape-a { left: 50%; top: 50%; width: 148px; height: 148px; border-radius: 50%; background: transparent; border: 2px dashed rgba(166, 126, 77, 0.68); transform: translate(-50%, -50%) rotate(8deg); }
-    .organic .shape-b { left: 50%; top: 50%; width: 92px; height: 92px; border-radius: 50%; background: transparent; border: 2px solid rgba(166, 126, 77, 0.9); transform: translate(-50%, -50%); }
-    .organic .shape-c { left: 18px; right: 18px; top: 50%; height: 1px; background: repeating-linear-gradient(90deg, rgba(166,126,77,0.7) 0 5px, transparent 5px 11px); border: 0; }
-
-    .iso { --visual-bg: linear-gradient(135deg, #181e2b, #232b3b); --visual-ink: #dfe7ff; }
-    .iso .shape-a { left: 58px; top: 30px; width: 82px; height: 42px; background: #8b7cff; border: 0; transform: skewX(-30deg); }
-    .iso .shape-b { left: 28px; top: 70px; width: 40px; height: 84px; background: #5648c4; border: 0; transform: skewY(30deg); }
-    .iso .shape-c { left: 110px; top: 70px; width: 40px; height: 84px; background: #6f61e2; border: 0; transform: skewY(-30deg); }
-    .iso .shape-d { left: 76px; top: 52px; width: 62px; height: 32px; background: #b3a8ff; border: 0; transform: skewX(-30deg); }
-
-    .vapor { --visual-bg: linear-gradient(180deg, #190530, #3b0a4b 46%, #56043b); --visual-ink: #ffc4e7; }
-    .vapor .shape-a { left: 50%; top: 26px; width: 108px; height: 54px; border-radius: 54px 54px 0 0; background: linear-gradient(180deg, #ffb15e, #ff7fb6, #b96dff); border: 0; transform: translateX(-50%); }
-    .vapor .shape-b { left: 0; right: 0; top: 50px; height: 9px; background: #190530; border: 0; box-shadow: 0 12px 0 #190530; }
-    .vapor .shape-c { left: 0; right: 0; bottom: 0; height: 70px; background-image: linear-gradient(rgba(255, 127, 182, 0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 127, 182, 0.4) 1px, transparent 1px); background-size: 34px 12px; border: 0; transform: perspective(160px) rotateX(65deg); transform-origin: bottom; }
-
-    .deco { --visual-bg: linear-gradient(135deg, #0e0905, #17100b); --visual-ink: #dab567; }
-    .deco .shape-a { inset: 14px; background: transparent; border: 1px solid rgba(218, 181, 103, 0.8); }
-    .deco .shape-b { inset: 22px; background: transparent; border: 1px solid rgba(218, 181, 103, 0.25); }
-    .deco .shape-c { left: 30px; right: 30px; top: 50%; height: 1px; background: linear-gradient(90deg, transparent, rgba(218,181,103,0.8), transparent); border: 0; }
-    .deco .shape-d { left: 50%; top: 50%; width: 10px; height: 10px; background: rgba(218,181,103,0.95); border: 0; transform: translate(-50%, -50%) rotate(45deg); }
-
-    .news { --visual-bg: linear-gradient(180deg, #f0ece3, #ece7dd); --visual-ink: #17120d; }
-    .news .shape-a { left: 0; right: 0; top: 0; height: 34px; background: #17120d; border: 0; }
-    .news .shape-b { left: 0; right: 0; top: 34px; height: 3px; background: #17120d; border: 0; box-shadow: 0 6px 0 #17120d; }
-    .news .shape-c { left: 50%; top: 52px; bottom: 16px; width: 1px; background: rgba(23, 18, 13, 0.75); border: 0; }
-    .news .shape-d { left: 16px; top: 58px; width: 40%; bottom: 20px; background: rgba(23, 18, 13, 0.06); border: 0; }
-    .news .shape-e { right: 16px; top: 58px; width: 34%; height: 72px; background: rgba(23, 18, 13, 0.16); border: 0; }
-
-    .mosaic { --visual-bg: linear-gradient(135deg, #090a11, #141625); --visual-ink: #f6f0e6; }
-    .mosaic .shape-a { inset: 0; background-image:
-      linear-gradient(90deg, transparent 0 16%, rgba(10,10,17,0.92) 16% 17%, transparent 17% 33%, rgba(10,10,17,0.92) 33% 34%, transparent 34% 50%, rgba(10,10,17,0.92) 50% 51%, transparent 51% 67%, rgba(10,10,17,0.92) 67% 68%, transparent 68% 84%, rgba(10,10,17,0.92) 84% 85%, transparent 85%),
-      linear-gradient(transparent 0 24%, rgba(10,10,17,0.92) 24% 25%, transparent 25% 49%, rgba(10,10,17,0.92) 49% 50%, transparent 50% 74%, rgba(10,10,17,0.92) 74% 75%, transparent 75%),
-      linear-gradient(135deg, #385ba8, #d24f49, #e2bb43, #2f7c4a);
-      border: 0;
-      opacity: 0.95;
-    }
-    .mosaic .shape-b { inset: 0; background: rgba(0, 0, 0, 0.26); border: 0; }
-
-    .liquid { --visual-bg: linear-gradient(135deg, #0d1d25, #1a3140 48%, #13222f); --visual-ink: #effcff; }
-    .liquid .shape-a { width: 180px; height: 150px; left: -24px; top: -20px; border-radius: 58% 42% 61% 39% / 39% 59% 41% 61%; background: rgba(40, 230, 192, 0.3); border: 0; filter: blur(16px); }
-    .liquid .shape-b { width: 170px; height: 160px; right: -28px; bottom: -26px; border-radius: 42% 58% 39% 61% / 63% 37% 53% 47%; background: rgba(77, 122, 255, 0.28); border: 0; filter: blur(16px); }
-    .liquid .shape-c { width: 120px; height: 120px; left: 50%; top: 50%; border-radius: 61% 39% 56% 44% / 45% 60% 40% 55%; background: rgba(169, 93, 255, 0.2); border: 0; transform: translate(-50%, -50%); filter: blur(12px); }
-
-    .memphis { --visual-bg: linear-gradient(135deg, #fff4dd, #f7ebd0); --visual-ink: #191512; }
-    .memphis .shape-a { left: 28px; top: 24px; width: 0; height: 0; border-left: 18px solid transparent; border-right: 18px solid transparent; border-bottom: 30px solid #e04b49; background: transparent; border-radius: 0; }
-    .memphis .shape-b { right: 26px; top: 40px; width: 42px; height: 42px; border-radius: 50%; background: transparent; border: 3px solid #4b90ff; }
-    .memphis .shape-c { left: 0; right: 0; top: 50%; height: 10px; background: linear-gradient(135deg, #e04b49 25%, transparent 25%) -10px 0, linear-gradient(225deg, #e04b49 25%, transparent 25%) -10px 0, linear-gradient(315deg, #e04b49 25%, transparent 25%), linear-gradient(45deg, #e04b49 25%, transparent 25%); background-size: 20px 10px; border: 0; }
-    .memphis .shape-d { left: 60px; bottom: 26px; width: 10px; height: 10px; border-radius: 50%; background: #22bb88; border: 0; box-shadow: 74px -12px 0 #ffd34e, 148px 12px 0 #22bb88; }
-
-    .forest { --visual-bg: radial-gradient(circle at 50% 0%, #123521, #08110b 78%); --visual-ink: #d9ecc7; }
-    .forest .shape-a { right: 34px; top: 22px; width: 52px; height: 52px; border-radius: 50%; background: radial-gradient(circle at 40% 40%, #eef6d5, #aec58d); border: 0; box-shadow: 0 0 26px rgba(224, 242, 181, 0.22); }
-    .forest .shape-b { left: 18px; bottom: 0; width: 0; height: 0; border-left: 20px solid transparent; border-right: 20px solid transparent; border-bottom: 92px solid #0f421e; background: transparent; border-radius: 0; }
-    .forest .shape-c { left: 50%; bottom: 0; width: 0; height: 0; border-left: 16px solid transparent; border-right: 16px solid transparent; border-bottom: 72px solid #0b3316; background: transparent; border-radius: 0; transform: translateX(-50%); }
-    .forest .shape-d { right: 18px; bottom: 0; width: 0; height: 0; border-left: 26px solid transparent; border-right: 26px solid transparent; border-bottom: 118px solid #155425; background: transparent; border-radius: 0; }
-    .forest .shape-e { left: 0; right: 0; bottom: 0; height: 68px; background: linear-gradient(0deg, rgba(193, 233, 188, 0.06), transparent 88%); border: 0; }
-
-    .blueprint { --visual-bg: linear-gradient(135deg, #0e2543, #13345f); --visual-ink: #8ad1ff; }
-    .blueprint .shape-a { inset: 0; background-image: linear-gradient(rgba(138, 209, 255, 0.14) 1px, transparent 1px), linear-gradient(90deg, rgba(138, 209, 255, 0.14) 1px, transparent 1px); background-size: 20px 20px; border: 0; }
-    .blueprint .shape-b { inset: 0; background-image: linear-gradient(rgba(138, 209, 255, 0.22) 1px, transparent 1px), linear-gradient(90deg, rgba(138, 209, 255, 0.22) 1px, transparent 1px); background-size: 60px 60px; border: 0; }
-    .blueprint .shape-c { left: 34px; top: 42px; width: 80px; height: 52px; background: transparent; border: 1.5px solid rgba(138,209,255,0.62); }
-    .blueprint .shape-d { left: 118px; top: 52px; width: 40px; height: 40px; border-radius: 50%; background: transparent; border: 1.5px solid rgba(138,209,255,0.62); }
-    .blueprint .shape-e { right: 24px; top: 54px; width: 58px; height: 58px; border-radius: 50%; background: transparent; border: 2px solid rgba(138,209,255,0.52); }
-
-    .collage { --visual-bg: linear-gradient(135deg, #eadfd1, #dfd1c0); --visual-ink: #1d1712; }
-    .collage .shape-a { left: 24px; top: 24px; width: 96px; height: 62px; background: #e04646; border: 0; transform: rotate(-3deg); }
-    .collage .shape-b { right: 26px; top: 20px; width: 74px; height: 92px; background: #181818; border: 0; transform: rotate(4deg); }
-    .collage .shape-c { left: 50%; bottom: 22px; width: 84px; height: 52px; background: #f3c548; border: 0; transform: translateX(-50%) rotate(-2deg); }
-    .collage .shape-d { left: 18px; bottom: 24px; width: 48px; height: 48px; border-radius: 50%; background: transparent; border: 3px solid #e04646; }
-
-    .holo { --visual-bg: linear-gradient(135deg, #020610, #061221); --visual-ink: #70deff; }
-    .holo .shape-a { left: 50%; top: 50%; width: 168px; height: 168px; border-radius: 50%; background: transparent; border: 1px solid rgba(112, 222, 255, 0.24); transform: translate(-50%, -50%); }
-    .holo .shape-b { left: 50%; top: 50%; width: 118px; height: 118px; border-radius: 50%; background: transparent; border: 1px solid rgba(112, 222, 255, 0.45); transform: translate(-50%, -50%) rotate(32deg); }
-    .holo .shape-c { left: 50%; top: 50%; width: 72px; height: 72px; border-radius: 50%; background: transparent; border: 1px solid rgba(112, 222, 255, 0.65); transform: translate(-50%, -50%); }
-    .holo .shape-d { left: 0; right: 0; top: 48%; height: 1px; background: rgba(112, 222, 255, 0.55); border: 0; }
-    .holo .shape-e { left: 50%; top: 50%; width: 6px; height: 6px; border-radius: 50%; background: #70deff; border: 0; transform: translate(-50%, -50%); }
-
-    .riso { --visual-bg: linear-gradient(135deg, #f7f0e5, #efe6d7); --visual-ink: #181411; }
-    .riso .shape-a { left: 32%; top: 52%; width: 130px; height: 130px; border-radius: 50%; background: rgba(232, 72, 94, 0.82); border: 0; mix-blend-mode: multiply; transform: translate(-50%, -50%); }
-    .riso .shape-b { left: 60%; top: 50%; width: 118px; height: 118px; border-radius: 50%; background: rgba(40, 108, 166, 0.82); border: 0; mix-blend-mode: multiply; transform: translate(-50%, -50%); }
-    .riso .shape-c { left: 46%; top: 58%; width: 104px; height: 104px; border-radius: 50%; background: rgba(243, 197, 72, 0.72); border: 0; mix-blend-mode: multiply; transform: translate(-50%, -50%); }
-
-    .motif-card .visual {
-      background: linear-gradient(140deg, rgba(17, 23, 33, 0.98), rgba(30, 38, 52, 0.98));
-    }
-
-    .card-source {
-      margin-top: 10px;
-      color: rgba(158, 172, 192, 0.86);
-      font-size: 11px;
-      letter-spacing: 0.04em;
+    .card-badge {
+      font-family: var(--mono-font);
+      font-size: 9px;
       text-transform: uppercase;
-      font-family: Consolas, "SFMono-Regular", monospace;
+      letter-spacing: 0.12em;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: rgba(23, 34, 48, 0.06);
+      border: 1px solid rgba(23, 34, 48, 0.08);
+      white-space: nowrap;
+      color: var(--page-muted);
     }
 
-    .split-hero .shape-a { left: 22px; top: 18px; width: 108px; bottom: 18px; background: rgba(255, 255, 255, 0.08); border: 0; border-radius: 26px; }
-    .split-hero .shape-b { left: 148px; top: 22px; right: 22px; height: 88px; background: linear-gradient(135deg, rgba(138, 224, 178, 0.82), rgba(79, 145, 255, 0.78)); border: 0; border-radius: 28px 28px 18px 18px; }
-    .split-hero .shape-c { left: 148px; right: 52px; top: 126px; height: 10px; background: rgba(255, 255, 255, 0.92); border: 0; border-radius: 999px; }
-    .split-hero .shape-d { left: 148px; right: 86px; top: 148px; height: 10px; background: rgba(180, 194, 210, 0.76); border: 0; border-radius: 999px; }
+    .slide-frame {
+      padding: 8px;
+      border-radius: 20px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(247,244,239,0.82));
+      border: 1px solid rgba(23,34,48,0.08);
+    }
 
-    .diagonal-block .shape-a { inset: 0; background: linear-gradient(145deg, #f4eee3 0 44%, #dd6d43 44% 62%, #202733 62% 100%); border: 0; }
-    .diagonal-block .shape-b { left: 24px; top: 26px; width: 86px; height: 58px; background: rgba(255, 255, 255, 0.84); border: 0; transform: skewX(-18deg); }
-    .diagonal-block .shape-c { right: 26px; top: 38px; width: 96px; height: 8px; background: rgba(255, 255, 255, 0.84); border: 0; border-radius: 999px; transform: skewX(-18deg); }
-    .diagonal-block .shape-d { right: 40px; top: 60px; width: 82px; height: 8px; background: rgba(255, 255, 255, 0.54); border: 0; border-radius: 999px; transform: skewX(-18deg); }
+    .card-key {
+      font-family: var(--mono-font);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--page-muted);
+    }
 
-    .dashboard-strip .shape-a { left: 18px; right: 18px; top: 20px; height: 34px; background: rgba(255, 255, 255, 0.08); border: 0; border-radius: 14px; }
-    .dashboard-strip .shape-b { left: 18px; top: 72px; width: 34%; bottom: 18px; background: rgba(117, 176, 255, 0.18); border: 1px solid rgba(117, 176, 255, 0.32); border-radius: 22px; }
-    .dashboard-strip .shape-c { left: 37%; top: 72px; width: 27%; bottom: 18px; background: rgba(245, 201, 109, 0.18); border: 1px solid rgba(245, 201, 109, 0.34); border-radius: 22px; }
-    .dashboard-strip .shape-d { right: 18px; top: 72px; width: 30%; bottom: 18px; background: rgba(138, 224, 178, 0.18); border: 1px solid rgba(138, 224, 178, 0.3); border-radius: 22px; }
-    .dashboard-strip .shape-e { left: 28px; right: 28px; bottom: 34px; height: 1px; background: rgba(255, 255, 255, 0.18); border: 0; }
+    /* ── Slide canvas ── */
+    .slide {
+      position: relative;
+      aspect-ratio: 16 / 9;
+      width: 100%;
+      overflow: hidden;
+      border-radius: 14px;
+      background: var(--slide-bg, #ffffff);
+      color: var(--slide-text, #172230);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+      isolation: isolate;
+    }
+    .slide.theme-dark {
+      --slide-text: #f4f7fb;
+      --slide-muted: rgba(233, 240, 248, 0.84);
+      --slide-border: rgba(233, 240, 248, 0.16);
+    }
+    .slide.theme-light {
+      --slide-text: #172230;
+      --slide-muted: rgba(23, 34, 48, 0.72);
+      --slide-border: rgba(23, 34, 48, 0.12);
+    }
 
-    .proposal-grid .shape-a { left: 22px; top: 20px; width: 42%; height: 62px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.14); }
-    .proposal-grid .shape-b { right: 22px; top: 20px; width: 42%; height: 62px; background: rgba(245, 201, 109, 0.22); border: 0; }
-    .proposal-grid .shape-c { left: 22px; bottom: 22px; width: 26%; height: 70px; background: rgba(79, 145, 255, 0.22); border: 0; }
-    .proposal-grid .shape-d { left: 33%; bottom: 22px; width: 26%; height: 70px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.14); }
-    .proposal-grid .shape-e { right: 22px; bottom: 22px; width: 34%; height: 70px; background: rgba(138, 224, 178, 0.22); border: 0; }
+    /* ── Slide decorations ── */
+    .slide-deco { position: absolute; pointer-events: none; }
 
-    .mono-accent .shape-a { inset: 0; background: linear-gradient(135deg, #f6f4ef, #e9e4d8); border: 0; }
-    .mono-accent .shape-b { left: 24px; top: 24px; right: 24px; height: 54px; background: rgba(22, 27, 34, 0.92); border: 0; }
-    .mono-accent .shape-c { left: 24px; top: 96px; width: 38%; height: 58px; background: #d4683f; border: 0; }
-    .mono-accent .shape-d { left: 68%; top: 96px; width: 14px; height: 58px; background: rgba(22, 27, 34, 0.84); border: 0; }
+    .slide-backdrop-blob {
+      inset: auto auto -12% -6%;
+      width: 38%; height: 46%;
+      border-radius: 52% 48% 62% 38% / 40% 56% 44% 60%;
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.28), rgba(255,255,255,0.02));
+      filter: blur(10px);
+      opacity: 0.78;
+      z-index: 0;
+    }
 
-    .timeline-ribbon .shape-a { left: 24px; right: 24px; top: 40px; height: 8px; background: linear-gradient(90deg, rgba(79, 145, 255, 0.8), rgba(138, 224, 178, 0.82), rgba(245, 201, 109, 0.78)); border: 0; border-radius: 999px; }
-    .timeline-ribbon .shape-b { left: 34px; top: 28px; width: 22px; height: 22px; border-radius: 50%; background: #4f91ff; border: 3px solid rgba(8, 12, 18, 0.96); }
-    .timeline-ribbon .shape-c { left: 50%; top: 28px; width: 22px; height: 22px; border-radius: 50%; background: #8ae0b2; border: 3px solid rgba(8, 12, 18, 0.96); transform: translateX(-50%); }
-    .timeline-ribbon .shape-d { right: 34px; top: 28px; width: 22px; height: 22px; border-radius: 50%; background: #f5c96d; border: 3px solid rgba(8, 12, 18, 0.96); }
-    .timeline-ribbon .shape-e { left: 24px; right: 24px; bottom: 28px; height: 70px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 22px; }
+    .slide-grid {
+      inset: 0;
+      background-image:
+        linear-gradient(var(--slide-grid-color, transparent) 1px, transparent 1px),
+        linear-gradient(90deg, var(--slide-grid-color, transparent) 1px, transparent 1px);
+      background-size: 6.8% 10.2%;
+      opacity: 0.45;
+      z-index: 0;
+    }
 
-    .organic-editorial .shape-a { inset: 0; background: linear-gradient(135deg, #efe4d3, #d6c2a5); border: 0; }
-    .organic-editorial .shape-b { left: 18px; top: 18px; width: 112px; bottom: 18px; background: rgba(72, 51, 33, 0.14); border: 0; border-radius: 58% 42% 44% 56% / 38% 44% 56% 62%; }
-    .organic-editorial .shape-c { right: 22px; top: 24px; width: 110px; height: 110px; background: rgba(255, 255, 255, 0.36); border: 0; border-radius: 28px; }
-    .organic-editorial .shape-d { right: 34px; bottom: 34px; width: 96px; height: 10px; background: rgba(72, 51, 33, 0.7); border: 0; border-radius: 999px; }
+    .slide-rings {
+      right: 5%; top: 10%;
+      width: 16%; aspect-ratio: 1;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.42);
+      opacity: 0.5;
+      z-index: 0;
+    }
+    .slide-rings::before, .slide-rings::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+    }
+    .slide-rings::before { inset: 14%; border: 2px solid rgba(255,255,255,0.36); }
+    .slide-rings::after  { inset: 30%; border: 2px solid rgba(255,255,255,0.36); }
 
-    @media (max-width: 980px) {
-      .hero,
-      .rules-grid {
-        grid-template-columns: 1fr;
-      }
+    .slide-frame-outline {
+      inset: 2.4%;
+      border: 1px solid rgba(255,255,255,0.28);
+      z-index: 0;
+    }
+    .slide-frame-outline.double {
+      border-width: 2px;
+      box-shadow: inset 0 0 0 4px transparent, inset 0 0 0 5px rgba(255,255,255,0.18);
+    }
 
-      .section-head {
-        flex-direction: column;
-        align-items: start;
-      }
+    .slide-rainbow {
+      left: 0; right: 0; height: 10px;
+      background: linear-gradient(90deg, #ff2f92, #ffca55, #58f8b0, #61b8ff, #b07dff);
+      z-index: 0;
+    }
+    .slide-rainbow.top    { top: 0; }
+    .slide-rainbow.bottom { bottom: 0; }
+
+    .sparkle {
+      width: 16px; height: 16px;
+      background: currentColor;
+      clip-path: polygon(50% 0%, 61% 35%, 100% 50%, 61% 65%, 50% 100%, 39% 65%, 0% 50%, 39% 35%);
+      opacity: 0.6;
+      z-index: 0;
+    }
+
+    .slide-scanlines {
+      inset: 0;
+      background-image: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.09) 3px, rgba(0,0,0,0.09) 4px);
+      z-index: 5;
+      pointer-events: none;
+    }
+
+    .corner-bracket {
+      position: absolute;
+      width: 5%; height: 6.67%;
+      z-index: 2;
+      pointer-events: none;
+    }
+    .corner-bracket.tl { top: 3.5%; left: 3%; border-top: 2px solid var(--slide-accent); border-left: 2px solid var(--slide-accent); }
+    .corner-bracket.tr { top: 3.5%; right: 3%; border-top: 2px solid var(--slide-accent); border-right: 2px solid var(--slide-accent); }
+    .corner-bracket.bl { bottom: 4%; left: 3%; border-bottom: 2px solid var(--slide-accent); border-left: 2px solid var(--slide-accent); }
+    .corner-bracket.br { bottom: 4%; right: 3%; border-bottom: 2px solid var(--slide-accent); border-right: 2px solid var(--slide-accent); }
+
+    .decorative-circle {
+      position: absolute;
+      width: 9%; aspect-ratio: 1;
+      border-radius: 50%;
+      border: 2px solid var(--slide-accent);
+      opacity: 0.32;
+      pointer-events: none;
+      z-index: 1;
+      bottom: 8%; right: 5%;
+    }
+
+    .top-left-block {
+      position: absolute;
+      width: 1.25%;
+      aspect-ratio: 1;
+      z-index: 2;
+      border-radius: 1px;
+      pointer-events: none;
+    }
+
+    /* ── Slide content slots ── */
+    .s-title {
+      position: absolute;
+      z-index: 1;
+      font-family: var(--display-font);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.08;
+      color: var(--slide-title, var(--slide-text));
+    }
+    .s-desc {
+      position: absolute;
+      z-index: 1;
+      font-size: 10px;
+      line-height: 1.5;
+      color: var(--slide-muted);
+    }
+
+    /* ── Panels ── */
+    .panel {
+      position: absolute;
+      z-index: 1;
+      border-radius: var(--panel-radius, 18px);
+      background: var(--panel-fill, rgba(255,255,255,0.12));
+      border: 1px solid var(--panel-border, var(--slide-border));
+      box-shadow: var(--panel-shadow, none);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel.has-stripe {
+      border-left: 4px solid var(--slide-accent, #3b82f6);
+    }
+
+    .panel-inner {
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      font-family: var(--mono-font);
+      font-size: 8px;
+      line-height: 1.3;
+      letter-spacing: 0.06em;
+      color: var(--slide-muted);
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .mini-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      min-height: 0;
+    }
+    .mini-list li {
+      font-size: 9px;
+      line-height: 1.3;
+      color: var(--slide-text);
+      padding-left: 12px;
+      position: relative;
+    }
+    .mini-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.42em;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--item-accent, var(--slide-accent, #3b82f6));
+    }
+
+    /* ── Accent decorations inside slide ── */
+    .accent-bar {
+      position: absolute;
+      z-index: 1;
+      background: var(--slide-accent, #3b82f6);
+      border-radius: 999px;
+    }
+    .accent-rule {
+      position: absolute;
+      z-index: 1;
+      height: 3px;
+      background: linear-gradient(90deg, var(--slide-accent, #3b82f6), var(--slide-accent-2, #8ae0b2));
+      opacity: 0.92;
+      border-radius: 999px;
+    }
+    .key-band {
+      position: absolute;
+      z-index: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+    }
+
+    .notes-line {
+      position: absolute;
+      z-index: 1;
+      font-family: var(--mono-font);
+      font-size: 7px;
+      color: var(--slide-muted);
+      opacity: 0.5;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    @media (max-width: 520px) {
+      body { padding-inline: 12px; }
+      .style-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <div class="page">
-    <section class="rules">
-      <h2>Theme Priority And Contrast Rules</h2>
-      <p>
-        The app follows the internal rule set from <code>styles.md</code>: theme tokens decide the actual colors,
-        every text color must maintain contrast, and each style should keep its signature layout technique even when the palette changes.
-      </p>
-      <div class="rules-grid">
-        <div class="rule">
-          <strong>Theme wins</strong>
-          Backgrounds, text, accents, and borders are mapped to workspace theme tokens rather than hardcoded colors.
-        </div>
-        <div class="rule">
-          <strong>Contrast first</strong>
-          Light-on-light and dark-on-dark combinations should be corrected before export.
-        </div>
-        <div class="rule">
-          <strong>Style = technique</strong>
-          Each style keeps its composition rules, signature forms, and pacing even when the theme changes.
-        </div>
-        <div class="rule">
-          <strong>Use samples fast</strong>
-          Scan the cards for tone, then read the cue line for the defining move that makes the style feel authentic.
-        </div>
+    <div class="header">
+      <div class="eyebrow">Brand Style Preview</div>
+      <h1>All 40 Design Styles</h1>
+      <p>Each style from <code style="font-family:var(--mono-font);font-size:12px">style_config.py</code> rendered with its exact visual profile — background, panel fill, borders, shadows, and decorative elements.</p>
+      <div class="counts">
+        <span class="count-pill">2 Foundation</span>
+        <span class="count-pill">31 Named Styles</span>
+        <span class="count-pill">7 Template Motifs</span>
       </div>
-    </section>
+    </div>
 
-    <section>
-      <div class="section-head">
-        <div>
-          <h2>Foundation Modes</h2>
-          <p>These three options are part of the selector but do not correspond to one of the 30 TodayCode style references.</p>
-        </div>
-        <p>Use Blank modes when content needs neutrality.</p>
-      </div>
-      <div class="card-grid">
-        <article class="style-card foundation blank-white">
-          <div class="visual">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div>
-            <div class="style-code">Base</div>
-            <div class="visual-label">Blank (White)</div>
-            <div class="visual-foot">Neutral canvas</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>Light</span><span>General purpose</span></div>
-            <h3 class="card-title">Blank White</h3>
-            <p class="foundation-copy">Use when structure matters more than aesthetics, or when you want the palette controls to do all the work.</p>
-          </div>
-        </article>
+    <div><span class="group-label">Foundation</span></div>
+    <div id="foundationGrid" class="style-grid"></div>
 
-        <article class="style-card foundation blank-dark">
-          <div class="visual">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div>
-            <div class="style-code">Base</div>
-            <div class="visual-label">Blank (Dark)</div>
-            <div class="visual-foot">Presentation mode</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>Dark</span><span>General purpose</span></div>
-            <h3 class="card-title">Blank Dark</h3>
-            <p class="foundation-copy">Use when you need a restrained dark stage for charts, dashboards, or live presentations without decorative styling.</p>
-          </div>
-        </article>
-      </div>
-    </section>
+    <div><span class="group-label">Named Styles</span></div>
+    <div id="namedGrid" class="style-grid"></div>
 
-    <section>
-      <div class="section-head">
-        <div>
-          <h2>Layout Pattern Templates</h2>
-          <p>Reusable micro-patterns for card interiors. These are meant to work inside the selected style rather than replace it.</p>
-        </div>
-        <p>Use Icon Card for big signals and Header Icon Card for compact structured categories.</p>
-      </div>
-      <div class="card-grid">
-        <article class="style-card pattern-card">
-          <div class="visual icon-card-visual">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="shape-e"></div>
-            <div class="style-code">Pattern A</div>
-            <div class="visual-label">Icon Card</div>
-            <div class="visual-foot">Single strong symbol</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>2-4 cards</span><span>Feature, pillar, benefit</span></div>
-            <h3 class="card-title">Icon Card</h3>
-            <p class="card-copy">Give each card one prominent icon embedded inside the card body, then stack title and copy with a clear hierarchy.</p>
-            <p class="card-cue">Cue: integrated icon block, bold first read, body copy clearly separated below.</p>
-          </div>
-        </article>
-
-        <article class="style-card pattern-card">
-          <div class="visual header-icon-visual">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="shape-e"></div>
-            <div class="style-code">Pattern B</div>
-            <div class="visual-label">Header Icon Card</div>
-            <div class="visual-foot">Compact top-band cues</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>3-6 cards</span><span>Capability, step, role</span></div>
-            <h3 class="card-title">Header Icon Card</h3>
-            <p class="card-copy">Reserve a thin header band for small icons and a short heading, then keep the body copy in a separate lower block.</p>
-            <p class="card-cue">Cue: slim header strip, small repeated icons, text mass kept below the divider.</p>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-head">
-        <div>
-          <h2>Modern Style Gallery</h2>
-          <p>Compact sample cards derived from the TodayCode visual gallery and the internal style specification.</p>
-        </div>
-        <p>Dark and light tone tags match the app selector.</p>
-      </div>
-      <div class="card-grid">
-        <article class="style-card glass"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="style-code">01 · Dark</div><div class="visual-label">Glassmorphism</div><div class="visual-foot">Frosted depth</div></div><div class="card-body"><div class="card-topline"><span>Premium · Tech</span><span>SaaS, AI products</span></div><h3 class="card-title">Glassmorphism</h3><p class="card-copy">Layered translucent panels on a dark luminous field.</p><p class="card-cue">Cue: frosted cards, white borders, blurred glow blobs.</p></div></article>
-        <article class="style-card brutal"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="style-code">02 · Light</div><div class="visual-label">Neo-Brutalism</div><div class="visual-foot">Raw impact</div></div><div class="card-body"><div class="card-topline"><span>Bold · Startup</span><span>Pitch decks, marketing</span></div><h3 class="card-title">Neo-Brutalism</h3><p class="card-copy">Aggressive contrast and intentional misalignment.</p><p class="card-cue">Cue: thick borders, hard shadows, oversized interruption.</p></div></article>
-        <article class="style-card bento"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="style-code">03 · Light</div><div class="visual-label">Bento Grid</div><div class="visual-foot">Modular view</div></div><div class="card-body"><div class="card-topline"><span>Modular · Structured</span><span>Feature overviews</span></div><h3 class="card-title">Bento Grid</h3><p class="card-copy">A multi-cell layout with one strong anchor block.</p><p class="card-cue">Cue: asymmetric spans, clean gaps, one dark hero cell.</p></div></article>
-        <article class="style-card academia"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="style-code">04 · Dark</div><div class="visual-label">Dark Academia</div><div class="visual-foot">Scholarly warmth</div></div><div class="card-body"><div class="card-topline"><span>Scholarly · Refined</span><span>Education, research</span></div><h3 class="card-title">Dark Academia</h3><p class="card-copy">Vintage authority with warm darkness and ornament.</p><p class="card-cue">Cue: serif title, restrained gold line, literary mood.</p></div></article>
-        <article class="style-card mesh"><div class="visual"><div class="shape-a"></div><div class="style-code">05 · Dark</div><div class="visual-label">Gradient Mesh</div><div class="visual-foot">Painterly motion</div></div><div class="card-body"><div class="card-topline"><span>Artistic · Vibrant</span><span>Brand launches</span></div><h3 class="card-title">Gradient Mesh</h3><p class="card-copy">Color clouds become the design, not a backdrop afterthought.</p><p class="card-cue">Cue: multi-radial blending, large type, minimal copy.</p></div></article>
-        <article class="style-card clay"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="style-code">06 · Light</div><div class="visual-label">Claymorphism</div><div class="visual-foot">Soft 3D</div></div><div class="card-body"><div class="card-topline"><span>Friendly · 3D</span><span>Apps, education</span></div><h3 class="card-title">Claymorphism</h3><p class="card-copy">Rounded tactile blocks with playful gravity.</p><p class="card-cue">Cue: pill-like forms, color-matched shadows, soft highlights.</p></div></article>
-        <article class="style-card swiss"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="style-code">07 · Light</div><div class="visual-label">Swiss International</div><div class="visual-foot">Grid discipline</div></div><div class="card-body"><div class="card-topline"><span>Functional · Corporate</span><span>Consulting, finance IR</span></div><h3 class="card-title">Swiss International</h3><p class="card-copy">Order, signal color, and rigid alignment do the persuasion.</p><p class="card-cue">Cue: red rule, column grid, restrained geometry.</p></div></article>
-        <article class="style-card neon"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="style-code">08 · Dark</div><div class="visual-label">Aurora Neon Glow</div><div class="visual-foot">Electric haze</div></div><div class="card-body"><div class="card-topline"><span>Futuristic · AI</span><span>AI, cybersecurity</span></div><h3 class="card-title">Aurora Neon Glow</h3><p class="card-copy">Bright spectral fog floating over near-black space.</p><p class="card-cue">Cue: glow blobs, luminous text, dark panel grounding.</p></div></article>
-        <article class="style-card y2k"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="style-code">09 · Dark</div><div class="visual-label">Retro Y2K</div><div class="visual-foot">Pop nostalgia</div></div><div class="card-body"><div class="card-topline"><span>Nostalgic · Pop</span><span>Events, marketing</span></div><h3 class="card-title">Retro Y2K</h3><p class="card-copy">Bright rainbow accents on a deep digital stage.</p><p class="card-cue">Cue: spectrum bars, chrome-like type attitude, sparkles.</p></div></article>
-        <article class="style-card nordic"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="style-code">10 · Light</div><div class="visual-label">Nordic Minimalism</div><div class="visual-foot">Calm restraint</div></div><div class="card-body"><div class="card-topline"><span>Calm · Natural</span><span>Wellness, non-profit</span></div><h3 class="card-title">Nordic Minimalism</h3><p class="card-copy">Warm quiet space with just enough organic texture.</p><p class="card-cue">Cue: blob texture, tiny dot accent, generous whitespace.</p></div></article>
-        <article class="style-card typo"><div class="visual"><div class="shape-a"></div><div class="style-code">11 · Light</div><div class="visual-label">Type</div><div class="visual-foot">Editorial scale</div></div><div class="card-body"><div class="card-topline"><span>Editorial · Impact</span><span>Brand statements</span></div><h3 class="card-title">Typographic Bold</h3><p class="card-copy">Typography is the image, not just the label.</p><p class="card-cue">Cue: huge headline, accent word, almost no decoration.</p></div></article>
-        <article class="style-card duotone"><div class="visual"><div class="shape-a"></div><div class="style-code">12 · Dark</div><div class="visual-label">Idea</div><div class="visual-foot">Action</div></div><div class="card-body"><div class="card-topline"><span>Dramatic · Contrast</span><span>Strategy, compare</span></div><h3 class="card-title">Duotone Color Split</h3><p class="card-copy">A deck that frames contrast as the whole story.</p><p class="card-cue">Cue: exact split, divider line, mirrored color logic.</p></div></article>
-        <article class="style-card mono"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="style-code">13 · Light</div><div class="visual-label">Monochrome</div><div class="visual-foot">Luxury restraint</div></div><div class="card-body"><div class="card-topline"><span>Restrained · Luxury</span><span>Luxury brands</span></div><h3 class="card-title">Monochrome Minimal</h3><p class="card-copy">Almost nothing is added, so every line matters.</p><p class="card-cue">Cue: thin circle, weight hierarchy bars, strict monochrome.</p></div></article>
-        <article class="style-card cyber"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="shape-e"></div><div class="style-code">14 · Dark</div><div class="visual-label">Cyberpunk Outline</div><div class="visual-foot">HUD framing</div></div><div class="card-body"><div class="card-topline"><span>HUD · Sci-Fi</span><span>Gaming, infra</span></div><h3 class="card-title">Cyberpunk Outline</h3><p class="card-copy">Interface language turned into slide chrome.</p><p class="card-cue">Cue: outline type, corner brackets, grid overlay.</p></div></article>
-        <article class="style-card editorial"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="style-code">15 · Light</div><div class="visual-label">Editorial Magazine</div><div class="visual-foot">Vol. 15</div></div><div class="card-body"><div class="card-topline"><span>Magazine · Story</span><span>Annual reviews</span></div><h3 class="card-title">Editorial Magazine</h3><p class="card-copy">Narrative asymmetry with a strong editorial voice.</p><p class="card-cue">Cue: dark side block, serif headline, short rule line.</p></div></article>
-        <article class="style-card pastel"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="style-code">16 · Light</div><div class="visual-label">Pastel Soft UI</div><div class="visual-foot">Soft product energy</div></div><div class="card-body"><div class="card-topline"><span>Soft · App-like</span><span>Healthcare, beauty</span></div><h3 class="card-title">Pastel Soft UI</h3><p class="card-copy">Gentle gradients and frosted cards with product polish.</p><p class="card-cue">Cue: pastel tri-gradient, translucent panels, soft shadows.</p></div></article>
-        <article class="style-card miami"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="style-code">17 · Dark</div><div class="visual-label">Dark Neon Miami</div><div class="visual-foot">Synth horizon</div></div><div class="card-body"><div class="card-topline"><span>Synthwave · 80s</span><span>Entertainment, music</span></div><h3 class="card-title">Dark Neon Miami</h3><p class="card-copy">A sunset stage built for loud energy and spectacle.</p><p class="card-cue">Cue: neon sun, horizon lines, retro-future palette.</p></div></article>
-        <article class="style-card organic"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="style-code">18 · Light</div><div class="visual-label">Hand-crafted Organic</div><div class="visual-foot">Human touch</div></div><div class="card-body"><div class="card-topline"><span>Natural · Eco</span><span>Eco brands, food</span></div><h3 class="card-title">Hand-crafted Organic</h3><p class="card-copy">A crafted page with warmth, imperfection, and restraint.</p><p class="card-cue">Cue: dashed circles, botanical accents, serif softness.</p></div></article>
-        <article class="style-card iso"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="style-code">19 · Dark</div><div class="visual-label">Isometric 3D Flat</div><div class="visual-foot">Structured depth</div></div><div class="card-body"><div class="card-topline"><span>Technical · Structured</span><span>IT architecture</span></div><h3 class="card-title">Isometric 3D Flat</h3><p class="card-copy">Clean diagrammatic depth without perspective chaos.</p><p class="card-cue">Cue: 30-degree blocks, three-face shading, dark stage.</p></div></article>
-        <article class="style-card vapor"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="style-code">20 · Dark</div><div class="visual-label">Vaporwave</div><div class="visual-foot">Dream signal</div></div><div class="card-body"><div class="card-topline"><span>Dreamy · Subculture</span><span>Creative agencies</span></div><h3 class="card-title">Vaporwave</h3><p class="card-copy">Subculture nostalgia with surreal color and perspective space.</p><p class="card-cue">Cue: sliced sun, grid floor, ghost title texture.</p></div></article>
-        <article class="style-card deco"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="style-code">21 · Dark</div><div class="visual-label">Art Deco Luxe</div><div class="visual-foot">Geometric prestige</div></div><div class="card-body"><div class="card-topline"><span>Gold · Geometric</span><span>Luxury, gala events</span></div><h3 class="card-title">Art Deco Luxe</h3><p class="card-copy">Ceremonial symmetry and ornament deliver the status signal.</p><p class="card-cue">Cue: double frame, center diamond, deco rulework.</p></div></article>
-        <article class="style-card news"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="shape-e"></div><div class="style-code">22 · Light</div><div class="visual-label">Brutalist Newspaper</div><div class="visual-foot">Masthead density</div></div><div class="card-body"><div class="card-topline"><span>Editorial · Raw</span><span>Media, research</span></div><h3 class="card-title">Brutalist Newspaper</h3><p class="card-copy">Dense editorial framing that makes content feel reported, not decorated.</p><p class="card-cue">Cue: masthead bar, double rule, two-column split.</p></div></article>
-        <article class="style-card mosaic"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="style-code">23 · Dark</div><div class="visual-label">Stained Glass Mosaic</div><div class="visual-foot">Color lattice</div></div><div class="card-body"><div class="card-topline"><span>Colorful · Artistic</span><span>Culture, museums</span></div><h3 class="card-title">Stained Glass Mosaic</h3><p class="card-copy">Color cells behave like illuminated panes under a dark grout grid.</p><p class="card-cue">Cue: mosaic grid, dark gaps, overlay text for readability.</p></div></article>
-        <article class="style-card liquid"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="style-code">24 · Dark</div><div class="visual-label">Liquid Blob Morphing</div><div class="visual-foot">Bio-digital flow</div></div><div class="card-body"><div class="card-topline"><span>Fluid · Organic Tech</span><span>Biotech, innovation</span></div><h3 class="card-title">Liquid Blob Morphing</h3><p class="card-copy">Large soft volumes overlap like living signal fields.</p><p class="card-cue">Cue: blurred blobs, overlap depth, glowing typography.</p></div></article>
-        <article class="style-card memphis"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="style-code">25 · Light</div><div class="visual-label">Memphis Pop Pattern</div><div class="visual-foot">Postmodern bounce</div></div><div class="card-body"><div class="card-topline"><span>80s · Geometric</span><span>Fashion, lifestyle</span></div><h3 class="card-title">Memphis Pop Pattern</h3><p class="card-copy">A playful anti-minimal field built from pattern and noise.</p><p class="card-cue">Cue: triangles, circles, zigzag bar, scattered accents.</p></div></article>
-        <article class="style-card forest"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="shape-e"></div><div class="style-code">26 · Dark</div><div class="visual-label">Dark Forest Nature</div><div class="visual-foot">Atmospheric depth</div></div><div class="card-body"><div class="card-topline"><span>Mysterious · Atmospheric</span><span>Eco premium, adventure</span></div><h3 class="card-title">Dark Forest Nature</h3><p class="card-copy">Narrative mood built from night, fog, and layered silhouettes.</p><p class="card-cue">Cue: moon glow, fir depth, mist band, italic softness.</p></div></article>
-        <article class="style-card blueprint"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="shape-e"></div><div class="style-code">27 · Dark</div><div class="visual-label">Architectural Blueprint</div><div class="visual-foot">Measured precision</div></div><div class="card-body"><div class="card-topline"><span>Technical · Precise</span><span>Architecture, planning</span></div><h3 class="card-title">Architectural Blueprint</h3><p class="card-copy">Measured lines and annotations make the logic feel engineered.</p><p class="card-cue">Cue: dual grid, dimension marks, circular stamp.</p></div></article>
-        <article class="style-card collage"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="style-code">28 · Light</div><div class="visual-label">Maximalist Collage</div><div class="visual-foot">Layered noise</div></div><div class="card-body"><div class="card-topline"><span>Energetic · Layered</span><span>Advertising, fashion</span></div><h3 class="card-title">Maximalist Collage</h3><p class="card-copy">High-density overlap turns the slide into a loud editorial surface.</p><p class="card-cue">Cue: rotated blocks, mixed typography, ghost number texture.</p></div></article>
-        <article class="style-card holo"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="shape-e"></div><div class="style-code">29 · Dark</div><div class="visual-label">SciFi Holographic Data</div><div class="visual-foot">Precision scan</div></div><div class="card-body"><div class="card-topline"><span>Hologram · HUD</span><span>AI, quantum, defense</span></div><h3 class="card-title">SciFi Holographic Data</h3><p class="card-copy">Monochrome signal geometry designed for advanced-tech tension.</p><p class="card-cue">Cue: concentric rings, scan line, monochrome cyan logic.</p></div></article>
-        <article class="style-card riso"><div class="visual"><div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="style-code">30 · Light</div><div class="visual-label">Risograph Print</div><div class="visual-foot">Analog offset</div></div><div class="card-body"><div class="card-topline"><span>CMYK · Indie</span><span>Publishing, art, music</span></div><h3 class="card-title">Risograph Print</h3><p class="card-copy">Registration drift and multiply overlap create the print-era charm.</p><p class="card-cue">Cue: three circles, multiply blending, offset ghost text.</p></div></article>
-      </div>
-    </section>
-
-    <section>
-      <div class="section-head">
-        <div>
-          <h2>Template Motifs From External References</h2>
-          <p>Original reference sketches derived from recurring layout ideas observed across Canva, Slidesgo, and Visme template libraries.</p>
-        </div>
-        <p>These are reusable presentation motifs, not new selector entries. They help extend the sample board beyond the 30 named styles.</p>
-      </div>
-      <div class="card-grid">
-        <article class="style-card motif-card">
-          <div class="visual split-hero">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div>
-            <div class="style-code">Motif 01</div>
-            <div class="visual-label">Editorial Split Hero</div>
-            <div class="visual-foot">Left anchor, right stage</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>Pitch, proposal, keynote</span><span>Hero image or quote</span></div>
-            <h3 class="card-title">Editorial Split Hero</h3>
-            <p class="card-copy">A narrow anchor column holds identity or navigation while the main stage carries one hero visual and one dominant message.</p>
-            <p class="card-cue">Cue: asymmetric split, generous whitespace, one decisive headline block.</p>
-            <p class="card-source">Observed across Canva minimalist pitch decks and Slidesgo minimalist business templates.</p>
-          </div>
-        </article>
-
-        <article class="style-card motif-card">
-          <div class="visual diagonal-block">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div>
-            <div class="style-code">Motif 02</div>
-            <div class="visual-label">Diagonal Block Narrative</div>
-            <div class="visual-foot">Angle-driven flow</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>Launch, strategy, campaign</span><span>Graphic emphasis</span></div>
-            <h3 class="card-title">Diagonal Block Narrative</h3>
-            <p class="card-copy">Large diagonal geometry turns a simple business slide into a directional composition with built-in momentum.</p>
-            <p class="card-cue">Cue: skewed shapes, color wedges, content tucked into calm pockets between the diagonals.</p>
-            <p class="card-source">Observed across Canva diagonal block templates and geometric corporate decks.</p>
-          </div>
-        </article>
-
-        <article class="style-card motif-card">
-          <div class="visual dashboard-strip">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="shape-e"></div>
-            <div class="style-code">Motif 03</div>
-            <div class="visual-label">KPI Dashboard Strip</div>
-            <div class="visual-foot">Metric-first density</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>Reports, reviews, ops</span><span>Data visualization</span></div>
-            <h3 class="card-title">KPI Dashboard Strip</h3>
-            <p class="card-copy">A compact header strip introduces the story, while the lower zone breaks into metric modules for fast comparison.</p>
-            <p class="card-cue">Cue: summary ribbon up top, modular widgets below, restrained but high-contrast data framing.</p>
-            <p class="card-source">Observed across Visme report templates, visual charts decks, and Slidesgo annual-report layouts.</p>
-          </div>
-        </article>
-
-        <article class="style-card motif-card">
-          <div class="visual proposal-grid">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="shape-e"></div>
-            <div class="style-code">Motif 04</div>
-            <div class="visual-label">Geometric Proposal Grid</div>
-            <div class="visual-foot">Structured block logic</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>Business plan, proposal</span><span>Section mapping</span></div>
-            <h3 class="card-title">Geometric Proposal Grid</h3>
-            <p class="card-copy">The slide becomes a set of disciplined tiles, making scope, timeline, resources, and next steps easy to segment.</p>
-            <p class="card-cue">Cue: square-ish modules, even gutters, selective accent cells that guide the scan path.</p>
-            <p class="card-source">Observed across Slidesgo Geometric Pattern decks and Canva square-shape presentation templates.</p>
-          </div>
-        </article>
-
-        <article class="style-card motif-card">
-          <div class="visual mono-accent">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div>
-            <div class="style-code">Motif 05</div>
-            <div class="visual-label">Accent Monochrome Focus</div>
-            <div class="visual-foot">One color, one punch</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>Executive summary</span><span>Statement slide</span></div>
-            <h3 class="card-title">Accent Monochrome Focus</h3>
-            <p class="card-copy">Most of the slide stays neutral so one saturated block or one keyword can carry the emphasis without noise.</p>
-            <p class="card-cue">Cue: black-and-cream base, single accent surface, typography used as the main visual lever.</p>
-            <p class="card-source">Observed across Visme black-and-white splash-of-color guidance and Canva monochrome pitch decks.</p>
-          </div>
-        </article>
-
-        <article class="style-card motif-card">
-          <div class="visual timeline-ribbon">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div><div class="shape-e"></div>
-            <div class="style-code">Motif 06</div>
-            <div class="visual-label">Process Timeline Ribbon</div>
-            <div class="visual-foot">Step sequence with pace</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>Roadmap, onboarding, workplan</span><span>Sequential story</span></div>
-            <h3 class="card-title">Process Timeline Ribbon</h3>
-            <p class="card-copy">A horizontal sequence line establishes order, while the lower panel holds the explanation and keeps the slide readable.</p>
-            <p class="card-cue">Cue: connected step markers, concise labels, one lower explanation band instead of scattered captions.</p>
-            <p class="card-source">Observed across Canva infographic timeline templates and Slidesgo workplan or meeting layouts.</p>
-          </div>
-        </article>
-
-        <article class="style-card motif-card">
-          <div class="visual organic-editorial">
-            <div class="shape-a"></div><div class="shape-b"></div><div class="shape-c"></div><div class="shape-d"></div>
-            <div class="style-code">Motif 07</div>
-            <div class="visual-label">Organic Editorial Canvas</div>
-            <div class="visual-foot">Soft brand storytelling</div>
-          </div>
-          <div class="card-body">
-            <div class="card-topline"><span>Creative brief, lifestyle brand</span><span>Soft premium tone</span></div>
-            <h3 class="card-title">Organic Editorial Canvas</h3>
-            <p class="card-copy">A calm neutral field, one softened image block, and one biomorphic accent create a more tactile brand narrative layout.</p>
-            <p class="card-cue">Cue: warm beige base, rounded image window, one organic mass instead of hard geometric framing.</p>
-            <p class="card-source">Observed across Canva organic creative project templates and soft editorial presentation decks.</p>
-          </div>
-        </article>
-      </div>
-    </section>
+    <div><span class="group-label">Template Motifs</span></div>
+    <div id="motifsGrid" class="style-grid"></div>
   </div>
+
+  <script>
+    const SW = 13.33;
+    const SH = 7.5;
+    function pctX(v) { return `${(v / SW) * 100}%`; }
+    function pctY(v) { return `${(v / SH) * 100}%`; }
+
+    function hexToRgb(hex) {
+      const c = hex.replace("#", "");
+      const n = c.length === 3 ? c.split("").map(x => x + x).join("") : c;
+      return { r: parseInt(n.slice(0, 2), 16), g: parseInt(n.slice(2, 4), 16), b: parseInt(n.slice(4, 6), 16) };
+    }
+    function rgba(hex, a) { const c = hexToRgb(hex); return `rgba(${c.r},${c.g},${c.b},${a})`; }
+    function mix(a, b, r) {
+      const ca = hexToRgb(a), cb = hexToRgb(b);
+      const bl = (l, ri) => Math.round(l * (1 - r) + ri * r);
+      const ch = v => v.toString(16).padStart(2, "0");
+      return `#${ch(bl(ca.r, cb.r))}${ch(bl(ca.g, cb.g))}${ch(bl(ca.b, cb.b))}`;
+    }
+    function gradientBg(colors) {
+      return colors.length === 1 ? colors[0] : `linear-gradient(135deg, ${colors.join(", ")})`;
+    }
+
+    // Layout rects — panels take most of the vertical space
+    const L = {
+      title:  { x: 0.6, y: 0.35, w: 11.0, h: 0.48 },
+      desc:   { x: 0.6, y: 0.90, w: 11.0, h: 0.38 },
+      left:   { x: 0.6, y: 1.40, w: 5.8,  h: 4.6  },
+      right:  { x: 6.7, y: 1.40, w: 5.8,  h: 4.6  },
+      notes:  { x: 0.6, y: 6.25, w: 11.5, h: 0.35 },
+    };
+
+    function setRect(el, r) {
+      el.style.left   = pctX(r.x);
+      el.style.top    = pctY(r.y);
+      el.style.width  = pctX(r.w);
+      el.style.height = pctY(r.h);
+    }
+
+    // ── Decorations ──
+    function addDecorations(slide, sd) {
+      if (sd.blob) {
+        const el = document.createElement("div");
+        el.className = "slide-deco slide-backdrop-blob";
+        slide.appendChild(el);
+      }
+      if (sd.grid) {
+        const el = document.createElement("div");
+        el.className = "slide-deco slide-grid";
+        el.style.setProperty("--slide-grid-color", rgba(sd.accent, sd.tone === "dark" ? 0.16 : 0.12));
+        slide.appendChild(el);
+      }
+      if (sd.rings) {
+        const el = document.createElement("div");
+        el.className = "slide-deco slide-rings";
+        slide.appendChild(el);
+      }
+      if (sd.frame) {
+        const el = document.createElement("div");
+        el.className = `slide-deco slide-frame-outline${sd.frame === "double" ? " double" : ""}`;
+        slide.appendChild(el);
+      }
+      if (sd.rainbow) {
+        const t = document.createElement("div"); t.className = "slide-deco slide-rainbow top"; slide.appendChild(t);
+        const b = document.createElement("div"); b.className = "slide-deco slide-rainbow bottom"; slide.appendChild(b);
+      }
+      if (sd.sparkle) {
+        [[12,15],[80,18],[14,78],[82,75]].forEach(([l,t]) => {
+          const sp = document.createElement("div");
+          sp.className = "slide-deco sparkle";
+          sp.style.left = `${l}%`; sp.style.top = `${t}%`;
+          sp.style.color = sd.accent;
+          slide.appendChild(sp);
+        });
+      }
+      if (sd.scanLines) {
+        const el = document.createElement("div");
+        el.className = "slide-deco slide-scanlines";
+        slide.appendChild(el);
+      }
+      if (sd.cornerBrackets) {
+        ["tl","tr","bl","br"].forEach(pos => {
+          const el = document.createElement("div");
+          el.className = `corner-bracket ${pos}`;
+          slide.appendChild(el);
+        });
+      }
+      if (sd.decorativeCircle) {
+        const el = document.createElement("div");
+        el.className = "decorative-circle";
+        slide.appendChild(el);
+      }
+      if (sd.topLeftBlocks) {
+        [0, 1].forEach((idx) => {
+          const el = document.createElement("div");
+          el.className = "top-left-block";
+          el.style.left = `${3.8 + idx * 1.05}%`;
+          el.style.top = `5.8%`;
+          el.style.background = sd.topLeftBlockColors?.[idx]
+            || (idx === 0 ? sd.accent : (sd.topLeftBlocksAccent || sd.accent2 || sd.accent));
+          slide.appendChild(el);
+        });
+      }
+    }
+
+    // ── Panel helpers ──
+    function getPanelFill(sd, idx) {
+      const alt = idx % 2 === 0 ? sd.accent2 : sd.accent;
+      if (sd.panelFill === "transparent") return rgba(sd.bg[0], sd.tone === "dark" ? 0.06 : 0.04);
+      if (sd.panelFill === "solid") return rgba(mix(sd.bg[0], alt, 0.22), sd.panelOpacity);
+      return rgba(mix(sd.bg[0], alt, sd.tone === "dark" ? 0.28 : 0.16), sd.panelOpacity);
+    }
+    function getPanelShadow(sd) {
+      if (sd.shadow === "hard") return "6px 6px 0 rgba(17,17,17,0.8)";
+      if (sd.shadow === "accent") return `0 14px 24px ${rgba(sd.accent, 0.22)}`;
+      return sd.tone === "dark" ? "0 14px 28px rgba(0,0,0,0.22)" : "0 14px 28px rgba(23,34,48,0.1)";
+    }
+
+    function makePanel(slide, rect, sd, header, items, idx) {
+      const panel = document.createElement("div");
+      panel.className = `panel${sd.stripe ? " has-stripe" : ""}`;
+      setRect(panel, rect);
+      const borderColor = sd.panelBorderPalette?.[idx % sd.panelBorderPalette.length]
+        ?? (sd.tone === "dark" ? "#FFFFFF" : sd.accent2);
+      panel.style.setProperty("--panel-radius", `${sd.panelRadius || 18}px`);
+      panel.style.setProperty("--panel-fill", getPanelFill(sd, idx));
+      panel.style.setProperty("--panel-border", sd.panelBorder
+        ? rgba(borderColor, sd.tone === "dark" ? 0.68 : 0.14)
+        : "transparent");
+      panel.style.setProperty("--panel-shadow", getPanelShadow(sd));
+
+      const inner = document.createElement("div");
+      inner.className = "panel-inner";
+      if (sd.bodyFont) inner.style.fontFamily = sd.bodyFont;
+
+      const h = document.createElement("div");
+      h.className = "panel-header";
+      h.textContent = header;
+      inner.appendChild(h);
+
+      const list = document.createElement("ul");
+      list.className = "mini-list";
+      items.forEach((text, itemIndex) => {
+        const li = document.createElement("li");
+        li.textContent = text;
+        const itemAccent = sd.itemAccentPalette?.[itemIndex % sd.itemAccentPalette.length];
+        if (itemAccent) li.style.setProperty("--item-accent", itemAccent);
+        list.appendChild(li);
+      });
+      inner.appendChild(list);
+
+      panel.appendChild(inner);
+      slide.appendChild(panel);
+    }
+
+    // ── Build one slide ──
+    function buildSlide(sd) {
+      const slide = document.createElement("div");
+      slide.className = `slide theme-${sd.tone}`;
+      slide.style.setProperty("--slide-bg", gradientBg(sd.bg));
+      slide.style.setProperty("--slide-accent", sd.accent);
+      slide.style.setProperty("--slide-accent-2", sd.accent2);
+      slide.style.setProperty("--slide-title", sd.tone === "dark" ? "#F7FAFC" : "#1A202C");
+      slide.style.setProperty("--slide-muted", sd.tone === "dark" ? "rgba(241,245,249,0.82)" : "rgba(23,34,48,0.74)");
+
+      addDecorations(slide, sd);
+
+      if (sd.accentRule) {
+        const rule = document.createElement("div");
+        rule.className = "accent-rule";
+        rule.style.left  = pctX(L.title.x);
+        rule.style.top   = pctY(Math.max(L.title.y - 0.14, 0.12));
+        rule.style.width = pctX(Math.min(L.title.w * 0.22, 2.4));
+        slide.appendChild(rule);
+      }
+      if (sd.accentBar) {
+        const bar = document.createElement("div");
+        bar.className = "accent-bar";
+        bar.style.left   = pctX(Math.max(L.title.x - 0.14, 0.1));
+        bar.style.top    = pctY(Math.max(L.title.y - 0.02, 0.12));
+        bar.style.width  = pctX(0.08);
+        bar.style.height = pctY(2.8);
+        slide.appendChild(bar);
+      }
+      if (sd.keyBand) {
+        const band = document.createElement("div");
+        band.className = "key-band";
+        setRect(band, L.desc);
+        slide.appendChild(band);
+      }
+
+      const title = document.createElement("div");
+      title.className = "s-title";
+      setRect(title, L.title);
+      title.style.fontSize = "18px";
+      if (sd.titleFont) title.style.fontFamily = sd.titleFont;
+      title.textContent = sd.label;
+      slide.appendChild(title);
+
+      const desc = document.createElement("div");
+      desc.className = "s-desc";
+      setRect(desc, L.desc);
+      if (sd.bodyFont) desc.style.fontFamily = sd.bodyFont;
+      desc.textContent = sd.desc;
+      slide.appendChild(desc);
+
+      makePanel(slide, L.left,  sd, "Signature", sd.char, 0);
+      makePanel(slide, L.right, sd, "Best For",  sd.use,  1);
+
+      const notes = document.createElement("div");
+      notes.className = "notes-line";
+      setRect(notes, L.notes);
+      if (sd.bodyFont) notes.style.fontFamily = sd.bodyFont;
+      notes.textContent = `fill:${sd.panelFill} · ${sd.tone} · ${sd.bg.join(" → ")}`;
+      slide.appendChild(notes);
+
+      return slide;
+    }
+
+    // ── All 40 brand styles ──
+    const allBrandStyles = [
+      // Foundation (2)
+      {
+        key: "blank white", label: "Blank White", group: "foundation",
+        tone: "light", bg: ["#FFFFFF"],
+        accent: "#3B82F6", accent2: "#6366F1",
+        panelFill: "transparent", panelOpacity: 0.92, panelBorder: false, panelRadius: 18,
+        desc: "Clean white canvas — theme colors carry all visual weight.",
+        char: ["No background fills", "No panel borders or shadows", "Typography-only hierarchy"],
+        use: ["Content-first decks", "Theme palette drives design", "All-purpose fallback style"],
+      },
+      {
+        key: "blank dark", label: "Blank Dark", group: "foundation",
+        tone: "dark", bg: ["#1E1E2E"],
+        accent: "#3B82F6", accent2: "#6366F1",
+        panelFill: "transparent", panelOpacity: 0.92, panelBorder: false, panelRadius: 18,
+        desc: "Dark canvas baseline — contrast from theme palette only.",
+        char: ["Dark mode baseline", "No decorative overlays", "Theme contrast only"],
+        use: ["Technical deep-dives", "Dev & engineering decks", "Night-mode presentations"],
+      },
+      // Named Styles (31)
+      {
+        key: "glassmorphism", label: "Glassmorphism", group: "named",
+        tone: "dark", bg: ["#1A1A4E", "#6B21A8", "#1E3A5F"],
+        accent: "#8B5CF6", accent2: "#06B6D4",
+        panelFill: "frosted", panelOpacity: 0.78, panelBorder: true, panelRadius: 20,
+        keyBand: true, blob: true,
+        desc: "Frosted glass over deep indigo-purple-teal gradient.",
+        char: ["Frosted glass (0.78 opacity)", "Organic blob background", "Key-message glow band"],
+        use: ["AI & cloud product decks", "Premium B2B pitches", "Tech narrative keynotes"],
+      },
+      {
+        key: "neo-brutalism", label: "Neo-Brutalism", group: "named",
+        tone: "light", bg: ["#F5F500", "#FFF75C"],
+        accent: "#FF3B30", accent2: "#111111",
+        panelFill: "solid", panelOpacity: 1.0, panelBorder: true, panelRadius: 8,
+        shadow: "hard",
+        desc: "Solid panels with hard black offset shadows over acid yellow.",
+        char: ["3pt panel borders", "Hard 8px offset shadow", "Acid-yellow background"],
+        use: ["Startup pitches", "Design studio portfolios", "High-impact keynotes"],
+      },
+      {
+        key: "bento grid", label: "Bento Grid", group: "named",
+        tone: "light", bg: ["#F8F8F2"],
+        accent: "#4ADE80", accent2: "#2563EB",
+        panelFill: "tinted", panelOpacity: 0.92, panelBorder: true, panelRadius: 22,
+        desc: "Soft cream with tinted panels in bento-box grid.",
+        char: ["Tinted fills (0.92 opacity)", "Bento grid pattern", "Light cream background"],
+        use: ["Product feature overviews", "App showcase decks", "Content-rich presentations"],
+      },
+      {
+        key: "dark academia", label: "Dark Academia", group: "named",
+        tone: "dark", bg: ["#1A1208"],
+        accent: "#B5935A", accent2: "#6B4A3A",
+        panelFill: "tinted", panelOpacity: 0.88, panelBorder: false, panelRadius: 18,
+        accentRule: true,
+        desc: "Espresso bg with warm tinted panels and accent rule.",
+        char: ["Deep espresso (#1A1208)", "Tinted panels, borderless", "Em-dash bullets, centered"],
+        use: ["Research reports", "Academic institutions", "Thought leadership decks"],
+      },
+      {
+        key: "gradient mesh", label: "Gradient Mesh", group: "named",
+        tone: "dark", bg: ["#FF6EC7", "#7B61FF", "#00D4FF"],
+        accent: "#FF6EC7", accent2: "#00D4FF",
+        panelFill: "frosted", panelOpacity: 0.75, panelBorder: false, panelRadius: 20,
+        blob: true,
+        desc: "3-stop mesh gradient with borderless frosted panels.",
+        char: ["Multi-stop mesh gradient", "Frosted panels, no borders", "Organic blob shapes"],
+        use: ["Creative agency decks", "Design portfolio", "Brand narrative presentations"],
+      },
+      {
+        key: "claymorphism", label: "Claymorphism", group: "named",
+        tone: "light", bg: ["#FFECD2", "#FCB69F"],
+        accent: "#74B9FF", accent2: "#F7CAC9",
+        panelFill: "solid", panelOpacity: 0.95, panelBorder: true, panelRadius: 26,
+        shadow: "accent",
+        desc: "Warm gradient with puffy rounded panels and glow shadow.",
+        char: ["Solid panels, 0.95 opacity", "26px radius — very rounded", "Soft accent glow shadow"],
+        use: ["Consumer product demos", "Wellness & health brands", "Education platforms"],
+      },
+      {
+        key: "swiss international", label: "Swiss International", group: "named",
+        tone: "light", bg: ["#FFFFFF"],
+        accent: "#E63946", accent2: "#1D3557",
+        panelFill: "transparent", panelOpacity: 0.92, panelBorder: true, panelRadius: 14,
+        stripe: true, accentBar: true, accentRule: true,
+        desc: "Strict grid — bars, rules, stripes, zero excess.",
+        char: ["Transparent + thin borders", "Left-side stripe per panel", "Title bar + horizontal rule"],
+        use: ["Consulting reports", "Financial presentations", "Enterprise strategy decks"],
+      },
+      {
+        key: "foundry workbench", label: "Foundry Workbench", group: "named",
+        tone: "dark", bg: ["#0A1628"],
+        accent: "#0F9ED5", accent2: "#4EA72E",
+        panelFill: "transparent", panelOpacity: 1.0, panelBorder: true, panelRadius: 12,
+        titleFont: 'Verdana, "Segoe UI", sans-serif', bodyFont: 'Verdana, "Segoe UI", sans-serif',
+        panelBorderPalette: ["#0F9ED5", "#4EA72E"],
+        itemAccentPalette: ["#0F9ED5", "#A02B93", "#4EA72E"],
+        topLeftBlocks: true, topLeftBlockColors: ["#40B9E8", "#58D7C7"],
+        desc: "Dark navy product-workbench look with thin outlined cards and white UI-led typography.",
+        char: ["Dark navy background (#0A1628)", "1pt outlined panels with no fill", "Cyan, magenta, and green accent strokes"],
+        use: ["Platform overview decks", "AI tooling demos", "Developer and product briefings"],
+      },
+      {
+        key: "aurora neon glow", label: "Aurora Neon Glow", group: "named",
+        tone: "dark", bg: ["#050510"],
+        accent: "#00FF88", accent2: "#00D4FF",
+        panelFill: "frosted", panelOpacity: 0.70, panelBorder: true, panelRadius: 20,
+        keyBand: true, rings: true, blob: true,
+        desc: "Near-black void with neon accents, rings, glow blobs.",
+        char: ["Near-black bg (#050510)", "Concentric ring signature", "Key band + glow blob"],
+        use: ["Tech innovation launches", "Future-of-work narratives", "Developer conferences"],
+      },
+      {
+        key: "retro y2k", label: "Retro Y2K", group: "named",
+        tone: "dark", bg: ["#000080"],
+        accent: "#FFFF00", accent2: "#FF69B4",
+        panelFill: "solid", panelOpacity: 0.90, panelBorder: true, panelRadius: 14,
+        shadow: "accent", rings: true, rainbow: true, sparkle: true,
+        desc: "Deep navy with rainbow bars, sparkles, accent rings.",
+        char: ["Rainbow bars top + bottom", "Sparkle star corner marks", "Thick panels + accent shadow"],
+        use: ["Nostalgia campaigns", "Gaming and pop culture", "Bold consumer launches"],
+      },
+      {
+        key: "nordic minimalism", label: "Nordic Minimalism", group: "named",
+        tone: "light", bg: ["#F4F1EC"],
+        accent: "#5B7FA6", accent2: "#8FACC8",
+        panelFill: "tinted", panelOpacity: 0.90, panelBorder: false, panelRadius: 18,
+        desc: "Warm linen with soft tinted panels and whitespace.",
+        char: ["Warm linen (#F4F1EC)", "Tinted panels, borderless", "Spacious whitespace layout"],
+        use: ["Lifestyle brands", "Scandinavian design reports", "Calm stakeholder decks"],
+      },
+      {
+        key: "typographic bold", label: "Typographic Bold", group: "named",
+        tone: "light", bg: ["#F0EDE8"],
+        accent: "#DC2626", accent2: "#1D3557",
+        panelFill: "transparent", panelOpacity: 0.92, panelBorder: false, panelRadius: 18,
+        accentBar: true, accentRule: true,
+        desc: "Typography-only — accent bar + rule, no panel fills.",
+        char: ["1.25× title font scale", "Vertical bar + horizontal rule", "No panel fills"],
+        use: ["Editorial keynotes", "Thought leadership", "Typography-led narratives"],
+      },
+      {
+        key: "duotone color split", label: "Duotone Color Split", group: "named",
+        tone: "dark", bg: ["#FF4500", "#1A1A2E"],
+        accent: "#FFFFFF", accent2: "#FF6B35",
+        panelFill: "solid", panelOpacity: 1.0, panelBorder: false, panelRadius: 18,
+        desc: "Bold orange-to-navy split with solid panels.",
+        char: ["Orange–navy gradient", "Full-opacity solid panels", "Color divides content"],
+        use: ["Dual-topic comparisons", "Split-persona messaging", "Brand refresh decks"],
+      },
+      {
+        key: "monochrome minimal", label: "Monochrome Minimal", group: "named",
+        tone: "light", bg: ["#FAFAFA"],
+        accent: "#4A4A4A", accent2: "#9A9A9A",
+        panelFill: "tinted", panelOpacity: 0.92, panelBorder: true, panelRadius: 18,
+        accentRule: true, rings: true, frame: "single",
+        desc: "Near-white with frame outline, rings, monochrome panels.",
+        char: ["Single frame border", "Accent rings signature", "Monochrome tinted panels"],
+        use: ["Premium luxury reports", "Portfolio presentations", "Minimalist brand decks"],
+      },
+      {
+        key: "cyberpunk outline", label: "Cyberpunk Outline", group: "named",
+        tone: "dark", bg: ["#0D0D0D"],
+        accent: "#00FF41", accent2: "#FF00FF",
+        panelFill: "transparent", panelOpacity: 1.0, panelBorder: true, panelRadius: 10,
+        accentBar: true, grid: "fine", cornerBrackets: true,
+        desc: "Terminal-black with fine grid, corner brackets.",
+        char: ["Fine background grid", "Corner bracket marks", "Matrix green + magenta"],
+        use: ["Cybersecurity decks", "Developer conferences", "Dark tech presentations"],
+      },
+      {
+        key: "editorial magazine", label: "Editorial Magazine", group: "named",
+        tone: "light", bg: ["#FFFFFF"],
+        accent: "#C0392B", accent2: "#2C3E50",
+        panelFill: "tinted", panelOpacity: 0.88, panelBorder: false, panelRadius: 18,
+        accentRule: true,
+        desc: "Pure white with editorial tinted panels and rule.",
+        char: ["White, tinted borderless", "Title rule without border", "Spacious editorial layout"],
+        use: ["Magazine-style narratives", "Industry research reports", "Stakeholder decks"],
+      },
+      {
+        key: "pastel soft ui", label: "Pastel Soft UI", group: "named",
+        tone: "light", bg: ["#FCE4F3", "#E8F4FF", "#F0FCE4"],
+        accent: "#FF8FAB", accent2: "#93C5FD",
+        panelFill: "frosted", panelOpacity: 0.88, panelBorder: true, panelRadius: 24,
+        shadow: "accent",
+        desc: "3-stop pastel gradient with frosted panels and glow.",
+        char: ["3-stop pastel gradient", "Frosted + accent shadow", "Ultra-thin borders"],
+        use: ["Consumer apps", "Health & wellness decks", "Social media strategy"],
+      },
+      {
+        key: "dark neon miami", label: "Dark Neon Miami", group: "named",
+        tone: "dark", bg: ["#0A0014"],
+        accent: "#FF2D78", accent2: "#1FFFB2",
+        panelFill: "frosted", panelOpacity: 0.72, panelBorder: true, panelRadius: 18,
+        keyBand: true, blob: true, grid: "perspective",
+        desc: "Deep purple-black with neon pink+mint and grid.",
+        char: ["Perspective background grid", "Neon pink + mint accents", "Key band + glow blob"],
+        use: ["Miami/LA vibe decks", "Fashion & entertainment", "Nightlife campaigns"],
+      },
+      {
+        key: "hand-crafted organic", label: "Hand-Crafted Organic", group: "named",
+        tone: "light", bg: ["#FDF6EE"],
+        accent: "#7C9A5E", accent2: "#C8956C",
+        panelFill: "tinted", panelOpacity: 0.85, panelBorder: false, panelRadius: 20,
+        blob: true,
+        desc: "Cream parchment with sage+terracotta and blob.",
+        char: ["Warm cream (#FDF6EE)", "Organic blob decoration", "Sage + terracotta palette"],
+        use: ["Sustainability reports", "Food & agriculture brands", "Artisan product decks"],
+      },
+      {
+        key: "isometric 3d flat", label: "Isometric 3D Flat", group: "named",
+        tone: "dark", bg: ["#1E1E2E"],
+        accent: "#60A5FA", accent2: "#A78BFA",
+        panelFill: "solid", panelOpacity: 0.92, panelBorder: true, panelRadius: 18,
+        shadow: "hard",
+        desc: "Dark neutral with solid panels and hard shadows.",
+        char: ["Solid + hard offset shadow", "Deep neutral (#1E1E2E)", "Blue-purple accents"],
+        use: ["Architecture visualizations", "Engineering showcases", "3D product presentations"],
+      },
+      {
+        key: "vaporwave", label: "Vaporwave", group: "named",
+        tone: "dark", bg: ["#1A0533", "#2D0057", "#570038"],
+        accent: "#FF71CE", accent2: "#01CDFE",
+        panelFill: "frosted", panelOpacity: 0.75, panelBorder: true, panelRadius: 18,
+        rings: true, grid: "perspective", scanLines: true,
+        desc: "Deep magenta-purple with grid, scan lines, neon.",
+        char: ["Perspective grid", "Scan-line overlay", "Neon pink + cyan accents"],
+        use: ["Retrowave & 80s aesthetics", "Music and media decks", "Nostalgia campaigns"],
+      },
+      {
+        key: "art deco luxe", label: "Art Deco Luxe", group: "named",
+        tone: "dark", bg: ["#0E0A05"],
+        accent: "#D4AF37", accent2: "#C8A44B",
+        panelFill: "transparent", panelOpacity: 1.0, panelBorder: true, panelRadius: 14,
+        accentRule: true, frame: "double",
+        desc: "Near-black with gold accents and double frame.",
+        char: ["Double frame outline", "Gold accent (#D4AF37)", "Transparent, 2pt borders"],
+        use: ["Luxury brand decks", "Gala & award presentations", "Premium financial proposals"],
+      },
+      {
+        key: "brutalist newspaper", label: "Brutalist Newspaper", group: "named",
+        tone: "light", bg: ["#F2EFE8"],
+        accent: "#000000", accent2: "#E63946",
+        panelFill: "solid", panelOpacity: 0.95, panelBorder: true, panelRadius: 10,
+        accentRule: true,
+        desc: "Newsprint bg, solid panels, thick borders and rule.",
+        char: ["Newsprint (#F2EFE8)", "2.5pt thick panel borders", "Title rule, 1.2× scale"],
+        use: ["Investigative briefings", "News-style presentations", "Bold editorial content"],
+      },
+      {
+        key: "stained glass mosaic", label: "Stained Glass Mosaic", group: "named",
+        tone: "dark", bg: ["#0A0A12"],
+        accent: "#E74C3C", accent2: "#3498DB",
+        panelFill: "solid", panelOpacity: 0.88, panelBorder: true, panelRadius: 14,
+        desc: "Void-black with jewel-toned mosaic panels.",
+        char: ["Mosaic card arrangement", "Jewel-tone panel fills", "1.5pt colored borders"],
+        use: ["Arts & culture orgs", "Museum exhibitions", "Gallery presentations"],
+      },
+      {
+        key: "liquid blob morphing", label: "Liquid Blob Morphing", group: "named",
+        tone: "dark", bg: ["#0F2027", "#203A43", "#2C5364"],
+        accent: "#29E8C0", accent2: "#7B61FF",
+        panelFill: "frosted", panelOpacity: 0.78, panelBorder: false, panelRadius: 22,
+        blob: true,
+        desc: "Deep teal gradient with frosted panels and blob.",
+        char: ["3-stop teal gradient", "Frosted, no borders", "Organic blob morphing"],
+        use: ["Fluid motion narratives", "Biotech & life science", "UX animation decks"],
+      },
+      {
+        key: "memphis pop pattern", label: "Memphis Pop Pattern", group: "named",
+        tone: "light", bg: ["#FFF5E0"],
+        accent: "#FF5F5F", accent2: "#3D6FFF",
+        panelFill: "solid", panelOpacity: 0.90, panelBorder: true, panelRadius: 16,
+        decorativeCircle: true,
+        desc: "Warm cream with solid panels and pop-art circle.",
+        char: ["Warm cream (#FFF5E0)", "Solid + 2pt borders", "Decorative corner circle"],
+        use: ["Pop culture campaigns", "80s/90s brand revival", "Youth marketing decks"],
+      },
+      {
+        key: "dark forest nature", label: "Dark Forest Nature", group: "named",
+        tone: "dark", bg: ["#0D2B14", "#060E08"],
+        accent: "#4CAF82", accent2: "#8BC34A",
+        panelFill: "tinted", panelOpacity: 0.82, panelBorder: false, panelRadius: 20,
+        desc: "Deep forest green with tinted borderless panels.",
+        char: ["Forest green gradient", "Tinted, borderless", "Lush green + lime palette"],
+        use: ["Sustainability reports", "Environmental campaigns", "Nature-focused NGOs"],
+      },
+      {
+        key: "architectural blueprint", label: "Architectural Blueprint", group: "named",
+        tone: "dark", bg: ["#0D2240"],
+        accent: "#6BA3E0", accent2: "#8FCFEA",
+        panelFill: "transparent", panelOpacity: 1.0, panelBorder: true, panelRadius: 12,
+        accentBar: true, accentRule: true, grid: "fine", frame: "single", cornerBrackets: true,
+        desc: "Blueprint blue with grid, brackets, frame, rules.",
+        char: ["Fine grid + brackets", "Single frame outline", "Accent rule + bar, 1pt borders"],
+        use: ["Engineering specs", "Infrastructure planning", "Technical architecture decks"],
+      },
+      {
+        key: "maximalist collage", label: "Maximalist Collage", group: "named",
+        tone: "light", bg: ["#E8DDD0"],
+        accent: "#FF4500", accent2: "#9C27B0",
+        panelFill: "solid", panelOpacity: 0.92, panelBorder: true, panelRadius: 16,
+        desc: "Warm tan with solid panels and overlapping layout.",
+        char: ["Warm tan (#E8DDD0)", "Solid + 2pt borders", "Asymmetric overlapping"],
+        use: ["Collage art narratives", "Maximalist brand decks", "Bold creative pitches"],
+      },
+      {
+        key: "scifi holographic data", label: "Sci-Fi Holographic Data", group: "named",
+        tone: "dark", bg: ["#03050D"],
+        accent: "#00BFFF", accent2: "#7B2FFF",
+        panelFill: "frosted", panelOpacity: 0.68, panelBorder: true, panelRadius: 16,
+        keyBand: true, rings: true, grid: "fine",
+        desc: "Void black with cyan-purple, holographic rings.",
+        char: ["Fine background grid", "Frosted 0.68 opacity", "Rings + key band"],
+        use: ["Sci-fi product pitches", "Space tech companies", "Data platform launches"],
+      },
+      {
+        key: "risograph print", label: "Risograph Print", group: "named",
+        tone: "light", bg: ["#F7F2E8"],
+        accent: "#FF5470", accent2: "#0055AA",
+        panelFill: "solid", panelOpacity: 0.85, panelBorder: false, panelRadius: 18,
+        accentRule: true,
+        desc: "Ecru with duotone solid panels and accent rule.",
+        char: ["Ecru bg (#F7F2E8)", "Solid, no borders", "Duotone pink + blue, rule"],
+        use: ["Print-inspired decks", "Indie publication style", "Arts & crafts brands"],
+      },
+      // Template Motifs (7)
+      {
+        key: "editorial split hero", label: "Editorial Split Hero", group: "motif",
+        tone: "light", bg: ["#F8F5F2"],
+        accent: "#E63946", accent2: "#1D3557",
+        panelFill: "tinted", panelOpacity: 0.85, panelBorder: true, panelRadius: 18,
+        accentRule: true,
+        desc: "Hero-emphasis split with tinted panels and rule.",
+        char: ["1.15× title font scale", "Split composition + hero", "Large hero emphasis"],
+        use: ["Opening slides with hero", "Product launch decks", "Image-driven narratives"],
+      },
+      {
+        key: "diagonal block narrative", label: "Diagonal Block Narrative", group: "motif",
+        tone: "dark", bg: ["#1A1A2E"],
+        accent: "#F97316", accent2: "#FBBF24",
+        panelFill: "solid", panelOpacity: 0.92, panelBorder: false, panelRadius: 16,
+        desc: "Dark with diagonal solid panels and orange-amber.",
+        char: ["Diagonal gradient treatment", "Solid panels, no borders", "Orange + amber palette"],
+        use: ["Story arc slides", "Narrative transition decks", "Bold sequential content"],
+      },
+      {
+        key: "kpi dashboard strip", label: "KPI Dashboard Strip", group: "motif",
+        tone: "light", bg: ["#F0F4F8"],
+        accent: "#3B82F6", accent2: "#10B981",
+        panelFill: "tinted", panelOpacity: 0.90, panelBorder: true, panelRadius: 14,
+        stripe: true,
+        desc: "Dashboard-style with stripe accents and tight spacing.",
+        char: ["Left-side stripe per panel", "Tight whitespace treatment", "0.5pt thin panel borders"],
+        use: ["KPI dashboards", "Metrics review decks", "Operational scorecards"],
+      },
+      {
+        key: "geometric proposal grid", label: "Geometric Proposal Grid", group: "motif",
+        tone: "light", bg: ["#F8F8FF"],
+        accent: "#6366F1", accent2: "#8B5CF6",
+        panelFill: "tinted", panelOpacity: 0.88, panelBorder: true, panelRadius: 16,
+        stripe: true, grid: "fine",
+        desc: "Light bg with fine grid, striped indigo panels.",
+        char: ["Fine background grid", "Striped tinted panels", "Indigo + purple palette"],
+        use: ["Business proposals", "Solution architecture decks", "Grid-heavy content"],
+      },
+      {
+        key: "accent monochrome focus", label: "Accent Monochrome Focus", group: "motif",
+        tone: "light", bg: ["#F5F5F5"],
+        accent: "#3B82F6", accent2: "#93C5FD",
+        panelFill: "frosted", panelOpacity: 0.80, panelBorder: false, panelRadius: 20,
+        accentBar: true, frame: "single",
+        desc: "Neutral grey with frame, frosted panels, accent bar.",
+        char: ["Single frame outline", "Frosted, no borders", "Vertical bar + centered title"],
+        use: ["Clean corporate decks", "Minimal brand focus", "White-label presentations"],
+      },
+      {
+        key: "process timeline ribbon", label: "Process Timeline Ribbon", group: "motif",
+        tone: "light", bg: ["#FFFFFF"],
+        accent: "#F97316", accent2: "#FB923C",
+        panelFill: "tinted", panelOpacity: 0.88, panelBorder: true, panelRadius: 16,
+        stripe: true,
+        desc: "White with orange-ribbon stripes and step panels.",
+        char: ["Orange stripe per panel", "Tinted + 0.8pt borders", "Step-oriented layout"],
+        use: ["Process documentation", "Step-by-step guides", "Workflow explanations"],
+      },
+      {
+        key: "organic editorial canvas", label: "Organic Editorial Canvas", group: "motif",
+        tone: "light", bg: ["#FDF8F3"],
+        accent: "#7C9A5E", accent2: "#D4956B",
+        panelFill: "tinted", panelOpacity: 0.82, panelBorder: false, panelRadius: 20,
+        accentRule: true,
+        desc: "Warm cream with tinted borderless panels and rule.",
+        char: ["Warm cream-linen bg", "Tinted, borderless", "Accent rule, editorial spacing"],
+        use: ["Long-form editorial decks", "Content strategy decks", "Publication-style reports"],
+      },
+    ];
+
+    // ── Render ──
+    function render() {
+      const groups = { foundation: [], named: [], motif: [] };
+      allBrandStyles.forEach(s => { if (groups[s.group]) groups[s.group].push(s); });
+
+      [
+        { id: "foundationGrid", list: groups.foundation },
+        { id: "namedGrid",      list: groups.named      },
+        { id: "motifsGrid",     list: groups.motif      },
+      ].forEach(({ id, list }) => {
+        const grid = document.getElementById(id);
+        if (!grid) return;
+        list.forEach(sd => {
+          const card = document.createElement("article");
+          card.className = "style-card";
+
+          const head = document.createElement("div");
+          head.className = "card-head";
+          const h3 = document.createElement("h3");
+          h3.textContent = sd.label;
+          const badge = document.createElement("span");
+          badge.className = "card-badge";
+          badge.textContent = `${sd.panelFill} · ${sd.tone}`;
+          head.append(h3, badge);
+
+          const frame = document.createElement("div");
+          frame.className = "slide-frame";
+          frame.appendChild(buildSlide(sd));
+
+          const key = document.createElement("div");
+          key.className = "card-key";
+          key.textContent = sd.key;
+
+          card.append(head, frame, key);
+          grid.appendChild(card);
+        });
+      });
+    }
+
+    render();
+  </script>
 </body>
 </html>

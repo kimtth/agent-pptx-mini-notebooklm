@@ -155,6 +155,10 @@ class StyleConfig:
     """Add angular corner bracket marks around the primary content zone."""
     accent_rings: bool = False
     """Add concentric outline rings as a signature object."""
+    top_left_blocks: bool = False
+    """Add a pair of small square blocks near the top-left corner."""
+    top_left_block_colors: tuple[str, ...] = ()
+    """Optional explicit colors for the top-left block pair."""
 
     # ── Color treatment ─────────────────────────────────────────────
     color_treatment: str = "solid"
@@ -321,6 +325,28 @@ STYLE_PRESETS: dict[str, StyleConfig] = {
             forbid_centered_titles=True,
             forbid_heavy_borders=True,
             max_decorative_elements=4,
+        ),
+    ),
+    "foundry workbench": StyleConfig(
+        panel_fill="transparent",
+        panel_fill_opacity=1.0,
+        panel_border=True,
+        panel_border_weight_pt=1.0,
+        panel_shadow="none",
+        bullet_marker="\u2022",  # •
+        dark_mode=True,
+        bg_colors=("0A1628",),
+        top_left_blocks=True,
+        top_left_block_colors=("40B9E8", "58D7C7"),
+        layout_policy=StyleLayoutPolicy(
+            composition_mode="balanced",
+            alignment_bias="left",
+            whitespace_bias="generous",
+        ),
+        guardrails=StyleGuardrails(
+            forbid_centered_titles=True,
+            forbid_heavy_borders=True,
+            max_decorative_elements=6,
         ),
     ),
     "aurora neon glow": StyleConfig(

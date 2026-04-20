@@ -49,6 +49,7 @@ from scripts.layout.layout_specs import (  # noqa: E402
     RectSpec,
     SLIDE_WIDTH_IN,
     SLIDE_HEIGHT_IN,
+    big_number_font_profile,
     estimate_text_height_in,
 )
 from scripts.style_config import StyleConfig  # noqa: E402
@@ -769,6 +770,24 @@ def _add_design_language(ctx: RenderContext, slide, spec: LayoutSpec,
         circle.line.color.rgb = ctx.rgb_color(accent_b)
         circle.line.width = Pt(2.0)
 
+    if style.top_left_blocks:
+        block_y = 0.32
+        block_size = 0.10
+        gap = 0.03
+        start_x = 0.52
+        block_colors = list(style.top_left_block_colors[:2]) or [accent_a, _mix_hex(accent_a, colors.get("LIGHT", "FFFFFF"), 0.28)]
+        for idx, block_color in enumerate(block_colors):
+            block = ctx.add_design_shape(
+                slide.shapes,
+                MSO_AUTO_SHAPE_TYPE.RECTANGLE,
+                Inches(start_x + idx * (block_size + gap)), Inches(block_y),
+                Inches(block_size), Inches(block_size),
+                name=f"top_left_block_{idx}",
+            )
+            block.fill.solid()
+            block.fill.fore_color.rgb = ctx.rgb_color(block_color)
+            block.line.fill.background()
+
     # Rainbow spectrum stripe bars — full-width bands at top and bottom
     if style.rainbow_stripe_bars:
         accent_keys = ["ACCENT1", "ACCENT2", "ACCENT3", "ACCENT4", "ACCENT5", "ACCENT6"]
@@ -891,18 +910,6 @@ def _adjust_body_font(width_in: float, height_in: float, text: str,
     elif required > height_in * 0.85:
         return max(11, base_pt - 0.6)
     return base_pt
-
-
-def _is_metric_like_title(text: str) -> bool:
-    stripped = (text or "").strip()
-    if not stripped:
-        return False
-    words = stripped.split()
-    digit_count = sum(ch.isdigit() for ch in stripped)
-    alpha_count = sum(ch.isalpha() for ch in stripped)
-    if digit_count == 0:
-        return len(words) <= 2 and len(stripped) <= 12
-    return len(words) <= 4 and digit_count >= max(1, alpha_count // 6)
 
 
 def _reflow_big_number_spec(
@@ -2237,9 +2244,7 @@ def _render_big_number_slide(ctx: RenderContext, slide, spec: LayoutSpec,
                              accent_a: str, accent_b: str,
                              colors: dict[str, str]) -> None:
     """Hero number + supporting text."""
-    metric_like_title = _is_metric_like_title(data["title_text"])
-    title_base_pt = 72 if metric_like_title else 42
-    title_min_pt = 28 if metric_like_title else 24
+    title_base_pt, title_min_pt, key_pt = big_number_font_profile(data["title_text"])
     title_pt = title_base_pt * ctx.style.title_font_scale
     if spec.title_rect:
         title_pt = _adjust_title_font(
@@ -2250,13 +2255,12 @@ def _render_big_number_slide(ctx: RenderContext, slide, spec: LayoutSpec,
             min_pt=title_min_pt,
         )
 
-    key_pt = 18.0
     if data["key_message_text"] and spec.key_message_rect:
         key_pt = _adjust_body_font(
             spec.key_message_rect.w,
             max(spec.key_message_rect.h, 0.4),
             data["key_message_text"],
-            18,
+            key_pt,
         )
 
     render_spec = _reflow_big_number_spec(
