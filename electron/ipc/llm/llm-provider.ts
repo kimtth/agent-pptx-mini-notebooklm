@@ -25,6 +25,19 @@ export interface LLMToolDefinition {
   handler: (args: any) => Promise<{ success: boolean; message?: string; error?: string; content?: string }>;
 }
 
+export interface LLMUsageSummary {
+  provider: ProviderType;
+  model?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  reasoningTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  finishReason?: string;
+  cost?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Stream events — normalized for the renderer
 // ---------------------------------------------------------------------------
@@ -32,6 +45,7 @@ export interface LLMToolDefinition {
 export type LLMStreamDelta =
   | { type: 'content'; text: string }
   | { type: 'thinking'; text: string }
+  | { type: 'usage'; usage: LLMUsageSummary }
   | { type: 'error'; message: string };
 
 // ---------------------------------------------------------------------------

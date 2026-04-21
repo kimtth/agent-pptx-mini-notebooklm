@@ -15,6 +15,7 @@ import type {
   LLMSessionConfig,
   LLMStreamDelta,
   LLMToolDefinition,
+  LLMUsageSummary,
   ProviderType,
 } from './llm-provider.ts';
 
@@ -239,6 +240,23 @@ function createAISDKProvider(providerType: ProviderType): LLMProvider {
             }
             // tool-call and tool-result are handled internally by maxSteps
           }
+
+          const [totalUsage, finishReason] = await Promise.all([
+            result.totalUsage,
+            result.finishReason,
+          ]);
+          const usage: LLMUsageSummary = {
+            provider: providerType,
+            model: config.model,
+            inputTokens: totalUsage.inputTokens,
+            outputTokens: totalUsage.outputTokens,
+            totalTokens: totalUsage.totalTokens,
+            reasoningTokens: totalUsage.outputTokenDetails.reasoningTokens,
+            cacheReadTokens: totalUsage.inputTokenDetails.cacheReadTokens,
+            cacheWriteTokens: totalUsage.inputTokenDetails.cacheWriteTokens,
+            finishReason,
+          };
+          onDelta({ type: 'usage', usage });
         },
 
         async cancel(): Promise<void> {

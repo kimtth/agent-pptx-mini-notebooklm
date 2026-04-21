@@ -16,6 +16,7 @@ import type {
   LLMSessionConfig,
   LLMStreamDelta,
   LLMToolDefinition,
+  LLMUsageSummary,
 } from './llm-provider.ts';
 
 const AZURE_OPENAI_SCOPE = 'https://cognitiveservices.azure.com/.default';
@@ -151,6 +152,7 @@ export const copilotProvider: LLMProvider = {
     };
 
     const session = await copilot.createSession(copilotConfig);
+  let pendingUsage: LLMUsageSummary | null = null;
 
     // Wire streaming events → normalized deltas
     session.on('assistant.reasoning_delta', (event) => {
@@ -165,10 +167,36 @@ export const copilotProvider: LLMProvider = {
       const message = event.data?.message ?? 'Unknown Copilot session error';
       onDelta({ type: 'error', message });
     });
+    session.on('assistant.usage', (event) => {
+      const inputTokens = event.data?.inputTokens;
+      const outputTokens = event.data?.outputTokens;
+      const cacheReadTokens = event.data?.cacheReadTokens;
+      const cacheWriteTokens = event.data?.cacheWriteTokens;
+      const totalTokens = [inputTokens, outputTokens].every((value) => typeof value === 'number')
+        ? (inputTokens ?? 0) + (outputTokens ?? 0)
+        : undefined;
+
+      pendingUsage = {
+        provider: 'copilot',
+        model: typeof event.data?.model === 'string' && event.data.model.trim()
+          ? event.data.model
+          : pendingUsage?.model ?? config.model,
+        inputTokens: (pendingUsage?.inputTokens ?? 0) + (inputTokens ?? 0),
+        outputTokens: (pendingUsage?.outputTokens ?? 0) + (outputTokens ?? 0),
+        totalTokens: (pendingUsage?.totalTokens ?? 0) + (totalTokens ?? 0),
+        cacheReadTokens: (pendingUsage?.cacheReadTokens ?? 0) + (cacheReadTokens ?? 0),
+        cacheWriteTokens: (pendingUsage?.cacheWriteTokens ?? 0) + (cacheWriteTokens ?? 0),
+        cost: (pendingUsage?.cost ?? 0) + (event.data?.cost ?? 0),
+      };
+    });
 
     return {
       async sendAndWait(prompt: string, timeoutMs: number): Promise<void> {
+        pendingUsage = null;
         await session.sendAndWait({ prompt }, timeoutMs);
+        if (pendingUsage) {
+          onDelta({ type: 'usage', usage: pendingUsage });
+        }
       },
       async cancel(): Promise<void> {
         await session.disconnect().catch(() => {});

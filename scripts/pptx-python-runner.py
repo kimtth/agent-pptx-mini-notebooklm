@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import time
 
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -809,6 +810,7 @@ def _build_completion_report(
     icon_stats: dict[str, float | int] | None = None,
     missing_images: list[str] | None = None,
     layout_issues: list[dict[str, str]] | None = None,
+    timing: dict[str, int | float] | None = None,
 ) -> dict:
     """Build a structured completion report for the TypeScript caller.
 
@@ -822,6 +824,7 @@ def _build_completion_report(
         'slideCount': 0,
         'fileSizeBytes': 0,
         'warnings': warnings or [],
+        'timing': timing or {},
         'qa': {
             'contrastFixes': contrast_fixes,
             'missingIcons': missing_icons or [],
@@ -1587,6 +1590,7 @@ def append_notebooklm_infographics(output_path: Path) -> None:
 
 
 def main() -> int:
+    started_at = time.perf_counter()
     import io
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding='utf-8')
@@ -1759,6 +1763,9 @@ def main() -> int:
         icon_stats=icon_stats,
         missing_images=qa_findings.get('missing_images', []),
         layout_issues=qa_findings.get('layout_issues', []),
+        timing={
+            'totalDurationMs': int((time.perf_counter() - started_at) * 1000),
+        },
     )
     print(json.dumps(report))
     return 0 if report['status'] in ('success', 'warning') else 1

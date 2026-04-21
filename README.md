@@ -43,7 +43,8 @@ graph LR
 
 The app uses **constraint-based layout computation** (via the Kiwi solver 🦋, an implementation of the Cassowary algorithm; **Matplotlib** uses kiwisolver internally in a limited subset of layout calculations). and **🦖 RAPTOR-style hierarchical retrieval and summarization** to structure the final output. RAPTOR fits this app well because PPTX content is naturally hierarchical: a top-down story breaks into sections, slides, and supporting details, so tree-based retrieval keeps the narrative coherent while preserving local context.
 
-- **Generation Speed**: 100 slides in under 2 minutes
+- **Deterministic Render Speed**: 100 slides in under 2 minutes, measured at 93-110 slides/minute on the included style-preview fixtures; 150-slide renders completed in 82-97s, and 150-slide render plus preview export completed in 96-110s.
+- **Token Efficiency**: The structured, deterministic flow uses substantially fewer tokens than the prompt-heavy Python-pptx approach by avoiding large generated code payloads and style prompts. Token savings ≈ 2.44 tokens per attempt × number of retries.
 - **Long-Context Support**: 779-page PDF condensed into a 10–100 slide PowerPoint presentation.
 
 ## Documentation Index

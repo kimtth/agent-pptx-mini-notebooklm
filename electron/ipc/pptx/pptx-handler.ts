@@ -80,6 +80,10 @@ export interface PptxQaReport {
   layoutIssues: Array<{ slide: number; type: string; severity: string; message: string }>
 }
 
+export interface PptxTimingReport {
+  totalDurationMs?: number
+}
+
 export interface PptxCompletionReport {
   status: 'success' | 'warning' | 'error'
   outputPath?: string
@@ -90,6 +94,7 @@ export interface PptxCompletionReport {
   warnings: string[]
   error?: string
   qa?: PptxQaReport
+  timing?: PptxTimingReport
 }
 
 

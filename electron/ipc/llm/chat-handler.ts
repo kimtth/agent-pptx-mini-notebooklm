@@ -864,6 +864,8 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
       let requestSettled = false;
       let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
       let lastActivityTime = Date.now();
+      let requestStartedAt = Date.now();
+      let llmUsageSummary: import('./llm-provider.ts').LLMUsageSummary | null = null;
 
       const clearRequestTimeout = () => {
         if (!timeoutHandle) return;
@@ -1839,6 +1841,8 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
             sendToWindow(win, 'chat:stream', { content: delta.text });
           } else if (delta.type === 'thinking') {
             sendToWindow(win, 'chat:stream', { thinking: delta.text });
+          } else if (delta.type === 'usage') {
+            llmUsageSummary = delta.usage;
           } else if (delta.type === 'error') {
             failRequest(delta.message);
           }
@@ -1864,10 +1868,36 @@ export function registerChatHandlers(getWindow: () => BrowserWindow | null): voi
           timeoutHandle = setTimeout(check, 30_000);
         });
 
+        requestStartedAt = Date.now();
         await Promise.race([
           session.sendAndWait(prompt, CHAT_REQUEST_TIMEOUT_MS),
           timeoutPromise,
         ]);
+
+        if (llmUsageSummary) {
+          emitToolEvent({
+            id: `llm_usage-${Date.now()}`,
+            toolName: 'llm_usage',
+            status: 'success',
+            argsPreview: previewToolValue({
+              provider: llmUsageSummary.provider,
+              model: llmUsageSummary.model,
+              finishReason: llmUsageSummary.finishReason,
+            }),
+            resultPreview: previewToolValue({
+              inputTokens: llmUsageSummary.inputTokens,
+              outputTokens: llmUsageSummary.outputTokens,
+              totalTokens: llmUsageSummary.totalTokens,
+              reasoningTokens: llmUsageSummary.reasoningTokens,
+              cacheReadTokens: llmUsageSummary.cacheReadTokens,
+              cacheWriteTokens: llmUsageSummary.cacheWriteTokens,
+              ...(typeof llmUsageSummary.cost === 'number' ? { cost: llmUsageSummary.cost } : {}),
+            }),
+            startedAt: requestStartedAt,
+            finishedAt: Date.now(),
+            durationMs: Date.now() - requestStartedAt,
+          });
+        }
 
         if (artifactRepairDirty.size > 0) {
           const syncEventId = `rerun_pptx-auto-${Date.now()}`;
