@@ -92,6 +92,7 @@ export interface IpcChatAPI {
       slides: import('../entities/slide-work').SlideItem[];
       designBrief: import('../entities/slide-work').DesignBrief | null;
       designStyle: import('../entities/slide-work').DesignStyle | null;
+      customBackgroundColor: string | null;
       framework: import('../entities/slide-work').FrameworkType | null;
       customFrameworkPrompt: string | null;
       theme: ThemeTokens | null;
@@ -137,6 +138,7 @@ export interface IpcPptxAPI {
   rerenderPreview(): Promise<{ success: boolean; imagePaths: string[]; error?: string }>;
   openPreviewPptx(): Promise<{ success: boolean; path?: string; error?: string }>;
   clearWorkspaceArtifacts(): Promise<{ success: boolean }>;
+  computeLayout(slidesJson: string): Promise<unknown>;
 }
 
 export interface IpcFsAPI {

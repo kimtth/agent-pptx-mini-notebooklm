@@ -1,9 +1,7 @@
-import { CopilotClient } from '@github/copilot-sdk';
 import type { SessionConfig } from '@github/copilot-sdk';
 import { createRequire } from 'module';
 import { resolveBundledPath } from '../project/workspace-utils.ts';
 
-let clientInstance: CopilotClient | null = null;
 const AZURE_OPENAI_SCOPE = 'https://cognitiveservices.azure.com/.default';
 const require = createRequire(import.meta.url);
 
@@ -17,23 +15,6 @@ function resolveCopilotModelSource(): 'github-hosted' | 'azure-openai' {
   return process.env.COPILOT_MODEL_SOURCE?.trim().toLowerCase() === 'azure-openai'
     ? 'azure-openai'
     : 'github-hosted';
-}
-
-export function resetCopilotClient(): void {
-  clientInstance = null;
-}
-
-export async function getCopilotClient(): Promise<CopilotClient> {
-  if (!clientInstance) {
-    const token = normalizeGitHubToken(process.env.GITHUB_TOKEN);
-    const cliPath = resolveCopilotCliPath();
-    clientInstance = new CopilotClient({
-      cliPath,
-      ...(token ? { githubToken: token } : {}),
-      ...(token ? { useLoggedInUser: false } : {}),
-    });
-  }
-  return clientInstance;
 }
 
 export async function getSessionOptions(opts?: {
@@ -85,10 +66,6 @@ export async function getSessionOptions(opts?: {
   }
 
   throw new Error('Invalid model session configuration.');
-}
-
-export function resolveWorkflowInstructionsDir(): string {
-  return resolveBundledPath('workflows');
 }
 
 export function resolveWorkflowInstructionPath(fileName: string): string {
